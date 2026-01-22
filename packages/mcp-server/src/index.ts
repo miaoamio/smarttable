@@ -70,7 +70,7 @@ async function openAiCompatibleChat(input: {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`
+      authorization: apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`
     },
     body: JSON.stringify({
       model,
@@ -197,7 +197,7 @@ async function cozeWorkflowChat(input: {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`
+      authorization: apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`
     },
     body: JSON.stringify({
       workflow_id: workflowId,

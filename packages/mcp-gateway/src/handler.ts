@@ -469,7 +469,7 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
       const upstream = await fetch(uploadUrl.toString(), {
         method: "POST",
         headers: {
-          authorization: `Bearer ${apiKey}`
+          authorization: apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`
         },
         body: form
       });
