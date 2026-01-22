@@ -432,7 +432,7 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
       const upstream = await fetch(uploadUrl.toString(), {
         method: "POST",
         headers: {
-          authorization: `Bearer ${apiKey}`
+          authorization: apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`
         },
         body: form
       });
