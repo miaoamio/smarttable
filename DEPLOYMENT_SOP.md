@@ -1,0 +1,88 @@
+# SmartTable 项目部署标准作业程序 (SOP)
+
+本文档总结了 SmartTable 项目在 Vercel 部署过程中遇到的挑战及解决方案，并提供了正确的部署流程。
+
+## 1. 核心失败原因总结
+
+在多次尝试中，部署失败主要归结为以下四个技术难点：
+
+1.  **Monorepo 依赖孤岛**：Vercel 的 Serverless Functions 默认不包含 Monorepo 中其他 Workspace 的代码。如果直接引用 `packages/` 下的代码，运行时会报错 `Module Not Found`。
+2.  **构建环境路径冲突**：在 Vercel 容器中，直接运行 `tsc` 可能会因为 `npx` 缓存或环境变量问题找不到命令，或者错误地使用了全局安装的旧版本 `tsc`。
+3.  **Node.js 运行时 Bug**：Node.js 20.x 版本的 npm 在处理复杂的 Workspace 安装时，偶尔会触发 `Exit handler never called!` 错误，导致构建中断。
+4.  **入口文件不匹配**：Vercel 默认期望 API 路由在 `api/` 目录下，但 TypeScript 源码需要编译和打包后才能运行。
+
+## 2. 正确的部署架构
+
+为了解决上述问题，我们采用了以下架构：
+
+*   **Bundling (打包)**：使用 `esbuild` 将所有依赖和子包代码打包进一个单文件 `api/gateway.js`。
+*   **Explicit Paths (显式路径)**：在子包的 `scripts` 中使用指向根目录的绝对路径调用工具。
+*   **Version Pinning (版本锁定)**：强制使用 Node.js 22+ 环境。
+
+## 3. 正确部署步骤
+
+### 第一步：本地配置校验
+
+确保根目录的 [package.json](package.json) 包含以下关键配置：
+```json
+{
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build -w packages/mcp-server -w packages/mcp-gateway && node scripts/bundle-gateway.mjs"
+  }
+}
+```
+
+### 第二步：子包构建命令规范
+
+子包（如 `packages/mcp-server`）的 [package.json](packages/mcp-server/package.json) 必须显式引用根目录的 `tsc`：
+```json
+"scripts": {
+  "build": "../../node_modules/.bin/tsc -p tsconfig.json"
+}
+```
+
+### 第三步：Vercel 项目设置
+
+在 Vercel 控制台中，确保以下设置：
+
+1.  **Build Command**: `npm run build`
+2.  **Output Directory**: `public` (即使没有静态网页，也需要一个输出目录)
+3.  **Node.js Version**: `22.x`
+4.  **Framework Preset**: `Other`
+
+### 第四步：路由配置 (vercel.json)
+
+确保 [vercel.json](vercel.json) 正确映射打包后的文件：
+```json
+{
+  "functions": {
+    "api/gateway.js": {
+      "includeFiles": "packages/mcp-server/dist/**",
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
+  "routes": [
+    { "src": "/health", "dest": "/api/gateway.js" },
+    { "src": "/mcp/(.*)", "dest": "/api/gateway.js" }
+  ]
+}
+```
+
+## 4. 常见问题排查 (Troubleshooting)
+
+| 现象 | 原因 | 解决方法 |
+| :--- | :--- | :--- |
+| `tsc: command not found` | Vercel 环境变量未同步 | 在 `package.json` 中改用 `../../node_modules/.bin/tsc` |
+| `Module not found: @modelcontextprotocol/sdk` | 依赖未打包 | 检查 `scripts/bundle-gateway.mjs` 是否正常生成了 `api/gateway.js` |
+| `npm error Exit handler never called!` | Node 20 版本的 npm Bug | 在 Vercel 设置中将 Node.js 版本切换到 22.x |
+| 访问接口返回 404 | 路由配置错误 | 检查 `vercel.json` 中的 `dest` 是否指向了实际生成的 `.js` 文件路径 |
+
+## 5. 维护建议
+
+*   **更新依赖**：在根目录运行 `npm install` 后，务必检查 `package-lock.json` 是否已同步。
+*   **测试构建**：在推送代码前，本地运行 `npm run build`，检查 `api/gateway.js` 是否成功生成。
