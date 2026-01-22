@@ -7,7 +7,7 @@
     "zod": "^3.25.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "npx tsc -p tsconfig.json",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
