@@ -1,0 +1,1057 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        --color-primary: var(--color-link-6);
+        --color-primary-hover: #387bff;
+        --color-primary-disabled: #97bcff;
+        --color-tab-active: var(--color-link-6);
+        --color-tab-default: #4b5563;
+        --color-border-subtle: #e5e7eb;
+        --color-text-main: #111827;
+        --color-text-subtle: #6b7280;
+
+        /* Design Tokens */
+        --color-text-1: #0C0D0E;
+        --color-text-2: #4B5563;
+        --color-text-3: #86909C;
+        --color-link-6: #1664FF;
+        --color-danger-6: #D7312A;
+        --color-bg-1: #FFFFFF;
+        --color-bg-2: #F7F8FA;
+        --color-bg-3: #F2F3F5;
+        --color-border-1: #E5E6EB;
+        --color-border-2: #C9CDD4;
+
+        /* Size Tokens */
+        --size-base: 4px;
+        --size-xs: 8px;
+        --size-sm: 12px;
+        --size-md: 16px;
+        --size-lg: 24px;
+
+        /* Font Size Tokens */
+        --font-caption: 10px;
+        --font-body-1: 12px;
+        --font-body-2: 13px;
+        --font-body-3: 14px;
+      }
+      body {
+        font-family: Inter, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        margin: 0;
+        padding: 0;
+        background: var(--color-bg-1);
+      }
+      .plugin-root {
+        width: 398px;
+        height: 507px;
+        padding: 8px 20px 12px;
+        box-sizing: border-box;
+      }
+      .tabs {
+        display: flex;
+        align-items: flex-end;
+        gap: 24px;
+        border-bottom: 1px solid var(--color-border-subtle);
+        margin-bottom: 16px;
+      }
+      .tab {
+        border: none;
+        background: transparent;
+        padding: 8px 0;
+        font-size: var(--font-body-2);
+        font-weight: 500;
+        cursor: pointer;
+        color: var(--color-tab-default);
+        position: relative;
+        white-space: nowrap;
+      }
+      .tab.active {
+        color: var(--color-tab-active);
+      }
+      .tab::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: -1px;
+        height: 2px;
+        background: transparent;
+        border-radius: 999px;
+      }
+      .tab.active::after {
+        background: var(--color-tab-active);
+      }
+      .tab:hover:not(.active) {
+        color: var(--color-tab-active);
+      }
+      .tab-panel {
+        display: none;
+      }
+      .tab-panel.active {
+        display: block;
+      }
+      .section-title {
+        font-weight: 500;
+        font-size: var(--font-body-2);
+        color: var(--color-text-main);
+        margin: 16px 0 8px;
+        letter-spacing: 0.01em;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .col {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        flex: 1;
+      }
+      .textarea-shell {
+        border-radius: 8px ;
+        border: 1px solid var(--color-border-subtle);
+        padding: 8px 12px 0;
+        box-sizing: border-box;
+        background: #ffffff;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        overflow: hidden;
+      }
+      .image-preview, .image-preview-list {
+        display: none;
+        margin-bottom: 8px;
+        padding: 4px;
+        border-radius: 6px;
+        background: #f9fafb;
+        align-items: flex-start;
+        gap: 8px;
+        flex-wrap: wrap; /* Added for multiple previews */
+      }
+      .image-preview img {
+        max-width: 100%;
+        max-height: 120px;
+        border-radius: 4px;
+        object-fit: contain;
+      }
+      .upload-area {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end; /* Changed from space-between to match inline style */
+        gap: 8px; /* Added from inline style */
+        margin: 8px -12px 0;
+        padding: 8px 12px;
+        background: #f6f7f8;
+        border-top: 1px solid var(--color-border-subtle);
+        margin-bottom: -1px; /* Ensure it covers the bottom border area */
+      }
+      textarea {
+        display: block;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: none;
+        font-size: var(--font-body-1);
+        width: 100%;
+        box-sizing: border-box;
+        resize: vertical;
+        min-height: 200px;
+        outline: none;
+      }
+      textarea:focus {
+        outline: none;
+      }
+      input[type="number"],
+      input[type="text"],
+      select {
+        padding: 6px 8px;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        font-size: var(--font-body-1);
+        width: 100%;
+        box-sizing: border-box;
+        outline: none;
+      }
+      input[type="number"] {
+        width: 64px;
+      }
+      input[type="text"]:focus,
+      select:focus {
+        border-color: #4f46e5;
+        box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.12);
+      }
+      .primary-button {
+        background-color: var(--color-primary);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0 16px;
+        font-size: var(--font-body-1);
+        cursor: pointer;
+        height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        white-space: nowrap;
+      }
+      .primary-button:hover {
+        background-color: var(--color-primary-hover);
+      }
+      .primary-button:disabled {
+        background-color: var(--color-primary-disabled);
+        cursor: not-allowed;
+      }
+      button.secondary {
+        background-color: #ffffff;
+        color: #111827;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+        height: 30px;
+        font-size: var(--font-body-1);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        line-height: 1;
+      }
+      button.secondary:hover {
+        background-color: #f3f4f6;
+      }
+      .primary-action {
+        width: 100%;
+        margin-top: 10px;
+      }
+      .primary-action .primary-button {
+        width: 100%;
+      }
+      .status-text {
+        display: none;
+      }
+      .label {
+        font-size: var(--font-caption);
+        margin-bottom: 2px;
+        color: var(--color-text-subtle);
+        display: block;
+      }
+      .empty-card {
+        border-radius: 10px;
+        background: #f9fafb;
+        padding: 20px 12px;
+        text-align: center;
+        border: 1px dashed #e5e7eb;
+        position: relative;
+        height: 378px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      .empty-icon {
+        width: 40px;
+        height: 40px;
+        margin: 0 auto 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .empty-title {
+        font-size: var(--font-body-1);
+        font-weight: 500;
+        color: #111827;
+        margin-bottom: 4px;
+      }
+      .empty-desc {
+        font-size: var(--font-caption);
+        color: #6b7280;
+      }
+      .debug-container {
+        margin-top: 12px;
+        font-size: var(--font-caption);
+      }
+      .debug-toggle {
+        font-size: var(--font-caption);
+        color: #6b7280;
+        cursor: pointer;
+        text-decoration: underline;
+        display: inline-block;
+        margin-bottom: 4px;
+      }
+      .hidden {
+        display: none !important;
+      }
+      .alert {
+        display: none;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px;
+        min-height: 40px;
+        border-radius: 8px;
+        font-size: var(--font-body-1);
+        margin-bottom: 8px;
+        transition: opacity 0.3s ease;
+        position: relative;
+        overflow: hidden;
+      }
+      .alert-text {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .alert:hover .alert-text {
+        white-space: normal;
+        word-break: break-all;
+        padding: 8px 0;
+      }
+      .alert:hover {
+        height: auto;
+      }
+      #btn-copy-error {
+        display: none;
+        padding: 2px 8px;
+        height: 22px;
+        font-size: var(--font-caption);
+        border-radius: 4px;
+        background: #ffffff;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        color: #6b7280;
+        cursor: pointer;
+        flex-shrink: 0;
+        align-items: center;
+        justify-content: center;
+      }
+      #btn-copy-error:hover {
+        background: #f9fafb;
+        color: #111827;
+      }
+      .alert-error #btn-copy-error {
+        display: inline-flex;
+      }
+      .alert-success {
+        background: #eef9f1;
+        color: #14532d;
+      }
+      .alert-error {
+        background: #fdf5f5;
+        color: #991b1b;
+      }
+      .alert-icon {
+        display: inline-flex;
+      }
+      .alert-icon-success,
+      .alert-icon-error {
+        display: none;
+      }
+      .alert-success .alert-icon-success {
+        display: inline-flex;
+      }
+      .alert-error .alert-icon-error {
+        display: inline-flex;
+      }
+      .loading-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(255, 255, 255, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+      }
+      .loading-card {
+        width: 260px;
+        padding: 24px 24px 20px;
+        background: #ffffff;
+        border-radius: 16px;
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.15);
+        text-align: center;
+      }
+      .loading-spinner {
+        position: relative;
+        width: 56px;
+        height: 56px;
+        margin: 0 auto 16px;
+      }
+      .loading-ring {
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        border: 3px solid #e5e7eb;
+        border-top-color: var(--color-primary);
+        animation: spin 1s linear infinite;
+      }
+      .loading-icon {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .loading-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--color-text-main);
+        margin-bottom: 4px;
+      }
+      .loading-desc {
+        font-size: 12px;
+        color: var(--color-text-subtle);
+      }
+      .text-button {
+        border: none;
+        background: transparent;
+        font-size: 12px;
+        color: var(--color-text-subtle);
+        cursor: pointer;
+      }
+      .text-button:hover {
+        color: var(--color-tab-active);
+      }
+      /* Switch Style */
+      .switch-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 40px;
+        border-bottom: 1px solid var(--color-border-subtle);
+      }
+      .switch-item:last-child {
+        border-bottom: none;
+      }
+      .switch-item label {
+        font-size: 12px;
+        color: var(--color-text-main);
+      }
+      .switch {
+        position: relative;
+        display: inline-block;
+        width: 32px;
+        height: 18px;
+      }
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #e5e7eb;
+        transition: .4s;
+        border-radius: 18px;
+      }
+      .slider:before {
+        position: absolute;
+        content: "";
+        height: 14px;
+        width: 14px;
+        left: 2px;
+        bottom: 2px;
+        background-color: white;
+        transition: .4s;
+        border-radius: 50%;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      }
+      input:checked + .slider {
+        background-color: var(--color-primary);
+      }
+      input:checked + .slider:before {
+        transform: translateX(14px);
+      }
+      .segment-group {
+        display: inline-flex;
+        width: 100%;
+        border-radius: 8px;
+        padding: 2px;
+        box-sizing: border-box;
+        background: #f3f4f6;
+      }
+      .segment-button {
+        flex: 1;
+        height: 32px;
+        border: none;
+        background: transparent;
+        font-size: 12px;
+        color: var(--color-text-subtle);
+        cursor: pointer;
+        border-radius: 6px;
+      }
+      .segment-button.active {
+        background: #ffffff;
+        color: var(--color-primary);
+        box-shadow: 0 0 0 1px #e5e7eb;
+      }
+      .align-group {
+        display: inline-flex;
+        width: 100%;
+        border-radius: 8px;
+        padding: 4px;
+        box-sizing: border-box;
+        background: #f3f4f6;
+      }
+      .align-button {
+        flex: 1;
+        height: 32px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+      }
+      .align-button svg path {
+        fill: #9ca3af;
+      }
+      .align-button.active {
+        background: #ffffff;
+        box-shadow: 0 0 0 1px #e5e7eb;
+      }
+        .align-button.active svg path {
+        fill: var(--color-primary);
+      }
+      #cell-actions-section {
+        position: absolute;
+        left: 20px;
+        right: 20px;
+        bottom: 0;
+        height: 64px;
+        border-top: 1px solid var(--color-border-subtle);
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        padding-top: 0;
+        margin-bottom: 0;
+        z-index: 10;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="plugin-root" style="position: relative;">
+      <div class="tabs">
+        <button class="tab active" data-tab="ai">AI 生成</button>
+        <button class="tab" data-tab="manual">手动调整</button>
+        <button class="tab" data-tab="debug">开发模式</button>
+      </div>
+      <div id="alert" class="alert">
+        <span class="alert-icon alert-icon-success">
+          <svg width="20" height="24" viewBox="0 0 20 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M18.334 12.8324C18.334 17.4263 14.6099 21.1504 10.016 21.1504C5.42218 21.1504 1.69812 17.4263 1.69812 12.8324C1.69812 8.23859 5.42218 4.51453 10.016 4.51453C14.6099 4.51453 18.334 8.23859 18.334 12.8324Z" fill="#141414" fill-opacity="0.08"/>
+            <path d="M9.99998 20.3347C14.6027 20.3347 18.334 16.6035 18.334 12.0007C18.334 7.39796 14.6027 3.66669 9.99998 3.66669C5.39723 3.66669 1.66595 7.39796 1.66595 12.0007C1.66595 16.6035 5.39723 20.3347 9.99998 20.3347Z" fill="#309256"/>
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M9.99998 18.9457C13.8356 18.9457 16.945 15.8363 16.945 12.0007C16.945 8.16508 13.8356 5.05569 9.99998 5.05569C6.16435 5.05569 3.05496 8.16508 3.05496 12.0007C3.05496 15.8363 6.16435 18.9457 9.99998 18.9457ZM18.334 12.0007C18.334 16.6035 14.6027 20.3347 9.99998 20.3347C5.39723 20.3347 1.66595 16.6035 1.66595 12.0007C1.66595 7.39796 5.39723 3.66669 9.99998 3.66669C14.6027 3.66669 18.334 7.39796 18.334 12.0007Z" fill="#2A814B"/>
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M13.79 9.95193L14.3618 10.5238C14.5198 10.6817 14.5198 10.9377 14.3618 11.0956L9.78723 15.6702C9.72649 15.7309 9.65125 15.7683 9.57265 15.7823L9.52518 15.7879H9.47744C9.38206 15.7823 9.28828 15.7431 9.2154 15.6702L6.64217 13.097C6.48427 12.9391 6.48427 12.6831 6.64217 12.5252L7.214 11.9533C7.37191 11.7954 7.62792 11.7954 7.78583 11.9533L9.50133 13.6687L13.2182 9.95193C13.3761 9.79402 13.6321 9.79402 13.79 9.95193Z" fill="#141414" fill-opacity="0.2"/>
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M13.3741 9.53597L13.946 10.1078C14.1039 10.2657 14.1039 10.5217 13.946 10.6796L9.37133 15.2543C9.3106 15.315 9.23535 15.3524 9.15676 15.3664L9.10929 15.372H9.06155C8.96616 15.3664 8.87238 15.3271 8.7995 15.2543L6.22628 12.681C6.06837 12.5231 6.06837 12.2671 6.22628 12.1092L6.79811 11.5374C6.95601 11.3795 7.21203 11.3795 7.36993 11.5374L9.08543 13.2527L12.8023 9.53597C12.9602 9.37807 13.2162 9.37807 13.3741 9.53597Z" fill="white"/>
+          </svg>
+        </span>
+        <span class="alert-icon alert-icon-error">
+          <svg width="20" height="24" viewBox="0 0 20 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M18.3334 12.8658C18.3334 17.4467 14.6198 21.1602 10.0389 21.1602C5.45805 21.1602 1.74451 17.4467 1.74451 12.8658C1.74451 8.28494 5.45805 4.57141 10.0389 4.57141C14.6198 4.57141 18.3334 8.28494 18.3334 12.8658Z" fill="#141414" fill-opacity="0.08"/>
+            <path d="M9.96122 20.3298C14.5519 20.3298 18.2734 16.6083 18.2734 12.0177C18.2734 7.42698 14.5519 3.70551 9.96122 3.70551C5.37054 3.70551 1.64905 7.42698 1.64905 12.0177C1.64905 16.6083 5.37054 20.3298 9.96122 20.3298Z" fill="#EE3F38"/>
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M10.0001 18.9442C13.8354 18.9442 16.9445 15.8351 16.9445 11.9999C16.9445 8.16464 13.8354 5.05555 10.0001 5.05555C6.16484 5.05555 3.05574 8.16464 3.05574 11.9999C3.05574 15.8351 6.16484 18.9442 10.0001 18.9442ZM18.3333 11.9999C18.3333 16.6022 14.6024 20.3331 10.0001 20.3331C5.39779 20.3331 1.66687 16.6022 1.66687 11.9999C1.66687 7.39759 5.39779 3.66669 10.0001 3.66669C14.6024 3.66669 18.3333 7.39759 18.3333 11.9999Z" fill="var(--color-danger-6)"/>
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M12.9318 9.30874L13.5183 9.89525C13.7034 10.0803 13.7034 10.3804 13.5183 10.5655L11.6325 12.451L13.5183 14.3366C13.7034 14.5217 13.7034 14.8218 13.5183 15.0069L12.9318 15.5934C12.7467 15.7785 12.4466 15.7785 12.2615 15.5934L10.3753 13.707L8.49108 15.5927C8.30598 15.7778 8.00588 15.7778 7.82079 15.5927L7.23428 15.0062C7.04919 14.8211 7.04919 14.521 7.23428 14.3359L9.11811 12.451L7.23428 10.5662C7.04919 10.3811 7.04919 10.081 7.23428 9.89593L7.82079 9.30943C8.00588 9.12433 8.30598 9.12433 8.49108 9.30943L10.3753 11.1938L12.2615 9.30874C12.4466 9.12365 12.7467 9.12365 12.9318 9.30874Z" fill="#141414" fill-opacity="0.2"/>
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M12.5171 8.89401L13.1036 9.48051C13.2887 9.66561 13.2887 9.96571 13.1036 10.1508L11.2178 12.0362L13.1036 13.9219C13.2887 14.107 13.2887 14.4071 13.1036 14.5922L12.5171 15.1787C12.332 15.3637 12.0319 15.3637 11.8468 15.1787L9.96064 13.2922L8.0764 15.178C7.89131 15.3631 7.59121 15.3631 7.40611 15.178L6.81961 14.5915C6.63451 14.4064 6.63451 14.1063 6.81961 13.9212L8.70344 12.0362L6.81961 10.1515C6.63451 9.96639 6.63451 9.66629 6.81961 9.4812L7.40611 8.89469C7.59121 8.7096 7.89131 8.7096 8.0764 8.89469L9.96064 10.779L11.8468 8.89401C12.0319 8.70891 12.332 8.70891 12.5171 8.89401Z" fill="white"/>
+          </svg>
+        </span>
+        <span id="alert-text" class="alert-text"></span>
+        <button id="btn-copy-error" type="button">复制</button>
+      </div>
+
+      <div id="tab-ai" class="tab-panel active">
+        <div id="ai-empty-panel">
+          <div class="section-title">需求描述</div>
+          <div class="row">
+            <div class="col">
+              <div class="textarea-shell">
+                <textarea
+                  id="prompt-create"
+                  placeholder="请用自然语言描述表格需求或者上传截图让 AI 识别，例如描述：PSM、负责人、机房"
+                ></textarea>
+                <div id="image-preview-list" class="image-preview-list"></div>
+                <div class="upload-area">
+                  <button id="btn-upload-excel" class="secondary" type="button" style="width: auto; padding: 0 12px;">
+                    <span class="icon" aria-hidden="true" style="display: inline-flex; margin-right: 4px;">
+                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <g clip-path="url(#clip0_22_23537)">
+                          <path fill-rule="evenodd" clip-rule="evenodd" d="M16.1833 3.3501C16.6344 3.3501 17 3.6635 17 4.0501V15.9501C17 16.3367 16.6344 16.6501 16.1833 16.6501H3.81667C3.36563 16.6501 3 16.3367 3 15.9501V4.0501C3 3.6635 3.36563 3.3501 3.81667 3.3501H16.1833ZM6.50001 12.8H4.40001V15.25H6.50001V12.8ZM15.6 12.8H7.9V15.25H15.6V12.8ZM6.50001 8.60004H4.40001V11.4H6.50001V8.60004ZM15.6 8.60004H7.9V11.4H15.6V8.60004ZM6.50001 4.75001H4.40001V7.20001H6.50001V4.75001ZM15.6 4.75001H7.9V7.20001H15.6V4.75001Z" fill="#42464E"/>
+                        </g>
+                        <defs>
+                          <clipPath id="clip0_22_23537">
+                            <rect width="20" height="20" fill="white"/>
+                          </clipPath>
+                        </defs>
+                      </svg>
+                    </span>
+                    上传表格
+                  </button>
+                  <button id="btn-upload" class="secondary" type="button" style="width: auto; padding: 0 12px;">
+                    <span class="icon" aria-hidden="true" style="display: inline-flex; margin-right: 4px;">
+                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path
+                          d="M4.5 17C4.0875 17 3.73438 16.8531 3.44063 16.5594C3.14687 16.2656 3 15.9125 3 15.5V5C3 4.5875 3.14687 4.23437 3.44063 3.94062C3.73438 3.64687 4.0875 3.5 4.5 3.5H10.5C10.5 3.7125 10.5 3.94375 10.5 4.19375C10.5 4.44375 10.5 4.7125 10.5 5H4.5V15.5H15V9.5C15.2875 9.5 15.5563 9.5 15.8063 9.5C16.0563 9.5 16.2875 9.5 16.5 9.5V15.5C16.5 15.9125 16.3531 16.2656 16.0594 16.5594C15.7656 16.8531 15.4125 17 15 17H4.5ZM5.25 14H14.25L11.4375 10.25L9.1875 13.25L7.5 11L5.25 14ZM13.5 8V6.5H12V5H13.5V3.5H15V5H16.5V6.5H15V8H13.5Z"
+                          fill="#1D2129"
+                        />
+                      </svg>
+                    </span>
+                    上传截图
+                  </button>
+                </div></div>
+            </div>
+          </div>
+          <div class="primary-action">
+            <button id="btn-create" class="primary-button" type="button">
+              <span class="icon" aria-hidden="true" style="display: inline-flex; margin-right: 4px;">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M17.8334 9.5L16.7917 7.20834L14.5 6.16667L16.7917 5.125L17.8334 2.83334L18.875 5.125L21.1667 6.16667L18.875 7.20834L17.8334 9.5ZM17.8334 21.1667L16.7917 18.875L14.5 17.8333L16.7917 16.7917L17.8334 14.5L18.875 16.7917L21.1667 17.8333L18.875 18.875L17.8334 21.1667ZM9.50004 18.6667L7.41671 14.0833L2.83337 12L7.41671 9.91667L9.50004 5.33334L11.5834 9.91667L16.1667 12L11.5834 14.0833L9.50004 18.6667ZM9.50004 14.625L10.3334 12.8333L12.125 12L10.3334 11.1667L9.50004 9.375L8.66671 11.1667L6.87504 12L8.66671 12.8333L9.50004 14.625Z"
+                    fill="white"
+                  />
+                </svg>
+              </span>
+              AI 生成表格
+            </button>
+          </div>
+          <div id="cancel-wrapper" style="margin-top: 4px; text-align: center; display: none;">
+            <button id="btn-cancel" class="text-button" type="button">取消生成</button>
+          </div>
+          <div
+            style="
+              margin-top: 12px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 11px;
+              color: var(--color-text-subtle);
+              text-align: center;
+            "
+          >
+            <span style="display: inline-flex; margin-right: 4px;">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M7.44446 10.7778H8.55557V7.44445H7.44446V10.7778ZM8.00001 6.33333C8.15742 6.33333 8.28937 6.28009 8.39585 6.17361C8.50233 6.06713 8.55557 5.93519 8.55557 5.77778C8.55557 5.62037 8.50233 5.48843 8.39585 5.38195C8.28937 5.27546 8.15742 5.22222 8.00001 5.22222C7.84261 5.22222 7.71066 5.27546 7.60418 5.38195C7.4977 5.48843 7.44446 5.62037 7.44446 5.77778C7.44446 5.93519 7.4977 6.06713 7.60418 6.17361C7.71066 6.28009 7.84261 6.33333 8.00001 6.33333ZM8.00001 13.5556C7.2315 13.5556 6.50927 13.4097 5.83335 13.1181C5.15742 12.8264 4.56946 12.4306 4.06946 11.9306C3.56946 11.4306 3.17362 10.8426 2.88196 10.1667C2.59029 9.49074 2.44446 8.76852 2.44446 8C2.44446 7.23148 2.59029 6.50926 2.88196 5.83333C3.17362 5.15741 3.56946 4.56945 4.06946 4.06945C4.56946 3.56945 5.15742 3.17361 5.83335 2.88195C6.50927 2.59028 7.2315 2.44445 8.00001 2.44445C8.76853 2.44445 9.49075 2.59028 10.1667 2.88195C10.8426 3.17361 11.4306 3.56945 11.9306 4.06945C12.4306 4.56945 12.8264 5.15741 13.1181 5.83333C13.4097 6.50926 13.5556 7.23148 13.5556 8C13.5556 8.76852 13.4097 9.49074 13.1181 10.1667C12.8264 10.8426 11.9306 11.4306 11.9306 11.9306C11.4306 12.4306 10.8426 12.8264 10.1667 13.1181C9.49075 13.4097 8.76853 13.5556 8.00001 13.5556ZM8.00001 12.4444C9.24075 12.4444 10.2917 12.0139 11.1528 11.1528C12.0139 10.2917 12.4445 9.24074 12.4445 8C12.4445 6.75926 12.0139 5.70833 11.1528 4.84722C10.2917 3.98611 9.24075 3.55556 8.00001 3.55556C6.75927 3.55556 5.70835 3.98611 4.84724 4.84722C3.98612 5.70833 3.55557 6.75926 3.55557 8C3.55557 9.24074 3.98612 10.2917 4.84724 11.1528C5.70835 12.0139 6.75927 12.4444 8.00001 12.4444Z"
+                  fill="#94A3B8"
+                />
+              </svg>
+            </span>
+            <span>生成后可进入“手动调整”进行细节微调</span>
+          </div>
+        </div>
+
+        <div id="ai-edit-panel" class="hidden">
+          <div class="section" style="margin-bottom: 0;">
+            <div id="selection-status-edit" style="font-size: 12px; color: var(--color-text-subtle); margin-left: 0; padding-top: 0px; display: none;"></div>
+          </div>
+          <div class="section-title">需求描述</div>
+          <div class="row">
+            <div class="col">
+              <div class="textarea-shell">
+                <textarea
+                  id="prompt-edit"
+                  placeholder="例如：为当前表格添加一列负责人"
+                ></textarea>
+                <div id="image-preview-list-edit" class="image-preview-list"></div><div class="upload-area">
+                  <button id="btn-upload-excel-edit" class="secondary" type="button" style="width: auto; padding: 0 12px;">
+                    <span class="icon" aria-hidden="true" style="display: inline-flex; margin-right: 4px;">
+                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <g clip-path="url(#clip0_22_23537_edit)">
+                          <path fill-rule="evenodd" clip-rule="evenodd" d="M16.1833 3.3501C16.6344 3.3501 17 3.6635 17 4.0501V15.9501C17 16.3367 16.6344 16.6501 16.1833 16.6501H3.81667C3.36563 16.6501 3 16.3367 3 15.9501V4.0501C3 3.6635 3.36563 3.3501 3.81667 3.3501H16.1833ZM6.50001 12.8H4.40001V15.25H6.50001V12.8ZM15.6 12.8H7.9V15.25H15.6V12.8ZM6.50001 8.60004H4.40001V11.4H6.50001V8.60004ZM15.6 8.60004H7.9V11.4H15.6V8.60004ZM6.50001 4.75001H4.40001V7.20001H6.50001V4.75001ZM15.6 4.75001H7.9V7.20001H15.6V4.75001Z" fill="#42464E"/>
+                        </g>
+                        <defs>
+                          <clipPath id="clip0_22_23537_edit">
+                            <rect width="20" height="20" fill="white"/>
+                          </clipPath>
+                        </defs>
+                      </svg>
+                    </span>
+                    上传表格
+                  </button>
+                  <button id="btn-upload-edit" class="secondary" type="button" style="width: auto; padding: 0 12px;">
+                    <span class="icon" aria-hidden="true" style="display: inline-flex; margin-right: 4px;">
+                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path
+                          d="M4.5 17C4.0875 17 3.73438 16.8531 3.44063 16.5594C3.14687 16.2656 3 15.9125 3 15.5V5C3 4.5875 3.14687 4.23437 3.44063 3.94062C3.73438 3.64687 4.0875 3.5 4.5 3.5H10.5C10.5 3.7125 10.5 3.94375 10.5 4.19375C10.5 4.44375 10.5 4.7125 10.5 5H4.5V15.5H15V9.5C15.2875 9.5 15.5563 9.5 15.8063 9.5C16.0563 9.5 16.2875 9.5 16.5 9.5V15.5C16.5 15.9125 16.3531 16.2656 16.0594 16.5594C15.7656 16.8531 15.4125 17 15 17H4.5ZM5.25 14H14.25L11.4375 10.25L9.1875 13.25L7.5 11L5.25 14ZM13.5 8V6.5H12V5H13.5V3.5H15V5H16.5V6.5H15V8H13.5Z"
+                          fill="#1D2129"
+                        />
+                      </svg>
+                    </span>
+                    上传截图
+                  </button>
+                </div></div>
+            </div>
+          </div>
+          <div class="primary-action">
+            <button id="btn-edit" class="primary-button" type="button">
+              <span class="icon" aria-hidden="true" style="display: inline-flex; margin-right: 4px;">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M17.8334 9.5L16.7917 7.20834L14.5 6.16667L16.7917 5.125L17.8334 2.83334L18.875 5.125L21.1667 6.16667L18.875 7.20834L17.8334 9.5ZM17.8334 21.1667L16.7917 18.875L14.5 17.8333L16.7917 16.7917L17.8334 14.5L18.875 16.7917L21.1667 17.8333L18.875 18.875L17.8334 21.1667ZM9.50004 18.6667L7.41671 14.0833L2.83337 12L7.41671 9.91667L9.50004 5.33334L11.5834 9.91667L16.1667 12L11.5834 14.0833L9.50004 18.6667ZM9.50004 14.625L10.3334 12.8333L12.125 12L10.3334 11.1667L9.50004 9.375L8.66671 11.1667L6.87504 12L8.66671 12.8333L9.50004 14.625Z"
+                    fill="white"
+                  />
+                </svg>
+              </span>
+              AI 修改表格
+            </button>
+          </div>
+          <div id="cancel-wrapper-edit" style="margin-top: 4px; text-align: center; display: none;">
+            <button id="btn-cancel-edit" class="text-button" type="button">取消修改</button>
+          </div>
+          <div
+            style="
+              margin-top: 12px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 11px;
+              color: var(--color-text-subtle);
+              text-align: center;
+            "
+          >
+            <span style="display: inline-flex; margin-right: 4px;">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M7.44446 10.7778H8.55557V7.44445H7.44446V10.7778ZM8.00001 6.33333C8.15742 6.33333 8.28937 6.28009 8.39585 6.17361C8.50233 6.06713 8.55557 5.93519 8.55557 5.77778C8.55557 5.62037 8.50233 5.48843 8.39585 5.38195C8.28937 5.27546 8.15742 5.22222 8.00001 5.22222C7.84261 5.22222 7.71066 5.27546 7.60418 5.38195C7.4977 5.48843 7.44446 5.62037 7.44446 5.77778C7.44446 5.93519 7.4977 6.06713 7.60418 6.17361C7.71066 6.28009 7.84261 6.33333 8.00001 6.33333ZM8.00001 13.5556C7.2315 13.5556 6.50927 13.4097 5.83335 13.1181C5.15742 12.8264 4.56946 12.4306 4.06946 11.9306C3.56946 11.4306 3.17362 10.8426 2.88196 10.1667C2.59029 9.49074 2.44446 8.76852 2.44446 8C2.44446 7.23148 2.59029 6.50926 2.88196 5.83333C3.17362 5.15741 3.56946 4.56945 4.06946 4.06945C4.56946 3.56945 5.15742 3.17361 5.83335 2.88195C6.50927 2.59028 7.2315 2.44445 8.00001 2.44445C8.76853 2.44445 9.49075 2.59028 10.1667 2.88195C10.8426 3.17361 11.4306 3.56945 11.9306 4.06945C12.4306 4.56945 12.8264 5.15741 13.1181 5.83333C13.4097 6.50926 13.5556 7.23148 13.5556 8C13.5556 8.76852 13.4097 9.49074 13.1181 10.1667C12.8264 10.8426 11.9306 11.4306 11.9306 11.9306C11.4306 12.4306 10.8426 12.8264 10.1667 13.1181C9.49075 13.4097 8.76853 13.5556 8.00001 13.5556ZM8.00001 12.4444C9.24075 12.4444 10.2917 12.0139 11.1528 11.1528C12.0139 10.2917 12.4445 9.24074 12.4445 8C12.4445 6.75926 12.0139 5.70833 11.1528 4.84722C10.2917 3.98611 9.24075 3.55556 8.00001 3.55556C6.75927 3.55556 5.70835 3.98611 4.84724 4.84722C3.98612 5.70833 3.55557 6.75926 3.55557 8C3.55557 9.24074 3.98612 10.2917 4.84724 11.1528C5.70835 12.0139 6.75927 12.4444 8.00001 12.4444Z"
+                  fill="#94A3B8"
+                />
+              </svg>
+            </span>
+            <span>生成后可进入“手动调整”进行细节微调</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-manual" class="tab-panel">
+        <div id="manual-empty-panel" class="empty-card">
+          <div class="empty-decoration" style="position: absolute; top: 8px; right: 8px; pointer-events: none;">
+            <svg width="172" height="172" viewBox="0 0 172 172" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g opacity="0.03">
+                <path d="M45.1667 138.5C41.9583 138.5 39.2118 137.358 36.9271 135.073C34.6424 132.788 33.5 130.042 33.5 126.833V45.1667C33.5 41.9583 34.6424 39.2118 36.9271 36.9271C39.2118 34.6424 41.9583 33.5 45.1667 33.5H126.833C130.042 33.5 132.788 34.6424 135.073 36.9271C137.358 39.2118 138.5 41.9583 138.5 45.1667V126.833C138.5 130.042 137.358 132.788 135.073 135.073C132.788 137.358 130.042 138.5 126.833 138.5H45.1667ZM45.1667 126.833H64.5625V107.437H45.1667V126.833ZM76.2292 126.833H95.7708V107.437H76.2292V126.833ZM107.437 126.833H126.833V107.437H107.437V126.833ZM45.1667 95.7708H64.5625V76.2292H45.1667V95.7708ZM76.2292 95.7708H95.7708V76.2292H76.2292V95.7708ZM107.437 95.7708H126.833V76.2292H107.437V95.7708ZM45.1667 64.5625H64.5625V45.1667H45.1667V64.5625ZM76.2292 64.5625H95.7708V45.1667H76.2292V64.5625ZM107.437 64.5625H126.833V45.1667H107.437V64.5625Z" fill="#0068FF"/>
+              </g>
+            </svg>
+          </div>
+          <div class="empty-icon" style="width: 56px; height: 60px;">
+            <svg width="56" height="60" viewBox="0 0 58 61" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g filter="url(#filter0_d_9_2252)">
+              <rect x="1" y="1" width="56" height="56" rx="28" fill="#0068FF" fill-opacity="0.05" shape-rendering="crispEdges"/>
+              <path d="M28.6497 36.005C26.7817 35.9077 25.2056 35.1878 23.9214 33.8451C22.6371 32.5025 21.995 30.8875 21.995 29C21.995 27.0542 22.676 25.4002 24.0381 24.0381C25.4002 22.676 27.0541 21.995 29 21.995C30.8874 21.995 32.5025 22.6371 33.8451 23.9214C35.1877 25.2056 35.9077 26.7818 36.005 28.6498L33.5532 27.9201C33.3003 26.8693 32.7554 26.0083 31.9187 25.337C31.082 24.6657 30.1091 24.33 29 24.33C27.7157 24.33 26.6163 24.7873 25.7018 25.7018C24.7873 26.6164 24.33 27.7158 24.33 29C24.33 30.1091 24.6656 31.082 25.337 31.9188C26.0083 32.7555 26.8693 33.3003 27.92 33.5533L28.6497 36.005ZM30.0507 40.6166C29.8756 40.6555 29.7005 40.675 29.5254 40.675C29.3502 40.675 29.1751 40.675 29 40.675C27.3849 40.675 25.8672 40.3685 24.4467 39.7556C23.0263 39.1427 21.7907 38.3108 20.7399 37.2601C19.6892 36.2093 18.8573 34.9737 18.2444 33.5533C17.6315 32.1328 17.325 30.615 17.325 29C17.325 27.385 17.6315 25.8672 18.2444 24.4468C18.8573 23.0263 19.6892 21.7907 20.7399 20.7399C21.7907 19.6892 23.0263 18.8573 24.4467 18.2444C25.8672 17.6315 27.3849 17.325 29 17.325C30.615 17.325 32.1328 17.6315 33.5532 18.2444C34.9737 18.8573 36.2093 19.6892 37.26 20.7399C38.3108 21.7907 39.1426 23.0263 39.7556 24.4468C40.3685 25.8672 40.675 27.385 40.675 29C40.675 29.1751 40.675 29.3503 40.675 29.5254C40.675 29.7005 40.6555 29.8756 40.6166 30.0508L38.34 29.3503V29C38.34 26.3926 37.4352 24.1841 35.6255 22.3744C33.8159 20.5648 31.6074 19.66 29 19.66C26.3926 19.66 24.184 20.5648 22.3744 22.3744C20.5648 24.1841 19.66 26.3926 19.66 29C19.66 31.6074 20.5648 33.8159 22.3744 35.6256C24.184 37.4352 26.3926 38.34 29 38.34C29.0584 38.34 29.1167 38.34 29.1751 38.34C29.2335 38.34 29.2919 38.34 29.3502 38.34L30.0507 40.6166ZM38.9529 41.2588L33.9619 36.2677L32.5025 40.675L29 29L40.675 32.5025L36.2677 33.9619L41.2587 38.9529L38.9529 41.2588Z" fill="#0068FF" fill-opacity="0.4"/>
+              </g>
+              <defs>
+              <filter id="filter0_d_9_2252" x="0" y="0" width="58" height="58" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+              <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+              <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+              <feMorphology radius="1" operator="dilate" in="SourceAlpha" result="effect1_dropShadow_9_2252"/>
+              <feOffset/>
+              <feComposite in2="hardAlpha" operator="out"/>
+              <feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0.407843 0 0 0 0 1 0 0 0 0.1 0"/>
+              <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_9_2252"/>
+              <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_9_2252" result="shape"/>
+              </filter>
+              </defs>
+            </svg>
+          </div>
+          <div class="empty-title">未选中表格、列或单元格</div>
+          <div class="empty-desc">
+            在画布中选择一个表格、行、列或具体的单元格，<br />
+            即可激活精细化调试面板。
+          </div>
+        </div>
+
+        <div id="manual-edit-panel" class="hidden">
+          <div class="section" style="margin-bottom: 0;">
+            <div id="selection-label" style="font-size: 12px; color: var(--color-text-subtle); margin-left: 0; padding-top: 0px; display: none;">
+            </div>
+          </div>
+          <div id="manual-table-panel">
+            <div class="section">
+              <div class="section-title">表格尺寸</div>
+              <div class="row">
+                <div class="col">
+                  <select id="table-size-select">
+                    <option value="mini">Mini – 32px</option>
+                    <option value="default" selected>Default – 40px</option>
+                    <option value="medium">Medium – 48px</option>
+                    <option value="large">Large – 56px</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="section">
+              <div class="section-title">表格行数</div>
+              <div class="row">
+                <div class="col">
+                  <select id="table-row-count-select-manual">
+                    <option value="1">1</option>
+                    <option value="3">3</option>
+                    <option value="5">5</option>
+                    <option value="8">8</option>
+                    <option value="10" selected>10</option>
+                    <option value="12">12</option>
+                    <option value="15">15</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="section">
+              <div class="section-title">表格行操作</div>
+              <div class="row">
+                <div class="col">
+                  <select id="table-row-action-select">
+                    <option value="none">无</option>
+                    <option value="multiple" selected>多选</option>
+                    <option value="single">单选</option>
+                    <option value="drag">拖拽</option>
+                    <option value="expand">展开</option>
+                    <option value="switch">开关</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="section" style="margin-top: 20px;">
+              <div class="switch-item">
+                <label for="table-has-pagination">分页器</label>
+                <label class="switch">
+                  <input type="checkbox" id="table-has-pagination" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="switch-item">
+                <label for="table-has-filter">筛选器</label>
+                <label class="switch">
+                  <input type="checkbox" id="table-has-filter" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="switch-item">
+                <label for="table-has-actions">按钮</label>
+                <label class="switch">
+                  <input type="checkbox" id="table-has-actions" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="switch-item">
+                <label for="table-has-tabs">页签</label>
+                <label class="switch">
+                  <input type="checkbox" id="table-has-tabs">
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div id="manual-column-panel" class="hidden">
+            <div class="section">
+              <div class="section-title">单元格类型</div>
+              <div class="row">
+                <div class="col">
+                  <select id="cell-type-select">
+                    <option value="">加载中…</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="section" id="column-header-section">
+              <div class="section-title">表头元素</div>
+              <div class="row">
+                <div class="col">
+                  <select id="header-type-select">
+                    <option value="None">无</option>
+                    <option value="Filter">筛选</option>
+                    <option value="Sort">排序</option>
+                    <option value="Search">搜索</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="section" id="align-section">
+              <div class="section-title">对齐方式</div>
+              <div class="row">
+                <div class="col">
+                  <div class="align-group">
+                    <button id="align-left" type="button" class="align-button" data-align="left">
+                      <svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M5 4.5C4.72386 4.5 4.5 4.72386 4.5 5C4.5 5.27614 4.72386 5.5 5 5.5H15C15.2761 5.5 15.5 5.27614 15.5 5C15.5 4.72386 15.2761 4.5 15 4.5H5ZM5 8C4.72386 8 4.5 8.22386 4.5 8.5C4.5 8.77614 4.72386 9 5 9H11C11.2761 9 11.5 8.77614 11.5 8.5C11.5 8.22386 11.2761 8 11 8H5ZM5 11.5C4.72386 11.5 4.5 11.7239 4.5 12C4.5 12.2761 4.72386 12.5 5 12.5H13C13.2761 12.5 13.5 12.2761 13.5 12C13.5 11.7239 13.2761 11.5 13 11.5H5ZM5 15C4.72386 15 4.5 15.2239 4.5 15.5C4.5 15.7761 4.72386 16 5 16H10C10.2761 16 10.5 15.7761 10.5 15.5C10.5 15.2239 10.2761 15 10 15H5Z"/>
+                      </svg>
+                    </button>
+                    <button id="align-right" type="button" class="align-button" data-align="right">
+                      <svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M5 4.5C4.72386 4.5 4.5 4.72386 4.5 5C4.5 5.27614 4.72386 5.5 5 5.5H15C15.2761 5.5 15.5 5.27614 15.5 5C15.5 4.72386 15.2761 4.5 15 4.5H5ZM9 8C8.72386 8 8.5 8.22386 8.5 8.5C8.5 8.77614 8.72386 9 9 9H15C15.2761 9 15.5 8.77614 15.5 8.5C15.5 8.22386 15.2761 8 15 8H9ZM7 11.5C6.72386 11.5 6.5 11.7239 6.5 12C6.5 12.2761 6.72386 12.5 7 12.5H15C15.2761 12.5 15.5 12.2761 15.5 12C15.5 11.7239 15.2761 11.5 15 11.5H7ZM10 15C9.72386 15 9.5 15.2239 9.5 15.5C9.5 15.7761 9.72386 16 10 16H15C15.2761 16 15.5 15.7761 15.5 15.5C15.5 15.2239 15.2761 15 15 15H10Z"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="section" id="text-display-mode-section">
+              <div class="section-title">文本显示</div>
+              <div class="row">
+                <div class="col">
+                  <select id="text-display-mode-select">
+                    <option value="ellipsis">单行省略</option>
+                    <option value="lineBreak">支持换行</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="section">
+              <div class="section-title">列宽</div>
+              <div class="row">
+                <div class="col">
+                  <div class="segment-group">
+                    <button id="col-width-fixed" type="button" class="segment-button active" data-col-width="FIXED">
+                      固定
+                    </button>
+                    <button
+                      id="col-width-fill"
+                      type="button"
+                      class="segment-button"
+                      data-col-width="FILL"
+                      style="margin-left: 4px;"
+                    >
+                      充满
+                    </button>
+                  </div>
+                  <select id="column-width-select" style="display: none;">
+                    <option value="FIXED" selected>固定</option>
+                    <option value="FILL">充满</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="section" id="cell-actions-section">
+              <div class="row" style="gap: 8px; width: 100%; margin-bottom: 0;">
+                <button id="apply-to-column" class="secondary" style="flex: 1; height: 36px;">应用样式到整列</button>
+                <button id="apply-row-height" class="primary-button" style="flex: 1; height: 36px;">应用所有到整列</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="output" class="status-text"></div>
+      <div id="tab-debug" class="tab-panel">
+        <div
+          id="debug-section"
+          class="section"
+          style="background: #f9fafb; padding: 8px; border-radius: 6px; border: 1px solid #e5e7eb;"
+        >
+          <div class="row" style="display: none;">
+            <div class="col">
+              <span class="label">网关地址</span>
+              <input type="text" id="gateway-url" value="http://localhost:8787" />
+            </div>
+          </div>
+          <div class="row" style="display: none;">
+            <div class="col">
+              <span class="label">鉴权 Token</span>
+              <input type="text" id="gateway-token" placeholder="Bearer Token" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="col">
+              <span class="label">Component Key</span>
+              <input type="text" id="component-key" placeholder="输入 Key (默认内置)" />
+            </div>
+          </div>
+          <div class="row">
+            <button id="get-props" class="secondary" style="width: 100%;">读取选中组件属性</button>
+          </div>
+          <div class="row">
+            <button id="btn-one-click-create" class="primary-button" style="width: 100%; height: 32px;">一键生成订阅表格</button>
+          </div>
+          <div
+            id="props-output"
+            style="
+              font-family: SFMono-Regular, ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+                monospace;
+              font-size: 10px;
+              color: #4b5563;
+              margin-top: 4px;
+              display: none;
+            "
+          ></div>
+          <div class="row" style="margin-top: 12px;">
+            <span class="label">Plugin Data</span>
+            <div
+              id="plugin-data-output"
+              style="
+                font-family: SFMono-Regular, ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+                  monospace;
+                font-size: 10px;
+                color: #059669;
+                background: #f0fdf4;
+                padding: 6px;
+                border-radius: 4px;
+                border: 1px solid #dcfce7;
+                white-space: pre-wrap;
+                word-break: break-all;
+                min-height: 20px;
+                margin-top: 4px;
+              "
+            >无数据</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-card">
+          <div class="loading-spinner">
+            <div class="loading-ring"></div>
+            <div class="loading-icon">
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M17.8334 9.5L16.7917 7.20834L14.5 6.16667L16.7917 5.125L17.8334 2.83334L18.875 5.125L21.1667 6.16667L18.875 7.20834L17.8334 9.5ZM17.8334 21.1667L16.7917 18.875L14.5 17.8333L16.7917 16.7917L17.8334 14.5L18.875 16.7917L21.1667 17.8333L18.875 18.875L17.8334 21.1667ZM9.50004 18.6667L7.41671 14.0833L2.83337 12L7.41671 9.91667L9.50004 5.33334L11.5834 9.91667L16.1667 12L11.5834 14.0833L9.50004 18.6667ZM9.50004 14.625L10.3334 12.8333L12.125 12L10.3334 11.1667L9.50004 9.375L8.66671 11.1667L6.87504 12L8.66671 12.8333L9.50004 14.625Z"
+                  fill="var(--color-link-6)"
+                />
+              </svg>
+            </div>
+          </div>
+          <div class="loading-title">正在生成表格…</div>
+          <div class="loading-desc">AI 正在分析需求并构建结构</div>
+        </div>
+      </div>
+
+    </div>
+
+    <script>
+      window.onerror = function(message, source, lineno, colno, error) {
+        var el = document.getElementById("alert");
+        var textEl = document.getElementById("alert-text");
+        if (el && textEl) {
+          el.style.display = "flex";
+          el.style.opacity = "1";
+          el.classList.add("alert-error");
+          textEl.textContent = "Global Error: " + message;
+        }
+        console.error("Global Error:", message, error);
+      };
+    </script>
+    <script src="./ui.js"></script>
+  </body>
+</html>

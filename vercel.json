@@ -1,0 +1,21 @@
+{
+  "buildCommand": "bash scripts/vercel-build.sh",
+  "outputDirectory": "public",
+  "functions": {
+    "api/gateway.ts": {
+      "includeFiles": "packages/mcp-server/dist/**,packages/mcp-gateway/dist/**,packages/mcp-gateway/package.json",
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
+  "routes": [
+    { "src": "/admin", "dest": "/api/gateway" },
+    { "src": "/admin/components", "dest": "/api/gateway" },
+    { "src": "/components", "dest": "/api/gateway" },
+    { "src": "/components/.*", "dest": "/api/gateway" },
+    { "src": "/files/upload", "dest": "/api/gateway" },
+    { "src": "/tools", "dest": "/api/gateway" },
+    { "src": "/tools/.*", "dest": "/api/gateway" },
+    { "src": "/health", "dest": "/api/gateway" }
+  ]
+}

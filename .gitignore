@@ -1,0 +1,9 @@
+node_modules
+dist
+!packages/mcp-server/dist
+!packages/mcp-gateway/dist
+build
+.DS_Store
+.env
+.env.local
+.vercel

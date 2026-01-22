@@ -1,0 +1,13 @@
+{
+  "name": "@mcp/figma-plugin",
+  "private": true,
+  "scripts": {
+    "build": "NODE_ENV=production node scripts/build.mjs",
+    "dev": "NODE_ENV=development node scripts/build.mjs --watch",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  }
+}

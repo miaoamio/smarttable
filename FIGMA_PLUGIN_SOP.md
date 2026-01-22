@@ -1,0 +1,143 @@
+# Figma AI 插件开发 SOP
+
+## 1) 项目启动总览
+
+- 根目录：`/Users/bytedance/Desktop/table`
+- Node 版本：建议使用当前 LTS（如 18+）
+- 启动顺序（本地开发）：
+  1. 安装依赖：`npm install`
+  2. 启动后端网关：`npm run dev:gateway`
+  3. 启动 Figma 插件构建：`npm run dev:plugin` 只需运行重新构建开发版，开发模式 Tab 就会重新出现。
+
+  4. 在 Figma Desktop 中导入并运行插件
+
+## 2) 一次性准备
+
+在项目根目录安装依赖：
+
+```bash
+cd /Users/bytedance/Desktop/table
+npm install
+```
+
+在项目根目录配置 `.env.local`（只放本机，不要提交）：
+
+```env
+LLM_BASE_URL=https://api.coze.cn
+LLM_MODEL=你的_COZE_BOT_ID
+LLM_API_KEY=pat_你的访问令牌
+COZE_USER_ID=123456789
+COZE_WORKFLOW_ID=你的_WORKFLOW_ID
+```
+
+要点：
+- `LLM_MODEL` 填 Coze 的 `bot_id`（智能体开发页 URL 里 `bot/` 后面的数字）。
+- `COZE_WORKFLOW_ID` 填 Coze 的工作流 ID，用于处理包含复杂工具调用（如 OCR）的任务。
+- `LLM_API_KEY` 只填 `pat_...`，不要加 `Bearer`，不要加引号/反引号/空格。
+
+## 3) 启动后端网关（本地）
+
+在项目根目录执行：
+
+```bash
+npm run dev:gateway
+```
+
+确认启动成功：
+- 看到 `{"service":"mcp-gateway","port":8787,...,"llm":{"apiKeyLen":...}}`
+- `apiKeyLen` > 0
+
+## 4) 用 curl 验证链路（必须通过）
+
+健康检查：
+
+```bash
+curl -s http://localhost:8787/health
+```
+
+预期输出：
+
+```json
+{"ok":true}
+```
+
+验证 LLM：
+
+```bash
+curl -s -X POST http://localhost:8787/tools/llm_chat \
+  -H 'content-type: application/json' \
+  -d '{"args":{"prompt":"回复我一句：连接成功","temperature":0.1}}'
+```
+
+预期输出（示例）：
+- 返回 JSON 且包含 `text`
+- `text` 里能看到“连接成功”
+
+## 5) 启动插件并在 Figma 导入
+
+启动插件开发：
+
+```bash
+npm run dev:plugin
+```
+
+Figma Desktop 导入插件：
+- Plugins → Development → Import plugin from manifest…
+- 选择：`/Users/bytedance/Desktop/table/packages/figma-plugin/manifest.json`
+
+运行插件：
+- Plugins → Development → 选择插件
+- 执行一次“生成/运行”等动作，确认 UI 有返回、文档有变化
+
+## 6) 最小排障
+
+- `缺少大模型 API Key`
+  - `.env.local` 是否在项目根目录
+  - 是否重启过 `npm run dev:gateway`
+  - `LLM_API_KEY` 是否非空且没有引号/反引号/空格
+
+- `大模型请求失败(4100): authentication is invalid` 或 `4101 token 不合法`
+  - token 是否来自 `coze.cn` 对应环境（不要把 coze.com 的 token 用在 `api.coze.cn`）
+  - `.env.local` 里只填 `pat_...`，不要带 `Bearer`
+
+- `EADDRINUSE`（端口占用）
+  - 结束旧的 gateway 进程后再重新启动
+
+- **Coze 插件/工具执行中断**
+  - **现象**：API 调用只返回 `FunctionCallPlugin` 或工具调用指令，不执行后续逻辑。
+  - **原因**：Coze Chat API (`/v3/chat`) 默认需要客户端处理工具调用闭环。
+  - **解决**：改用 Workflow API (`/v1/workflows/chat`)，由服务端托管工具执行流程，直接返回最终结果。本项目已在 MCP Server 层封装此逻辑。
+
+## 7) 架构设计思路（简版）
+
+- 分层与职责
+  - Figma 插件（packages/figma-plugin）：最小化，负责 UI 与主线程交互，不直接持有任何后端密钥
+  - 网关（packages/mcp-gateway）：HTTP 服务入口，鉴权、CORS、限流、请求体校验；通过 MCP 客户端与后端工具对接
+  - MCP 服务（packages/mcp-server）：实现工具集（如 `llm_chat`），统一封装 LLM 调用、错误处理与返回格式
+
+- 进程与通信
+  - 网关为独立 Node 进程（HTTP），启动时以子进程方式拉起 MCP 服务，双方使用 stdio 作为传输层
+  - 插件只调用网关的 HTTP 接口（如 `/tools/llm_chat`），避免在插件侧暴露任何后端配置与 Token
+
+- 数据流（一次 llm_chat 调用）
+  - 插件 → 网关：POST `/tools/llm_chat`，携带最小参数（prompt 等）
+  - 网关 → MCP：转发为 `tools/call` 请求，返回标准内容片段
+  - MCP → LLM：优先尝试 OpenAI 兼容接口；若检测为 Coze 且 404，自动切换 Coze v3 流程并返回最终回答
+
+- LLM 适配策略
+  - OpenAI 兼容实现：见 [index.ts](file:///Users/bytedance/Desktop/table/packages/mcp-server/src/index.ts#L44-L100)
+  - Coze Workflow 实现（支持工具闭环）：见 [index.ts](file:///Users/bytedance/Desktop/table/packages/mcp-server/src/index.ts#L114-L296)
+  - 自动切换判断：见 [index.ts](file:///Users/bytedance/Desktop/table/packages/mcp-server/src/index.ts#L398-L408)
+
+- 配置与安全
+  - 环境变量加载：网关与 MCP 在启动时读取项目根目录 `.env.local`，不要求 shell export
+  - Token 仅放在后端 `.env.local`，插件 UI 不显示、不透传
+  - 网关提供基础 CORS、限流、最大请求体约束；见 [mcp-gateway/index.ts](file:///Users/bytedance/Desktop/table/packages/mcp-gateway/src/index.ts#L40-L66)
+
+- 错误处理
+  - 统一包裹并返回简明错误（含 HTTP 状态与短消息）
+  - Coze 失败码直通，便于定位是鉴权/权限/发布配置问题
+
+- 部署演进（面向最终用户隐藏后端）
+  - 将网关部署到你的服务端，只保留域名给插件，所有密钥与配置继续在服务端 `.env.local`
+  - 插件侧不变，仍调用 `/tools/*`；需要时在 manifest 里添加允许域名
