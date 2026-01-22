@@ -425,7 +425,7 @@ export async function handle(req, res) {
                 const upstream = await fetch(uploadUrl.toString(), {
                     method: "POST",
                     headers: {
-                        authorization: /^Bearer /i.test(apiKey) ? apiKey : `Bearer ${apiKey}`
+                        "Authorization": /^Bearer /i.test(apiKey) ? apiKey : `Bearer ${apiKey}`
                     },
                     body: form
                 });

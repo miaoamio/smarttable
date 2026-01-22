@@ -25,9 +25,9 @@ function getEnv(name) {
     return s || undefined;
 }
 function resolveLlmConfig(overrides) {
-    const baseUrl = overrides?.baseUrl ?? getEnv("LLM_BASE_URL") ?? "https://api.openai.com/v1";
-    const apiKey = overrides?.apiKey ?? getEnv("LLM_API_KEY") ?? getEnv("OPENAI_API_KEY") ?? getEnv("OPENAI_API_TOKEN");
-    const model = overrides?.model ?? getEnv("LLM_MODEL") ?? "gpt-4o-mini";
+    const baseUrl = (overrides?.baseUrl?.trim()) || getEnv("LLM_BASE_URL") || "https://api.coze.cn/v1";
+    const apiKey = (overrides?.apiKey?.trim()) || getEnv("LLM_API_KEY") || getEnv("OPENAI_API_KEY") || getEnv("OPENAI_API_TOKEN");
+    const model = (overrides?.model?.trim()) || getEnv("LLM_MODEL") || "gpt-4o-mini";
     if (!apiKey) {
         throw new Error("缺少大模型 API Key：请设置环境变量 LLM_API_KEY（或 OPENAI_API_KEY）。");
     }
@@ -37,12 +37,11 @@ async function openAiCompatibleChat(input) {
     if (typeof fetch !== "function") {
         throw new Error("当前 Node 环境不支持 fetch，请使用 Node 18+。");
     }
-    const { baseUrl, apiKey: rawKey, model } = resolveLlmConfig({
+    const { baseUrl, apiKey, model } = resolveLlmConfig({
         baseUrl: input.baseUrl,
         apiKey: input.apiKey,
         model: input.model
     });
-    const apiKey = rawKey.trim();
     const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
     const url = new URL("chat/completions", normalizedBaseUrl);
     const messages = [];
@@ -52,8 +51,8 @@ async function openAiCompatibleChat(input) {
     const res = await fetch(url.toString(), {
         method: "POST",
         headers: {
-            "content-type": "application/json",
-            authorization: /^Bearer /i.test(apiKey) ? apiKey : `Bearer ${apiKey}`
+            "Content-Type": "application/json",
+            "Authorization": /^Bearer /i.test(apiKey) ? apiKey : `Bearer ${apiKey}`
         },
         body: JSON.stringify({
             model,
@@ -158,8 +157,8 @@ async function cozeWorkflowChat(input) {
     const response = await fetch(workflowUrl.toString(), {
         method: "POST",
         headers: {
-            "content-type": "application/json",
-            authorization: /^Bearer /i.test(apiKey) ? apiKey : `Bearer ${apiKey}`
+            "Content-Type": "application/json",
+            "Authorization": /^Bearer /i.test(apiKey) ? apiKey : `Bearer ${apiKey}`
         },
         body: JSON.stringify({
             workflow_id: workflowId,
