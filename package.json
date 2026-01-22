@@ -6,7 +6,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present && node scripts/bundle-gateway.mjs",
     "build:vercel": "cd packages/mcp-server && ../../node_modules/.bin/tsc",
     "dev:plugin": "npm run dev -w @mcp/figma-plugin",
     "dev:gateway": "npm run build -w @mcp/mcp-server && npm run build -w @mcp/mcp-gateway && npm run dev -w @mcp/mcp-gateway",

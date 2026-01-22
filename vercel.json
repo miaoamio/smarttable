@@ -1,8 +1,8 @@
 {
-  "buildCommand": "npm run build -w @mcp/mcp-server && npm run build -w @mcp/mcp-gateway",
+  "buildCommand": "npm run build",
   "outputDirectory": "public",
   "functions": {
-    "api/gateway.ts": {
+    "api/gateway.js": {
       "includeFiles": "packages/mcp-server/dist/**",
       "memory": 1024,
       "maxDuration": 30
