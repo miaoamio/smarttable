@@ -87,3 +87,30 @@
 
 *   **更新依赖**：在根目录运行 `npm install` 后，务必检查 `package-lock.json` 是否已同步。
 *   **测试构建**：在推送代码前，本地运行 `npm run build`，检查 `api/gateway.js` 是否成功生成。
+
+## 6. 附录：API 调用参考 (Coze Workflow)
+
+如果你需要手动验证 API Key 或工作流是否有效，可以使用以下 `curl` 命令：
+
+```bash
+curl -X POST 'https://api.coze.cn/v1/workflows/chat' \
+ -H "Authorization: Bearer <你的_PAT_TOKEN>" \
+ -H "Content-Type: application/json" \
+ -d '{
+   "workflow_id": "7595980726576152630",
+   "parameters": {
+     "CONVERSATION_NAME": "Default",
+     "USER_INPUT": "测试输入内容"
+   },
+   "additional_messages": [
+     {
+       "content": "测试输入内容",
+       "content_type": "text",
+       "role": "user",
+       "type": "question"
+     }
+   ]
+ }'
+```
+
+> **注意**：`Authorization` 必须包含 `Bearer ` 前缀。代码中已实现自动补全，但手动测试时需手动添加。
