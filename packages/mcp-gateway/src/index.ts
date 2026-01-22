@@ -405,12 +405,13 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
       return;
     }
 
-    const apiKey =
+    const rawKey =
       getEnv("LLM_API_KEY") ?? getEnv("OPENAI_API_KEY") ?? getEnv("OPENAI_API_TOKEN");
-    if (!apiKey) {
+    if (!rawKey) {
       sendJson(req, res, 500, { error: "missing_llm_api_key" });
       return;
     }
+    const apiKey = rawKey.trim();
 
     const base = getEnv("LLM_BASE_URL");
     let apiBase = "https://api.coze.cn";
@@ -432,7 +433,7 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
       const upstream = await fetch(uploadUrl.toString(), {
         method: "POST",
         headers: {
-          authorization: apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`
+          authorization: /^Bearer /i.test(apiKey) ? apiKey : `Bearer ${apiKey}`
         },
         body: form
       });

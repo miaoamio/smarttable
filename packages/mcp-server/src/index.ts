@@ -54,11 +54,12 @@ async function openAiCompatibleChat(input: {
     throw new Error("当前 Node 环境不支持 fetch，请使用 Node 18+。");
   }
 
-  const { baseUrl, apiKey, model } = resolveLlmConfig({
+  const { baseUrl, apiKey: rawKey, model } = resolveLlmConfig({
     baseUrl: input.baseUrl,
     apiKey: input.apiKey,
     model: input.model
   });
+  const apiKey = rawKey.trim();
 
   const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const url = new URL("chat/completions", normalizedBaseUrl);
@@ -70,7 +71,7 @@ async function openAiCompatibleChat(input: {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`
+      authorization: /^Bearer /i.test(apiKey) ? apiKey : `Bearer ${apiKey}`
     },
     body: JSON.stringify({
       model,
@@ -126,10 +127,11 @@ async function cozeWorkflowChat(input: {
     throw new Error("当前 Node 环境不支持 fetch，请使用 Node 18+。");
   }
 
-  const apiKey = input.apiKey ?? getEnv("LLM_API_KEY") ?? getEnv("OPENAI_API_KEY") ?? getEnv("OPENAI_API_TOKEN");
-  if (!apiKey) {
+  const rawKey = input.apiKey ?? getEnv("LLM_API_KEY") ?? getEnv("OPENAI_API_KEY") ?? getEnv("OPENAI_API_TOKEN");
+  if (!rawKey) {
     throw new Error("缺少大模型 API Key：请设置环境变量 LLM_API_KEY（或 OPENAI_API_KEY）。");
   }
+  const apiKey = rawKey.trim();
 
   const workflowId = input.workflowId ?? getEnv("COZE_WORKFLOW_ID") ?? "7595980726576152630"; // Default to the workflow ID provided by user
   if (!workflowId) {
@@ -147,29 +149,21 @@ async function cozeWorkflowChat(input: {
     const hasUrl = input.images.some((img) => img && typeof img.url === "string" && img.url.trim());
 
     if (hasUrl) {
-      // Use object_string content_type for mixed text and image URLs
-      // We will combine text and image URLs into a single text message for the Workflow API
-      // This simplifies the workflow orchestration (Start Node input handling)
-      
-      const parts: string[] = [];
-      if (input.prompt) {
-        parts.push(input.prompt);
-      }
-      
+      // New URL-based logic for Coze
+      const contentList: any[] = [{ type: "text", text: input.prompt }];
       for (const img of input.images) {
-        if (img && typeof img.url === "string" && img.url.trim()) {
-           parts.push(img.url);
-        }
+        if (!img || typeof img.url !== "string" || !img.url.trim()) continue;
+        contentList.push({
+          type: "image",
+          image_url: { url: img.url }
+        });
       }
-      
-      if (parts.length > 0) {
-         additional_messages.push({
-            role: "user",
-            content: parts.join("\n"), // Combine with newline
-            content_type: "text",
-            type: "question"
-         });
-      }
+      additional_messages.push({
+        role: "user",
+        content_type: "object_string",
+        content: JSON.stringify(contentList),
+        type: "question"
+      });
 
     } else {
       // Fallback to file_id logic if no URLs (though user seems to use URLs now)
@@ -197,7 +191,7 @@ async function cozeWorkflowChat(input: {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`
+      authorization: /^Bearer /i.test(apiKey) ? apiKey : `Bearer ${apiKey}`
     },
     body: JSON.stringify({
       workflow_id: workflowId,

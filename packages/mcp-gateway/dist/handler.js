@@ -400,11 +400,12 @@ export async function handle(req, res) {
                 sendJson(req, res, 400, { error: "invalid_base64", message: msg });
                 return;
             }
-            const apiKey = getEnv("LLM_API_KEY") ?? getEnv("OPENAI_API_KEY") ?? getEnv("OPENAI_API_TOKEN");
-            if (!apiKey) {
+            const rawKey = getEnv("LLM_API_KEY") ?? getEnv("OPENAI_API_KEY") ?? getEnv("OPENAI_API_TOKEN");
+            if (!rawKey) {
                 sendJson(req, res, 500, { error: "missing_llm_api_key" });
                 return;
             }
+            const apiKey = rawKey.trim();
             const base = getEnv("LLM_BASE_URL");
             let apiBase = "https://api.coze.cn";
             if (base) {
@@ -424,7 +425,7 @@ export async function handle(req, res) {
                 const upstream = await fetch(uploadUrl.toString(), {
                     method: "POST",
                     headers: {
-                        authorization: apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`
+                        authorization: /^Bearer /i.test(apiKey) ? apiKey : `Bearer ${apiKey}`
                     },
                     body: form
                 });
