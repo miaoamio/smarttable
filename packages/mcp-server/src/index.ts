@@ -31,17 +31,17 @@ function getEnv(name: string) {
 function resolveLlmConfig(overrides?: { baseUrl?: string; apiKey?: string; model?: string }) {
   const baseUrl = (overrides?.baseUrl?.trim()) || getEnv("LLM_BASE_URL") || "https://api.coze.cn/v1";
   const apiKey =
-    (overrides?.apiKey?.trim()) || getEnv("LLM_API_KEY") || getEnv("OPENAI_API_KEY") || getEnv("OPENAI_API_TOKEN");
-  const model = (overrides?.model?.trim()) || getEnv("LLM_MODEL") || "gpt-4o-mini";
+    (overrides?.apiKey?.trim()) || getEnv("LLM_API_KEY");
+  const model = (overrides?.model?.trim()) || getEnv("LLM_MODEL") || "";
 
   if (!apiKey) {
-    throw new Error("缺少大模型 API Key：请设置环境变量 LLM_API_KEY（或 OPENAI_API_KEY）。");
+    throw new Error("缺少大模型 API Key：请设置环境变量 LLM_API_KEY。");
   }
 
   return { baseUrl, apiKey, model };
 }
 
-async function openAiCompatibleChat(input: {
+async function llmChat(input: {
   baseUrl?: string;
   apiKey?: string;
   model?: string;
@@ -126,9 +126,9 @@ async function cozeWorkflowChat(input: {
     throw new Error("当前 Node 环境不支持 fetch，请使用 Node 18+。");
   }
 
-  const rawKey = input.apiKey ?? getEnv("LLM_API_KEY") ?? getEnv("OPENAI_API_KEY") ?? getEnv("OPENAI_API_TOKEN");
+  const rawKey = input.apiKey ?? getEnv("LLM_API_KEY");
   if (!rawKey) {
-    throw new Error("缺少大模型 API Key：请设置环境变量 LLM_API_KEY（或 OPENAI_API_KEY）。");
+    throw new Error("缺少大模型 API Key：请设置环境变量 LLM_API_KEY。");
   }
   const apiKey = rawKey.trim();
 
@@ -395,12 +395,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
 
     let text: string;
     try {
-      text = await openAiCompatibleChat({
+      text = await llmChat({
+        baseUrl: parsed.baseUrl,
+        apiKey: parsed.apiKey ?? getEnv("LLM_API_KEY"),
+        model: parsed.model,
         prompt: parsed.prompt,
         system: parsed.system,
-        model: parsed.model,
-        baseUrl: parsed.baseUrl,
-        apiKey: parsed.apiKey,
         temperature: parsed.temperature,
         maxTokens: parsed.maxTokens
       });
@@ -412,7 +412,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         system: parsed.system,
         botId: parsed.model ?? getEnv("LLM_MODEL"),
         baseUrl,
-        apiKey: parsed.apiKey ?? getEnv("LLM_API_KEY") ?? getEnv("OPENAI_API_KEY") ?? getEnv("OPENAI_API_TOKEN"),
+        apiKey: parsed.apiKey ?? getEnv("LLM_API_KEY"),
         images
       });
     }

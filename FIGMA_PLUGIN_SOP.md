@@ -122,10 +122,8 @@ Figma Desktop 导入插件：
 - 数据流（一次 llm_chat 调用）
   - 插件 → 网关：POST `/tools/llm_chat`，携带最小参数（prompt 等）
   - 网关 → MCP：转发为 `tools/call` 请求，返回标准内容片段
-  - MCP → LLM：优先尝试 OpenAI 兼容接口；若检测为 Coze 且 404，自动切换 Coze v3 流程并返回最终回答
-
-- LLM 适配策略
-  - OpenAI 兼容实现：见 [index.ts](file:///Users/bytedance/Desktop/table/packages/mcp-server/src/index.ts#L44-L100)
+  - MCP → LLM：默认尝试 Coze 接口；若检测为 Coze 且 404，自动切换 Coze v3 流程并返回最终回答
+  - LLM 实现：见 [index.ts](file:///Users/bytedance/Desktop/table/packages/mcp-server/src/index.ts#L42-L100)
   - Coze Workflow 实现（支持工具闭环）：见 [index.ts](file:///Users/bytedance/Desktop/table/packages/mcp-server/src/index.ts#L114-L296)
   - 自动切换判断：见 [index.ts](file:///Users/bytedance/Desktop/table/packages/mcp-server/src/index.ts#L398-L408)
 

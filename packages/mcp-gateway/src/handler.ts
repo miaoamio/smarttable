@@ -86,8 +86,6 @@ export const port = Number(process.env.PORT ?? 8787);
 
 const llmKeyLen = (
   getEnv("LLM_API_KEY") ??
-  getEnv("OPENAI_API_KEY") ??
-  getEnv("OPENAI_API_TOKEN") ??
   ""
 ).length;
 const authMode = authToken ? "token" : jwtSecret ? "jwt" : "none";
@@ -442,7 +440,7 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
-    const rawKey = getEnv("LLM_API_KEY") ?? getEnv("OPENAI_API_KEY") ?? getEnv("OPENAI_API_TOKEN");
+    const rawKey = getEnv("LLM_API_KEY");
     if (!rawKey) {
       sendJson(req, res, 500, { error: "missing_llm_api_key" });
       return;

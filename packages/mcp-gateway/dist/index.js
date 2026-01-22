@@ -44,8 +44,6 @@ const maxBodyBytes = Number(getEnv("MAX_BODY_BYTES") ?? "1048576");
 const rateLimitPerMinute = Number(getEnv("RATE_LIMIT_PER_MIN") ?? "120");
 const port = Number(process.env.PORT ?? 8787);
 const llmKeyLen = (getEnv("LLM_API_KEY") ??
-    getEnv("OPENAI_API_KEY") ??
-    getEnv("OPENAI_API_TOKEN") ??
     "").length;
 const authMode = authToken ? "token" : jwtSecret ? "jwt" : "none";
 console.log(JSON.stringify({
@@ -372,7 +370,7 @@ const server = http.createServer(async (req, res) => {
             sendJson(req, res, 400, { error: "invalid_base64", message: msg });
             return;
         }
-        const rawKey = getEnv("LLM_API_KEY") ?? getEnv("OPENAI_API_KEY") ?? getEnv("OPENAI_API_TOKEN");
+        const rawKey = getEnv("LLM_API_KEY");
         if (!rawKey) {
             sendJson(req, res, 500, { error: "missing_llm_api_key" });
             return;
