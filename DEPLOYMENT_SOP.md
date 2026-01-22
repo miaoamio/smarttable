@@ -79,6 +79,7 @@
 | :--- | :--- | :--- |
 | `tsc: command not found` | Vercel 环境变量未同步 | 在 `package.json` 中改用 `../../node_modules/.bin/tsc` |
 | `Module not found: @modelcontextprotocol/sdk` | 依赖未打包 | 检查 `scripts/bundle-gateway.mjs` 是否正常生成了 `api/gateway.js` |
+| `401: access_token require prefix Bearer` | API Key 缺少 Bearer 前缀 | 检查代码是否使用了 `apiKey.startsWith("Bearer ") ? apiKey : \`Bearer ${apiKey}\`` 动态处理逻辑 |
 | `npm error Exit handler never called!` | Node 20 版本的 npm Bug | 在 Vercel 设置中将 Node.js 版本切换到 22.x |
 | 访问接口返回 404 | 路由配置错误 | 检查 `vercel.json` 中的 `dest` 是否指向了实际生成的 `.js` 文件路径 |
 
