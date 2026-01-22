@@ -3,7 +3,7 @@
   "outputDirectory": "public",
   "functions": {
     "api/gateway.ts": {
-      "includeFiles": "packages/mcp-server/dist/**,packages/mcp-gateway/dist/**,packages/mcp-gateway/package.json",
+      "includeFiles": "packages/mcp-server/dist/**",
       "memory": 1024,
       "maxDuration": 30
     }

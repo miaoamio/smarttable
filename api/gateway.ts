@@ -1,4 +1,4 @@
-import { handle } from "../packages/mcp-gateway/dist/handler.js";
+import { handle } from "../packages/mcp-gateway/src/handler.js";
 // Force bundling of SDK
 import "@modelcontextprotocol/sdk";
 
