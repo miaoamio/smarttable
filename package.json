@@ -14,7 +14,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "engines": {
-    "node": "20.x"
+    "node": "22.x"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
