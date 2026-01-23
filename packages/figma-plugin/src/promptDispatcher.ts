@@ -33,15 +33,19 @@ export function distributePrompt(
     taskInstruction = `# Task: Create a New Table
 你是一个 Figma 表格设计专家。请根据用户需求和提供的参考资料，从零开始设计一个表格。
 必须确保生成的 JSON 符合 "intent": "create" 协议。
-**重要：请只输出 JSON 对象本身，不要包含任何前导或后继文字，不要使用 Markdown 代码块包裹。**
-**表格行数限制：请务必生成正好 ${rowCount} 行数据内容。**
-**功能组件配置：请务必在 JSON 的 "config" 字段中配置 "filters"（筛选器）和 "buttons"（按钮组），除非用户明确要求不需要。**`;
+**重要格式约束：**
+1. **只输出 JSON 对象本身**：不要包含任何前导或后继文字，不要使用 Markdown 代码块包裹。
+2. **禁止嵌套**：确保 "data" 字段只包含字符串数组，严禁将整个 JSON 结构重复嵌套在 "data" 数组中。
+3. **行数限制**：请务必生成正好 ${rowCount} 行数据内容。
+4. **功能配置**：请务必在 JSON 的 "config" 字段中配置 "filters"（筛选器）和 "buttons"（按钮组），除非用户明确要求不需要。`;
   } else {
     taskInstruction = `# Task: Edit Existing Table
 你是一个 Figma 表格编辑专家。用户当前正在对一个已有的 Figma 表格进行增量修改。
 你必须基于提供的 [Current Table Context] 进行修改，并返回 "intent": "edit" 协议。
-**重要：请只输出 JSON 对象本身，不要包含任何前导或后继文字，不要使用 Markdown 代码块包裹。**
-**表格行数限制：如果涉及新增行或重新生成内容，请确保最终结果中包含正好 ${rowCount} 行数据内容。**`;
+**重要格式约束：**
+1. **只输出 JSON 对象本身**：不要包含任何前导或后继文字，不要使用 Markdown 代码块包裹。
+2. **禁止重复输出**：严格按照 "patch" 协议返回修改操作，严禁在返回结果中包含多余的结构或嵌套。
+3. **行数限制**：如果涉及新增行或重新生成内容，请确保最终结果中包含正好 ${rowCount} 行数据内容。`;
   }
 
   // 1.5 组件样式指南 (Component Style Guide)
@@ -153,7 +157,7 @@ ${prompt || "请根据以上参考资料生成/优化表格"}
 
 ---
 请严格遵守 SYSTEM_PROMPT 中定义的协议规范。
-只能输出 JSON 结果，禁止任何解释性文字。
+只能输出一个有效的 JSON 对象，严禁任何解释性文字、Markdown 标记或重复嵌套结构。
 `.trim();
 
   return finalPrompt;

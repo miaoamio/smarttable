@@ -101,6 +101,7 @@ const TOKENS = {
     "text-1": "0C0D0E",
     "link-6": "1664FF",
     "danger-6": "D7312A",
+    "color-fill-2": "737A87",
   },
   sizes: {
     base: 4,
@@ -140,7 +141,7 @@ const ACTION_CHECKBOX_KEY = "aa349dbe87d0e3691206728b8aaea198db839ead";
 const ACTION_RADIO_KEY = "527424ae4a193ab57ae943d377b9bc7f23891824";
 const ACTION_DRAG_KEY = "75003cfee167850ea18191b92cb73918245ac38e";
 const ACTION_EXPAND_KEY = "5205f643a92b766838e43cdb9fc98f596053c9f5";
-const ACTION_SWITCH_KEY = "a602f4442cde561e154b71baa51dab5fe7420346";
+const ACTION_SWITCH_KEY = "8632dbefd9f75a954a6e4f7584ad9f0d43a644a4";
 const ACTION_HEADER_KEY = "dcbc04f8242aaf11879a08cc6f8b9bffa5662614";
 
 const TAG_COMPONENT_KEY = "63afa78c2d544c859634166c877d00da5346ed18";
@@ -291,6 +292,12 @@ function isSmartTableFrame(table: FrameNode): boolean {
   try {
     const mark = table.getPluginData("smart_table");
     if (mark && mark.toLowerCase() === "true") return true;
+    
+    // Check children structure: all children should be vertical frames
+    if (table.layoutMode === "HORIZONTAL" && table.children.length > 0) {
+      const allVertical = table.children.every(c => c.type === "FRAME" && c.layoutMode === "VERTICAL");
+      if (allVertical) return true;
+    }
   } catch {}
   return table.name.startsWith("Smart Table ") || table.name.startsWith("Table ");
 }
@@ -346,10 +353,11 @@ async function getFirstTextValue(node: SceneNode): Promise<string | null> {
 async function isHeaderInstance(instance: InstanceNode): Promise<boolean> {
   const main = await instance.getMainComponentAsync();
   if (!main) return false;
-  if (main.key === HEADER_COMPONENT_KEY) return true;
+  if (main.key === HEADER_COMPONENT_KEY || main.key === ACTION_HEADER_KEY) return true;
   if (main.parent && main.parent.type === "COMPONENT_SET") {
-    if ((main.parent as ComponentSetNode).key === HEADER_COMPONENT_KEY) return true;
-    if ((main.parent as ComponentSetNode).children.some((child) => (child.type === "COMPONENT" || child.type === "COMPONENT_SET") && child.key === HEADER_COMPONENT_KEY)) {
+    const parentKey = (main.parent as ComponentSetNode).key;
+    if (parentKey === HEADER_COMPONENT_KEY || parentKey === ACTION_HEADER_KEY) return true;
+    if ((main.parent as ComponentSetNode).children.some((child) => (child.type === "COMPONENT" || child.type === "COMPONENT_SET") && (child.key === HEADER_COMPONENT_KEY || child.key === ACTION_HEADER_KEY))) {
       return true;
     }
   }
@@ -483,6 +491,14 @@ async function getTableSize(table: FrameNode): Promise<"mini" | "default" | "med
 }
 
 async function getRowAction(table: FrameNode): Promise<"none" | "multiple" | "single" | "drag" | "expand" | "switch"> {
+  // 优先从 Plugin Data 读取
+  try {
+    const savedAction = table.getPluginData("rowActionType");
+    if (savedAction && savedAction !== "none") {
+      return savedAction as any;
+    }
+  } catch {}
+
   const cols = getColumnFrames(table);
   if (cols.length === 0) return "none";
   const col = cols[0];
@@ -496,10 +512,13 @@ async function getRowAction(table: FrameNode): Promise<"none" | "multiple" | "si
     const props = getVariantProps(cell as InstanceNode);
     if (props) {
        // 检查 Checkbox
-       if (props["Checkbox"] === "True" || props["checked"] !== undefined) return "multiple";
-       // 检查 Radio
+       if (props["Checkbox"] === "True" || props["checked"] !== undefined || cell.getPluginData("isRowActionColumn") === "true") {
+           // 如果有 Plugin Data 标记，直接信任它
+           const type = cell.getPluginData("rowActionType");
+           if (type) return type as any;
+           return "multiple";
+       }
        if (props["Radio"] === "True" || props["selected"] !== undefined) return "single";
-       // 检查 Switch
        if (props["Switch"] === "True" || props["on"] !== undefined) return "switch";
     }
     // 检查 Name
@@ -514,6 +533,24 @@ async function getRowAction(table: FrameNode): Promise<"none" | "multiple" | "si
 }
 
 async function getTableSwitches(table: FrameNode): Promise<{ pagination: boolean; filter: boolean; actions: boolean; tabs: boolean }> {
+  // 优先从 Plugin Data 读取
+  try {
+    const p = table.getPluginData("switch_pagination");
+    const f = table.getPluginData("switch_filter");
+    const a = table.getPluginData("switch_actions");
+    const t = table.getPluginData("switch_tabs");
+    
+    // 如果有任一数据，说明该表格已保存配置，优先返回
+    if (p || f || a || t) {
+      return {
+        pagination: p === "true",
+        filter: f === "true",
+        actions: a === "true",
+        tabs: t === "true"
+      };
+    }
+  } catch {}
+
   const container = table.parent;
   if (!container || container.type !== "FRAME") return { pagination: false, filter: false, actions: false, tabs: false };
   
@@ -1764,9 +1801,16 @@ function clampInt(n: number, min: number, max: number) {
   return Math.floor(n);
 }
 
-async function cloneOrCreateBodyCell(col: FrameNode): Promise<SceneNode> {
+async function cloneOrCreateBodyCell(col: FrameNode, rowIndex?: number): Promise<SceneNode> {
   const offset = await getHeaderOffset(col);
-  const template = col.children[offset];
+  const bodyRows = col.children.length - offset;
+  let templateIndex = offset;
+  
+  if (rowIndex !== undefined && bodyRows > 0) {
+    templateIndex = offset + (rowIndex % bodyRows);
+  }
+  
+  const template = col.children[templateIndex];
   if (template) return (template as SceneNode).clone();
   const { createCell } = await resolveCellFactory(COMPONENT_KEY);
   return createCell();
@@ -1830,7 +1874,7 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
       const insertIndex = offset + pos;
 
       for (let i = 0; i < op.count; i++) {
-        const newCell = await cloneOrCreateBodyCell(col);
+        const newCell = await cloneOrCreateBodyCell(col, pos + i);
         col.insertChild(insertIndex + i, newCell);
         if ("layoutSizingHorizontal" in newCell) {
           const colName = col.name.toLowerCase();
@@ -2169,9 +2213,18 @@ async function loadComponent(key: string, fallbackName?: string): Promise<Compon
     // 3. Fallback: Search by Name in currentPage (if provided)
     if (!localComponent && fallbackName) {
         console.warn(`Key search failed, trying fallback name: ${fallbackName}`);
+        const searchName = fallbackName.toLowerCase();
         localComponent = figma.currentPage.findOne(
-            (n) => (n.type === "COMPONENT" || n.type === "COMPONENT_SET") && n.name === fallbackName
-        );
+            (n) => (n.type === "COMPONENT" || n.type === "COMPONENT_SET") && 
+                   (n.name.toLowerCase() === searchName || 
+                    n.name.toLowerCase().includes(searchName) ||
+                    (searchName === "checkbox" && n.name.includes("复选框")) ||
+                    (searchName === "radio" && n.name.includes("单选")) ||
+                    (searchName === "switch" && n.name.includes("开关")) ||
+                    (searchName === "drag" && n.name.includes("拖拽")) ||
+                    (searchName === "expand" && n.name.includes("展开"))
+                   )
+        ) as ComponentNode | ComponentSetNode;
     }
 
     if (localComponent) {
@@ -2348,27 +2401,76 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
     if (actionKey) {
         try {
             const comp = await loadComponent(actionKey, type);
+            
+            // Detect existing row height from other columns if possible
+            let rowHeights: number[] = [];
+            const otherCols = getColumnFrames(tableFrame).filter(c => c !== colFrame);
+            if (otherCols.length > 0) {
+                const sampleCol = otherCols[0];
+                const offset = await getHeaderOffset(sampleCol);
+                for (let i = 0; i < rows; i++) {
+                    const cell = sampleCol.children[i + offset];
+                    if (cell) rowHeights.push(cell.height);
+                }
+            }
+
             for (let i = 0; i < rows; i++) {
                 const container = figma.createFrame();
                 container.name = `Action Container ${i + 1}`;
-                container.layoutMode = "VERTICAL";
-                container.primaryAxisSizingMode = "AUTO"; // Height adaptive
-                container.counterAxisSizingMode = "AUTO";
-                container.paddingLeft = 16;
-                container.paddingTop = 12;
-                container.paddingRight = 8;
-                container.fills = [];
-                container.clipsContent = false;
+                applyCellCommonStyling(container); // Apply common styling: 40px height, white bg, gray bottom border
+                
+                // If we detected a different height, apply it
+                if (rowHeights[i] !== undefined && Math.abs(rowHeights[i] - 40) > 0.1) {
+                    container.resize(container.width, rowHeights[i]);
+                }
                 
                 let inst: InstanceNode | null = null;
                 if (comp.type === "COMPONENT_SET") {
-                    const defaultVar = comp.defaultVariant as ComponentNode || comp.children[0] as ComponentNode;
-                    inst = defaultVar.createInstance();
+                    const criteria: Record<string, any> = {};
+                    if (type === "Radio") {
+                        criteria["Label 标签#76783:0"] = false;
+                        criteria["Checked 已选"] = "False";
+                        criteria["Hover 悬浮"] = "False";
+                        criteria["Disabled 禁用"] = "False";
+                        criteria["Language"] = "CN";
+                    } else if (type === "Checkbox") {
+                        criteria["Label 标签#109762:15"] = false;
+                        criteria["Checked 已选"] = "False";
+                        criteria["Indeterminate 半选"] = "False";
+                        criteria["Hover 悬浮"] = "False";
+                        criteria["Disabled 禁用"] = "False";
+                    }
+                    
+                    const variant = findVariant(comp, criteria);
+                    inst = variant ? variant.createInstance() : (comp.defaultVariant as ComponentNode || comp.children[0] as ComponentNode).createInstance();
+                    
+                    // Set properties explicitly to be sure
+                    if (inst && Object.keys(criteria).length > 0) {
+                        try {
+                            const actualProps: Record<string, any> = {};
+                            const instProps = inst.componentProperties;
+                            for (const [key, val] of Object.entries(criteria)) {
+                                const actualKey = Object.keys(instProps).find(k => k.split("#")[0] === key.split("#")[0]) || key;
+                                actualProps[actualKey] = val;
+                            }
+                            inst.setProperties(actualProps);
+                        } catch (e) {
+                            console.warn(`Failed to set properties for ${type}`, e);
+                        }
+                    }
                 } else {
                     inst = (comp as ComponentNode).createInstance();
                 }
                 
                 if (inst) {
+                    if (type === "Drag") {
+                        inst.resize(14, 14);
+                        // Find all vector nodes and apply color-fill-2
+                        const vectors = inst.findAll(n => n.type === "VECTOR") as VectorNode[];
+                        for (const v of vectors) {
+                            v.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["color-fill-2"]) }];
+                        }
+                    }
                     container.appendChild(inst);
                 }
                 colFrame.appendChild(container);
@@ -2552,7 +2654,10 @@ async function createTable(params: CreateTableOptions) {
   tableFrame.itemSpacing = colGap;
   tableFrame.fills = [];
   tableFrame.clipsContent = false;
-  try { tableFrame.setPluginData("smart_table", "true"); } catch {}
+  try { 
+    tableFrame.setPluginData("smart_table", "true"); 
+    tableFrame.setPluginData("rowActionType", rowActionType || "none");
+  } catch {}
   container.appendChild(tableFrame);
   tableFrame.layoutSizingHorizontal = "FILL";
 
@@ -2874,150 +2979,102 @@ async function init() {
   });
 
   figma.on("documentchange", async (event) => {
-  const changes = event.documentChanges;
-  const cellsToSync = new Map<string, { table: FrameNode; rowIndex: number; height: number }>();
+    const changes = event.documentChanges;
+    const cellsToSync = new Map<string, { table: FrameNode; index: number }>();
 
-  for (const change of changes) {
-    if (change.type === "PROPERTY_CHANGE") {
-      const node = change.node;
-      // Check if height changed
-      const props = change.properties || [];
-      // Cast to string[] to avoid type error if NodeChangeProperty doesn't include resize
-      const p = props as string[];
-      const heightChanged = p.includes("height") || p.includes("resize");
+    for (const change of changes) {
+      if (change.type !== "PROPERTY_CHANGE") continue;
       
-      if (heightChanged && "type" in node && (node.type === "INSTANCE" || node.type === "FRAME")) {
-         const sceneNode = node as FrameNode | InstanceNode;
-         
-         // Fast check: parent must be vertical frame, grandparent must be horizontal smart table
-         const parent = sceneNode.parent;
-         if (parent && parent.type === "FRAME" && parent.layoutMode === "VERTICAL") {
-            const grandparent = parent.parent;
-            if (grandparent && grandparent.type === "FRAME" && grandparent.layoutMode === "HORIZONTAL") {
-               if (isSmartTableFrame(grandparent as FrameNode)) {
-                   // Identify row index
-                   const offset = await getHeaderOffset(parent as FrameNode);
-                   const index = parent.children.indexOf(sceneNode);
-                   if (index >= offset) {
-                       const rowIndex = index - offset;
-                       // Add to batch to avoid duplicate work
-                       // Use tableId + rowIndex as key
-                       const key = `${grandparent.id}-${rowIndex}`;
-                       cellsToSync.set(key, {
-                           table: grandparent as FrameNode,
-                           rowIndex,
-                           height: sceneNode.height
-                       });
-                   }
-               }
+      const node = change.node;
+      if (node.removed) continue;
+      
+      const props = (change.properties || []) as string[];
+      const isHeightProp = props.includes("height") || props.includes("resize");
+      const isTextProp = props.includes("characters");
+      
+      if (isHeightProp || isTextProp) {
+        let sceneNode: FrameNode | InstanceNode | null = null;
+        
+        if (isTextProp && node.type === "TEXT") {
+            // Find the parent cell frame
+            let cur = node.parent;
+            while (cur && cur.type !== "PAGE") {
+                if (cur.type === "FRAME" || cur.type === "INSTANCE") {
+                    const cellType = cur.getPluginData("cellType");
+                    if (cellType === "Text") {
+                        sceneNode = cur as FrameNode | InstanceNode;
+                        break;
+                    }
+                }
+                cur = cur.parent;
             }
-         }
+        } else if (node.type === "INSTANCE" || node.type === "FRAME") {
+            sceneNode = node as FrameNode | InstanceNode;
+        }
+
+        if (sceneNode) {
+            const column = sceneNode.parent;
+            if (column && column.type === "FRAME" && column.layoutMode === "VERTICAL") {
+                const table = column.parent;
+                if (table && table.type === "FRAME" && table.layoutMode === "HORIZONTAL" && isSmartTableFrame(table)) {
+                    // If text changed, we MUST ensure it's HUG temporarily to get its new natural height
+                    if (isTextProp || sceneNode.getPluginData("textDisplayMode") === "lineBreak") {
+                        if ("layoutSizingVertical" in sceneNode && sceneNode.layoutSizingVertical !== "HUG") {
+                            sceneNode.layoutSizingVertical = "HUG";
+                        }
+                    }
+
+                    const index = column.children.indexOf(sceneNode);
+                    if (index !== -1) {
+                        const key = `${table.id}-${index}`;
+                        cellsToSync.set(key, { table, index });
+                    }
+                }
+            }
+        }
       }
     }
-  }
-  
-  // Apply sync
-  if (cellsToSync.size > 0) {
-      for (const { table, rowIndex } of cellsToSync.values()) {
-          // Calculate max height for this row
-          const cols = getColumnFrames(table);
-          let maxHeight = 0;
-          
-          // First pass: find max height
-          for (const col of cols) {
-             const offset = await getHeaderOffset(col);
-             if (rowIndex + offset < col.children.length) {
-                 const cell = col.children[rowIndex + offset];
-                 // If a cell is lineBreak mode, we should let it calculate its natural height first?
-                 // Actually, Figma handles auto layout. If a cell grows, it triggers change.
-                 // We just need to find the largest height in the current state of the row.
-                 if (cell.height > maxHeight) {
-                     maxHeight = cell.height;
-                 }
-             }
-          }
-          
-          // Apply max height to all cells in the row (except those that should be auto/hug if they are already large enough? 
-          // No, usually we want to force alignment. So we set Fixed height for all cells to match the tallest one.
-          // BUT, for lineBreak cells, if they are the cause of height increase, they are already HUG. 
-          // If we set them to FIXED, they might clip if text grows more.
-          // Strategy:
-          // 1. If cell is "lineBreak" (HUG), and its height == maxHeight, keep it HUG.
-          // 2. If cell is "lineBreak" (HUG), and its height < maxHeight, we might need to set it to FIXED to fill height, OR keep HUG and let it be smaller (but then alignment might be off).
-          //    Usually in tables, we want full height background. So we set FIXED height = maxHeight.
-          //    Wait, if we set FIXED on a HUG text cell, it stops auto-growing.
-          //    If we want it to continue auto-growing later, we need to detect that.
-          //    However, for now, let's stick to the requirement: "每一行的高度以最高的为准".
-          //    This implies we sync height.
-          
-          for (const col of cols) {
-              const offset = await getHeaderOffset(col);
-              if (rowIndex + offset < col.children.length) {
-                  const cell = col.children[rowIndex + offset];
-                  
-                  // Skip if already correct height (tolerance 0.5)
-                  if (Math.abs(cell.height - maxHeight) <= 0.5) continue;
-                  
-                  // If cell is Text with lineBreak, and it is smaller than maxHeight, we must set it to FIXED to stretch it.
-                  // But if we do that, we lose HUG behavior for future text edits.
-                  // Ideally, we want "Fill container" in vertical direction, but Figma doesn't support "Fill container" for height in a vertical auto-layout parent (which is the column).
-                  // The column is Vertical Auto Layout. Children have fixed height or Hug.
-                  // We can't have "Fill" height for a child in Vertical Auto Layout.
-                  // So we MUST set Fixed Height to match the row.
-                  
-                  // Special handling: If we set a lineBreak cell to Fixed Height, we should probably check if we need to revert it to HUG later?
-                  // For now, let's just set FIXED. 
-                  // But wait, if we set FIXED, and user adds more text, it won't grow.
-                  // This is a known limitation in Figma column-based tables.
-                  // To support "Text cell grows -> Row grows -> Other cells grow", we need:
-                  // 1. Text cell is HUG.
-                  // 2. User types -> Text cell grows.
-                  // 3. We detect change -> Find max height (which is the new text cell height).
-                  // 4. We update OTHER cells to that height (FIXED).
-                  // 5. The Text cell itself should REMAIN HUG if it is the one determining the height.
-                  
-                  // So:
-                  const isLineBreak = cell.type === "FRAME" && cell.getPluginData("cellType") === "Text" && cell.getPluginData("textDisplayMode") === "lineBreak";
-                  
-                  if (isLineBreak) {
-                      // If this cell is shorter than max height, we must set it to FIXED to fill the row.
-                      // If this cell IS the max height (or close), we should ensure it is HUG so it can grow further.
-                      if (Math.abs(cell.height - maxHeight) <= 0.5) {
-                          // It matches max height. Ensure it is HUG so it can grow.
-                          if (cell.layoutSizingVertical !== "HUG") {
-                             cell.layoutSizingVertical = "HUG";
-                          }
-                      } else {
-                          // It is smaller than max height. Set to FIXED to match row height.
-                          // But if we set FIXED, and then user types more, it won't grow.
-                          // We need a way to detect "User is editing this cell".
-                          // Actually, if user edits a FIXED cell and adds lines, the text node grows, but frame doesn't.
-                          // We might need to listen to Text Node changes?
-                          // For now, let's simple implementation: Set everything to FIXED maxHeight, unless it is the source of growth.
-                          // But we don't know which one is source easily.
-                          
-                          // Improved Logic:
-                          // If isLineBreak is true, we prefer HUG. 
-                          // If we force it to FIXED (maxHeight), we lose HUG.
-                          // Maybe we just set height.
-                          
-                          if ("layoutSizingVertical" in cell) {
-                             (cell as FrameNode).layoutSizingVertical = "FIXED";
-                          }
-                          (cell as FrameNode | InstanceNode).resize(cell.width, maxHeight);
-                      }
-                  } else {
-                      // Normal cells: always Fixed
-                      if ("layoutSizingVertical" in cell) {
-                          (cell as FrameNode).layoutSizingVertical = "FIXED";
-                      }
-                      try {
-                        (cell as FrameNode | InstanceNode).resize(cell.width, maxHeight);
-                      } catch (e) {}
-                  }
-              }
-          }
-      }
+    
+    if (cellsToSync.size > 0) {
+        for (const { table, index } of cellsToSync.values()) {
+            const cols = getColumnFrames(table);
+            let maxHeight = 0;
+            
+            // First pass: find max height
+            for (const col of cols) {
+               if (index < col.children.length) {
+                   const cell = col.children[index];
+                   if (cell.height > maxHeight) maxHeight = cell.height;
+               }
+            }
+            
+            if (maxHeight <= 0) continue;
+
+            // Second pass: apply max height
+            for (const col of cols) {
+                if (index < col.children.length) {
+                    const cell = col.children[index] as FrameNode | InstanceNode;
+                    const isLineBreak = cell.getPluginData("textDisplayMode") === "lineBreak";
+                    
+                    if (isLineBreak) {
+                        // If it's the tallest cell, keep it HUG so it can continue to grow
+                        if (Math.abs(cell.height - maxHeight) <= 0.1) {
+                            if ("layoutSizingVertical" in cell) cell.layoutSizingVertical = "HUG";
+                        } else {
+                            // If it's shorter than maxHeight, set to FIXED to align with row
+                            if ("layoutSizingVertical" in cell) cell.layoutSizingVertical = "FIXED";
+                            try { cell.resize(cell.width, maxHeight); } catch (e) {}
+                        }
+                    } else {
+                        // Normal cells: always FIXED
+                        if ("layoutSizingVertical" in cell) cell.layoutSizingVertical = "FIXED";
+                        if (Math.abs(cell.height - maxHeight) > 0.1) {
+                            try { cell.resize(cell.width, maxHeight); } catch (e) {}
+                        }
+                    }
+                }
+            }
+        }
     }
   });
 }
@@ -3100,6 +3157,58 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       figma.notify(`列宽已设置为：${mode === "FIXED" ? "固定" : "充满"}`);
     } catch (e: any) {
       figma.notify("设置列宽失败: " + e.message);
+    }
+  } else if (message.type === "set_table_rows") {
+    const selection = figma.currentPage.selection;
+    let table: FrameNode | null = null;
+    if (selection.length > 0) {
+      table = findTableFrameFromNode(selection[0] as any);
+    }
+    if (!table) {
+      table = figma.root.findOne(
+        (n) =>
+          n.type === "FRAME" &&
+          (n as FrameNode).layoutMode === "HORIZONTAL" &&
+          (n as FrameNode).name.startsWith("Smart Table") &&
+          n.getPluginData("smart_table") === "true"
+      ) as FrameNode | null;
+    }
+    if (!table) {
+      figma.notify("未找到需要调整的表格。请选中表格或其任一子元素。");
+      return;
+    }
+
+    // 保存到 Plugin Data
+    table.setPluginData("rowCount", message.rows.toString());
+
+    try {
+      const currentContext = await getTableContext(table);
+      if (!currentContext) throw new Error("无法获取表格上下文");
+      
+      const currentRows = currentContext.rows;
+      const newRows = message.rows;
+      
+      if (newRows > currentRows) {
+        await applyOperationToTable(table, { 
+          op: "add_rows", 
+          count: newRows - currentRows, 
+          position: "end" 
+        });
+        figma.notify(`表格已增加 ${newRows - currentRows} 行`);
+      } else if (newRows < currentRows) {
+        const countToRemove = currentRows - newRows;
+        // Remove from the end
+        const indexes = Array.from({ length: countToRemove }, (_, i) => currentRows - 1 - i);
+        await applyOperationToTable(table, { 
+          op: "remove_rows", 
+          indexes 
+        });
+        figma.notify(`表格已删除 ${countToRemove} 行`);
+      } else {
+        figma.notify("行数未发生变化");
+      }
+    } catch (e: any) {
+      figma.notify("调整行数失败: " + e.message);
     }
   }
 
@@ -3812,6 +3921,12 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
      const table = findTableFrameFromNode(selection[0] as any);
      if (!table) return;
      
+     // Store it on the table frame
+     table.setPluginData("rowActionType", message.action);
+
+     // 强制触发一次 UI 状态更新，确保选中态同步
+     postSelection();
+
      const cols = getColumnFrames(table);
      if (cols.length === 0) return;
 
@@ -3868,6 +3983,9 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
      if (selection.length === 0) return;
      const table = findTableFrameFromNode(selection[0] as any);
      if (!table) return;
+
+     // 保存到 Plugin Data
+     table.setPluginData(`switch_${message.key}`, message.enabled ? "true" : "false");
      const container = table.parent;
      if (!container || container.type !== "FRAME") return;
 

@@ -303,7 +303,7 @@ function getGatewayAuthHeaders(): Record<string, string> {
 }
 
 const TABLE_ICON_SVG = `<div style="width: 100%; height: 100%; background: white; display: flex; align-items: center; justify-content: center; border-radius: 4px;">
-  <svg width="12" height="12" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <svg width="36" height="36" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M32.0034 2.58603C31.6283 2.21096 31.1196 2.00024 30.5892 2.00024H8C6.89543 2.00024 6 2.89568 6 4.00024V44.0002C6 45.1048 6.89543 46.0002 8 46.0002H40C41.1046 46.0002 42 45.1048 42 44.0002V13.411C42 12.8806 41.7893 12.3719 41.4142 11.9968L32.0034 2.58603Z" fill="#309256"/>
   <path d="M42 13.4993H32.4995C31.3949 13.4993 30.4995 12.6038 30.4995 11.4993V2.00024H30.5892C31.1196 2.00024 31.6283 2.21096 32.0034 2.58603L41.4142 11.9968C41.7893 12.3719 42 12.8806 42 13.411V13.4993Z" fill="#2A814B"/>
   <g filter="url(#filter0_d_22_27024)">
@@ -728,6 +728,11 @@ tableSizeSelect?.addEventListener("change", () => {
 tableRowActionSelect?.addEventListener("change", () => {
   const action = tableRowActionSelect.value as "none" | "multiple" | "single" | "drag" | "expand" | "switch";
   post({ type: "set_row_action", action });
+});
+
+rowCountSelectManual?.addEventListener("change", () => {
+  const rows = parseInt(rowCountSelectManual.value) || 5;
+  post({ type: "set_table_rows", rows });
 });
 
 switchPagination?.addEventListener("change", () => {

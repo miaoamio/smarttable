@@ -106,6 +106,7 @@ export type UiToPluginMessage =
   | { type: "set_table_size"; size: "mini" | "default" | "medium" | "large" }
   | { type: "set_row_action"; action: "none" | "multiple" | "single" | "drag" | "expand" | "switch" }
   | { type: "set_table_switch"; key: "pagination" | "filter" | "actions" | "tabs"; enabled: boolean }
+  | { type: "set_table_rows"; rows: number }
   | { type: "ping" };
 
 export interface TableContext {

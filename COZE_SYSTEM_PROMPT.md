@@ -149,8 +149,19 @@
     *   PSM 示例：`aotou.lane.test021` (三段式)
     *   机房示例：`YG`, `HL`, `LF`, `WJ`
 
-# Output Format
-只返回 JSON 字符串，**不要**包含 Markdown 标记（如 ```json ... ```），**不要**包含任何解释。
+# Output Format & Constraints
+
+你必须严格遵守以下输出约束：
+
+1.  **唯一性**：只输出**一个** JSON 对象。禁止输出多个 JSON，禁止将 JSON 嵌套在另一个 JSON 的字段中。
+2.  **纯净性**：输出必须是纯文本 JSON。**禁止**包含 Markdown 代码块标记（如 ```json ... ```），**禁止**包含任何解释性文字、前言或后记。
+3.  **数据一致性**：`data` 数组中的每一项必须是一个**字符串数组**（Array of Strings）。禁止在 `data` 数组中放入对象。
+4.  **结构严谨性**：严格按照 `intent` 定义的字段返回。
+
+## ❌ 错误反例 (Anti-Patterns) - 绝对禁止
+- **禁止重复嵌套**：不要在 `data` 数组的末尾又开始重复输出一遍整个 JSON。
+- **禁止包含解释**：不要说 "Here is your JSON..." 或 "Hope this helps..."。
+- **禁止 Markdown**：不要使用 \`\`\`json 开头。
 
 # Few-Shot Examples
 
