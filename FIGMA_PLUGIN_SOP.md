@@ -99,6 +99,29 @@ Figma Desktop 导入插件：
   - token 是否来自 `coze.cn` 对应环境（不要把 coze.com 的 token 用在 `api.coze.cn`）
   - `.env.local` 里只填 `pat_...`，不要带 `Bearer`
 
+## 7) 常见问题及解决方案
+
+### **问题 A: AI 生成失败 (无法识别 AI 返回结构)**
+- **现象**: UI 提示 `AI 生成失败: 无法识别 AI 返回结构`，或者解析 JSON 时报错。
+- **根本原因**:
+  - LLM 返回了非纯 JSON 格式（如带有 Markdown 代码块包裹）。
+  - LLM 返回了嵌套的 schema 结构（如 `schema.schema`）。
+  - LLM 返回的 JSON 结构不完整或末尾有多余的闭合括号。
+- **解决方案**:
+  1. **Prompt 强化**: 确保 [promptDispatcher.ts](file:///Users/bytedance/Desktop/table/packages/figma-plugin/src/promptDispatcher.ts) 中的提示词明确要求 `请只输出 JSON 对象本身，不要包含任何前导或后继文字，不要使用 Markdown 代码块包裹`。
+  2. **解析逻辑容错**: 在 [ui.ts](file:///Users/bytedance/Desktop/table/packages/figma-plugin/src/ui.ts) 中使用 `extractAllJsonObjects` 和 `tryParseTruncatedJson` 进行容错解析，自动修复截断的 JSON 和多余的括号。
+  3. **结构标准化**: 在 `coerceLegacyToEnvelope` 中处理可能的嵌套结构。
+
+### **问题 B: Figma 插件 API 异步报错**
+- **现象**: 报错 `Cannot call with documentAccess: dynamic-page. Use node.getMainComponentAsync instead.`。
+- **根本原因**:
+  - 在 `manifest.json` 中开启了 `documentAccess: "dynamic-page"` 权限。
+  - 在此权限下，Figma 强制要求使用异步 API（如 `getMainComponentAsync`）替代同步 API（如 `.mainComponent`）。
+- **解决方案**:
+  1. **全面异步化**: 将所有 `.mainComponent` 调用替换为 `await getMainComponentAsync()`。
+  2. **调用链检查**: 确保所有调用这些异步函数的上层链路也都标记为 `async` 并使用了 `await`。
+  3. **强制构建**: 如果源码已修改但插件仍报错，请务必执行 `npm run build` 确保 `dist/code.js` 产物已更新。
+
 - `EADDRINUSE`（端口占用）
   - 结束旧的 gateway 进程后再重新启动
 

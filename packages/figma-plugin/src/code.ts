@@ -1344,7 +1344,9 @@ async function renderTextCell(
     textNode.textTruncation = "ENDING";
     // For single line, we want fixed height and fill width
     cellFrame.counterAxisSizingMode = "FIXED"; 
-    textNode.layoutSizingHorizontal = "FILL";
+    if (cellFrame.layoutMode !== "NONE") {
+      textNode.layoutSizingHorizontal = "FILL";
+    }
     textNode.layoutSizingVertical = "FIXED";
     
     // Restore saved table height if available, otherwise default to 40
@@ -1362,7 +1364,9 @@ async function renderTextCell(
     textNode.textTruncation = "DISABLED";
     // For multi line, we want auto height
     cellFrame.counterAxisSizingMode = "AUTO";
-    textNode.layoutSizingHorizontal = "FILL";
+    if (cellFrame.layoutMode !== "NONE") {
+      textNode.layoutSizingHorizontal = "FILL";
+    }
     textNode.layoutSizingVertical = "HUG";
     // Set vertical padding to 8px for line break mode
     cellFrame.paddingTop = 8;
@@ -1395,10 +1399,12 @@ async function renderInputCell(
     inst = (inputComponent as ComponentNode).createInstance();
   }
   
-  // Set to FILL width
-  (inst as any).layoutSizingHorizontal = "FILL";
-  
   cellFrame.appendChild(inst);
+
+  // Set to FILL width - MUST be done AFTER appendChild to ensure parent is an auto-layout frame
+  if (cellFrame.layoutMode !== "NONE") {
+    (inst as any).layoutSizingHorizontal = "FILL";
+  }
 }
 
 async function renderSelectCell(
@@ -1426,10 +1432,12 @@ async function renderSelectCell(
     inst = (selectComponent as ComponentNode).createInstance();
   }
   
-  // Set to FILL width
-  (inst as any).layoutSizingHorizontal = "FILL";
-  
   cellFrame.appendChild(inst);
+
+  // Set to FILL width - MUST be done AFTER appendChild to ensure parent is an auto-layout frame
+  if (cellFrame.layoutMode !== "NONE") {
+    (inst as any).layoutSizingHorizontal = "FILL";
+  }
 }
 
 async function renderAvatarCell(

@@ -78,11 +78,13 @@ const manualEmptyPanel = document.getElementById("manual-empty-panel");
 const manualEditPanel = document.getElementById("manual-edit-panel");
 const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".tab"));
 
-    // Hide debug tab in production
-    if (process.env.NODE_ENV === "production") {
-      const debugTabBtn = tabButtons.find(btn => btn.dataset.tab === "debug");
-      if (debugTabBtn) {
+    // 默认隐藏开发模式标签，仅在开发环境显示
+    const debugTabBtn = tabButtons.find(btn => btn.dataset.tab === "debug");
+    if (debugTabBtn) {
+      if (process.env.NODE_ENV === "production") {
         debugTabBtn.style.display = "none";
+      } else {
+        debugTabBtn.style.display = "inline-flex"; // 或者根据 CSS 设定的默认显示方式
       }
     }
 
