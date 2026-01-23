@@ -1777,7 +1777,9 @@ async function renderAvatarCell(
   // If we have an override (e.g. switching column type), we preserve the original text in cellValue
   // otherwise we update cellValue to match the rendered text
   if (overrideDisplayValue) {
-    if (text) {
+    // Requirement 2: Switch to Avatar column uses default name "宋明杰" in UI, 
+    // but we don't modify cellValue. We keep whatever was there.
+    if (text && !cellFrame.getPluginData("cellValue")) {
       cellFrame.setPluginData("cellValue", text);
     }
   } else {
@@ -2059,15 +2061,20 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
             cellFrame.counterAxisSizingMode = "FIXED";
           }
           
+          // Special handling for Avatar type: Requirement 2
+          // When manually switching to Avatar column, we force "宋明杰" regardless of original text
           let originalText = extractTextFromNode(n);
-          let currentContext = { ...context };
+          let currentContext = Object.assign({}, context);
           
           if (type === "ActionIcon" || type === "ActionText") {
             originalText = "编辑 删除 …";
           } else if (type === "Avatar") {
-            // Requirement 2: Switch to Avatar column uses default name "宋明杰" in UI, 
-            // but we don't modify cellValue.
+            // Force the display value to be "宋明杰" during type switching
             currentContext.overrideDisplayValue = "宋明杰";
+            
+            // If the cell was already an Avatar cell, we might be re-applying it.
+            // But if it was another type, we want to ensure "宋明杰" is shown.
+            // The renderAvatarCell will handle using overrideDisplayValue.
           }
           
           await customRenderer(cellFrame, originalText, currentContext);
