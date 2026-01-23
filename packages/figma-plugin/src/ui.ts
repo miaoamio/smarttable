@@ -292,7 +292,7 @@ function getGatewayBaseUrl() {
 function getGatewayAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
   const token = gatewayTokenInput?.value?.trim();
-  if (token) headers.authorization = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
+  if (token) headers.authorization = `Bearer ${token.replace(/^Bearer\s+/i, "")}`;
   return headers;
 }
 
@@ -1152,7 +1152,7 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
     }
 
     const headers: Record<string, string> = { "content-type": "application/json" };
-    if (gatewayToken) headers.authorization = `Bearer ${gatewayToken}`;
+    if (gatewayToken) headers.authorization = `Bearer ${gatewayToken.replace(/^Bearer\s+/i, "")}`;
 
     const res = await fetchWithTimeout(`${gatewayUrl.replace(/\/$/, "")}/tools/llm_chat`, {
       method: "POST",

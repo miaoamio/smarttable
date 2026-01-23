@@ -70,7 +70,7 @@ async function llmChat(input: {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": /^Bearer /i.test(apiKey) ? apiKey : `Bearer ${apiKey}`
+      "Authorization": `Bearer ${apiKey.replace(/^Bearer\s+/i, "")}`
     },
     body: JSON.stringify({
       model,
@@ -190,7 +190,7 @@ async function cozeWorkflowChat(input: {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": /^Bearer /i.test(apiKey) ? apiKey : `Bearer ${apiKey}`
+      "Authorization": `Bearer ${apiKey.replace(/^Bearer\s+/i, "")}`
     },
     body: JSON.stringify({
       workflow_id: workflowId,

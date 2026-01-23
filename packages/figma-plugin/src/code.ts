@@ -261,22 +261,23 @@ function toHeaderMode(props: { filter: boolean; sort: boolean; search: boolean }
   return "none";
 }
 
-function isFilter(node: SceneNode): boolean {
+async function isFilter(node: SceneNode): Promise<boolean> {
   const p = node.parent;
   const parentName = p ? p.name : "";
   
-  const checkKey = (n: SceneNode): boolean => {
+  const checkKey = async (n: SceneNode): Promise<boolean> => {
     if (n.type !== "INSTANCE") return false;
-    if (n.mainComponent && n.mainComponent.key === FILTER_COMPONENT_KEY) return true;
-    if (n.mainComponent && n.mainComponent.parent && n.mainComponent.parent.type === "COMPONENT_SET" && n.mainComponent.parent.key === FILTER_COMPONENT_KEY) return true;
-    if (n.mainComponent && n.mainComponent.key === FILTER_ITEM_COMPONENT_KEY) return true;
-    if (n.mainComponent && n.mainComponent.parent && n.mainComponent.parent.type === "COMPONENT_SET" && n.mainComponent.parent.key === FILTER_ITEM_COMPONENT_KEY) return true;
+    const main = await (n as InstanceNode).getMainComponentAsync();
+    if (main && main.key === FILTER_COMPONENT_KEY) return true;
+    if (main && main.parent && main.parent.type === "COMPONENT_SET" && (main.parent as ComponentSetNode).key === FILTER_COMPONENT_KEY) return true;
+    if (main && main.key === FILTER_ITEM_COMPONENT_KEY) return true;
+    if (main && main.parent && main.parent.type === "COMPONENT_SET" && (main.parent as ComponentSetNode).key === FILTER_ITEM_COMPONENT_KEY) return true;
     return false;
   };
 
-  if (checkKey(node)) return true;
-  if (p && checkKey(p as SceneNode)) return true;
-  if (p && p.parent && checkKey(p.parent as SceneNode)) return true;
+  if (await checkKey(node)) return true;
+  if (p && await checkKey(p as SceneNode)) return true;
+  if (p && p.parent && await checkKey(p.parent as SceneNode)) return true;
 
   return node.name === "Filter" || 
          node.name === "Top Bar Container" || 
@@ -342,13 +343,13 @@ async function getFirstTextValue(node: SceneNode): Promise<string | null> {
   return t.characters;
 }
 
-function isHeaderInstance(instance: InstanceNode): boolean {
-  const main = instance.mainComponent;
+async function isHeaderInstance(instance: InstanceNode): Promise<boolean> {
+  const main = await instance.getMainComponentAsync();
   if (!main) return false;
   if (main.key === HEADER_COMPONENT_KEY) return true;
   if (main.parent && main.parent.type === "COMPONENT_SET") {
-    if (main.parent.key === HEADER_COMPONENT_KEY) return true;
-    if (main.parent.children.some((child) => (child.type === "COMPONENT" || child.type === "COMPONENT_SET") && child.key === HEADER_COMPONENT_KEY)) {
+    if ((main.parent as ComponentSetNode).key === HEADER_COMPONENT_KEY) return true;
+    if ((main.parent as ComponentSetNode).children.some((child) => (child.type === "COMPONENT" || child.type === "COMPONENT_SET") && child.key === HEADER_COMPONENT_KEY)) {
       return true;
     }
   }
@@ -367,7 +368,7 @@ async function getTableContext(table: FrameNode): Promise<TableContext | null> {
   if (firstCol.layoutMode !== "VERTICAL") return null;
 
   const firstChild = firstCol.children[0];
-  const hasHeader = Boolean(firstChild && firstChild.type === "INSTANCE" && isHeaderInstance(firstChild as InstanceNode));
+  const hasHeader = Boolean(firstChild && firstChild.type === "INSTANCE" && await isHeaderInstance(firstChild as InstanceNode));
   const rows = Math.max(0, firstCol.children.length - (hasHeader ? 1 : 0));
   const headers: string[] = [];
   for (let c = 0; c < cols; c++) {
@@ -381,7 +382,7 @@ async function getTableContext(table: FrameNode): Promise<TableContext | null> {
     }
   }
 
-  const rowAction = getRowAction(table) as any;
+  const rowAction = await getRowAction(table) as any;
   const config = await getTableConfig(table);
 
   return { rows, cols, headers, rowAction, config };
@@ -409,9 +410,14 @@ async function getTableConfig(table: FrameNode): Promise<TableAuxConfig | undefi
   const filterInst = topBar.children.find((c) => c.name === "Filter" && c.type === "INSTANCE" && c.visible) as InstanceNode | undefined;
   if (filterInst) {
     const items: { label: string; type: "select" | "input" | "search" }[] = [];
-    const itemNodes = filterInst.findAll(
-      (n) => n.type === "INSTANCE" && (n as InstanceNode).mainComponent?.key === FILTER_ITEM_COMPONENT_KEY
-    ) as InstanceNode[];
+    const allInstances = filterInst.findAll(n => n.type === "INSTANCE") as InstanceNode[];
+    const itemNodes: InstanceNode[] = [];
+    for (const n of allInstances) {
+      const main = await n.getMainComponentAsync();
+      if (main?.key === FILTER_ITEM_COMPONENT_KEY) {
+        itemNodes.push(n);
+      }
+    }
     for (const item of itemNodes) {
       const textNode = item.findOne((n) => n.type === "TEXT") as TextNode;
       if (textNode) {
@@ -462,11 +468,11 @@ function getBooleanPropValue(node: InstanceNode, keys: string[]): boolean {
   return false;
 }
 
-function getTableSize(table: FrameNode): "mini" | "default" | "medium" | "large" {
+async function getTableSize(table: FrameNode): Promise<"mini" | "default" | "medium" | "large"> {
   const cols = getColumnFrames(table);
   if (cols.length === 0) return "default";
   const col = cols[0];
-  const offset = getHeaderOffset(col);
+  const offset = await getHeaderOffset(col);
   const cell = col.children[offset];
   if (!cell) return "default";
   const h = cell.height;
@@ -476,11 +482,11 @@ function getTableSize(table: FrameNode): "mini" | "default" | "medium" | "large"
   return "large";
 }
 
-function getRowAction(table: FrameNode): "none" | "multiple" | "single" | "drag" | "expand" | "switch" {
+async function getRowAction(table: FrameNode): Promise<"none" | "multiple" | "single" | "drag" | "expand" | "switch"> {
   const cols = getColumnFrames(table);
   if (cols.length === 0) return "none";
   const col = cols[0];
-  const offset = getHeaderOffset(col);
+  const offset = await getHeaderOffset(col);
   const cell = col.children[offset];
   if (!cell) return "none";
   
@@ -507,7 +513,7 @@ function getRowAction(table: FrameNode): "none" | "multiple" | "single" | "drag"
   return "none";
 }
 
-function getTableSwitches(table: FrameNode): { pagination: boolean; filter: boolean; actions: boolean; tabs: boolean } {
+async function getTableSwitches(table: FrameNode): Promise<{ pagination: boolean; filter: boolean; actions: boolean; tabs: boolean }> {
   const container = table.parent;
   if (!container || container.type !== "FRAME") return { pagination: false, filter: false, actions: false, tabs: false };
   
@@ -517,7 +523,20 @@ function getTableSwitches(table: FrameNode): { pagination: boolean; filter: bool
   let tabs = false;
 
   // 检查分页器
-  const pager = container.children.find(c => c.name.includes("Pagination") || (c.type === "INSTANCE" && (c.mainComponent?.key === PAGINATION_COMPONENT_KEY || (c.mainComponent?.parent?.type === "COMPONENT_SET" && c.mainComponent.parent.key === PAGINATION_COMPONENT_KEY))));
+  let pager: SceneNode | undefined;
+  for (const c of container.children) {
+    if (c.name.includes("Pagination")) {
+      pager = c;
+      break;
+    }
+    if (c.type === "INSTANCE") {
+      const main = await (c as InstanceNode).getMainComponentAsync();
+      if (main?.key === PAGINATION_COMPONENT_KEY || (main?.parent?.type === "COMPONENT_SET" && (main.parent as ComponentSetNode).key === PAGINATION_COMPONENT_KEY)) {
+        pager = c;
+        break;
+      }
+    }
+  }
   if (pager && pager.visible) pagination = true;
 
   // 检查 Top Bar (Filter, Actions, Tabs)
@@ -561,7 +580,7 @@ function getColumnWidthMode(col: FrameNode): "FIXED" | "FILL" {
   return col.layoutSizingHorizontal === "FILL" ? "FILL" : "FIXED";
 }
 
-function getCellType(cell: SceneNode): string | undefined {
+async function getCellType(cell: SceneNode): Promise<string | undefined> {
   // Check for Custom Frame types
   const customCellType = cell.getPluginData("cellType");
   if (cell.type === "FRAME" && ["Text", "Tag", "Avatar", "ActionText", "Input", "Select"].includes(customCellType)) {
@@ -570,7 +589,7 @@ function getCellType(cell: SceneNode): string | undefined {
 
   if (cell.type !== "INSTANCE") return undefined;
 
-  const main = (cell as InstanceNode).mainComponent;
+  const main = await (cell as InstanceNode).getMainComponentAsync();
   if (main) {
       const parentSet = main.parent && main.parent.type === "COMPONENT_SET" ? main.parent as ComponentSetNode : null;
       const key = main.key;
@@ -645,7 +664,7 @@ function getCellAlignment(cell: SceneNode): "left" | "center" | "right" | undefi
   return undefined;
 }
 
-function postSelection() {
+async function postSelection() {
   if (typeof figma.ui === "undefined" || !figma.ui) return;
   const selection = figma.currentPage.selection;
   let componentKey: string | undefined;
@@ -669,13 +688,13 @@ function postSelection() {
     if (node.type === "COMPONENT" || node.type === "COMPONENT_SET") {
       componentKey = node.key;
     } else if (node.type === "INSTANCE") {
-      const main = node.mainComponent;
+      const main = await (node as InstanceNode).getMainComponentAsync();
       if (main) {
         componentKey = main.key;
       }
     }
 
-    if (isFilter(node)) {
+    if (await isFilter(node)) {
       selectionLabel = "当前选中：筛选器";
       selectionKind = "filter";
     }
@@ -722,105 +741,104 @@ function postSelection() {
     if (tableFrame) {
       activeTableFrame = tableFrame;
       const columns = getColumnFrames(tableFrame);
-      getTableContext(tableFrame).then((ctx) => {
-        tableContext = ctx;
-        const pos = computeTableSelectionPosition(tableFrame, node as SceneNode);
-        
-        // Only set selectionKind/Label if not already set by isFilter
-        if (!selectionKind) {
-          selectionKind = pos.kind;
-        }
-        
-        let colWidthMode: "FIXED" | "FILL" | undefined;
-        let cellType: string | undefined;
-        let cellAlign: "left" | "center" | "right" | undefined;
+      const ctx = await getTableContext(tableFrame);
+      tableContext = ctx;
+      const pos = await computeTableSelectionPosition(tableFrame, node as SceneNode);
+      
+      // Only set selectionKind/Label if not already set by isFilter
+      if (!selectionKind) {
+        selectionKind = pos.kind;
+      }
+      
+      let colWidthMode: "FIXED" | "FILL" | undefined;
+      let cellType: string | undefined;
+      let cellAlign: "left" | "center" | "right" | undefined;
 
-        if (!selectionKind) {
-          selectionKind = "table";
-          if (!selectionLabel) selectionLabel = "当前选中：表格";
-        } else if (selectionKind === "table") {
-          if (!selectionLabel) selectionLabel = "当前选中：表格";
-        } else if (selectionKind === "column" && typeof pos.columnIndex === "number") {
-          const headerTitle = tableContext?.headers?.[pos.columnIndex] ?? "";
-          const colLabel = headerTitle && headerTitle.trim().length > 0 ? headerTitle.trim() : `第 ${pos.columnIndex + 1} 列`;
-          selectionLabel = `当前选中：列 - ${colLabel}`;
-          const colFrame = columns[pos.columnIndex];
-          if (colFrame) {
-            colFrame.name = colLabel;
-            colWidthMode = getColumnWidthMode(colFrame);
-            // Get first cell to guess type/align? Or average?
-            // Usually check first body cell
-            const offset = getHeaderOffset(colFrame);
-            if (colFrame.children.length > offset) {
-                const cell = colFrame.children[offset];
-                cellType = getCellType(cell);
-                cellAlign = getCellAlignment(cell);
-                if (cellType === "Tag" && !componentKey) {
-                    componentKey = TAG_COMPONENT_KEY;
-                } else if (cellType === "Avatar" && !componentKey) {
-                    componentKey = AVATAR_COMPONENT_KEY;
-                }
-            }
-          }
-        } else if (
-          pos.kind === "cell" &&
-          typeof pos.columnIndex === "number" &&
-          typeof pos.rowIndex === "number"
-        ) {
-          const headerTitle = tableContext?.headers?.[pos.columnIndex] ?? "";
-          const colLabel = headerTitle && headerTitle.trim().length > 0 ? headerTitle.trim() : `第 ${pos.columnIndex + 1} 列`;
-          const indexDisplay = pos.rowIndex + 1;
-          selectionLabel = `当前选中：单元格 - ${colLabel}-${indexDisplay}`;
-          const colFrame = columns[pos.columnIndex];
-          if (colFrame) {
-            const offset = getHeaderOffset(colFrame);
-            colWidthMode = getColumnWidthMode(colFrame);
-            const cellNode = colFrame.children[offset + pos.rowIndex];
-            if (cellNode) {
-              cellNode.name = `${colLabel}-${indexDisplay}`;
-              cellType = getCellType(cellNode);
-              cellAlign = getCellAlignment(cellNode);
-
-              const textDisplayMode = cellNode.getPluginData("textDisplayMode");
-              if (textDisplayMode) pluginData["textDisplayMode"] = textDisplayMode;
-
-              // Proactively sync cellValue to Plugin Data for Dev Mode visibility
-              const currentText = extractTextFromNode(cellNode, true);
-              cellNode.setPluginData("cellValue", currentText);
-              
-              // Also set on the actually selected node (which might be a child) for direct visibility in Dev Mode
-              if (node !== cellNode && "setPluginData" in node) {
-                (node as any).setPluginData("cellValue", currentText);
-              }
-              
-              pluginData["cellValue"] = currentText;
-
-              // If it's a tag/avatar cell (Frame), we might want to pretend it has the correct component key
+      if (!selectionKind) {
+        selectionKind = "table";
+        if (!selectionLabel) selectionLabel = "当前选中：表格";
+      } else if (selectionKind === "table") {
+        if (!selectionLabel) selectionLabel = "当前选中：表格";
+      } else if (selectionKind === "column" && typeof pos.columnIndex === "number") {
+        const headerTitle = tableContext?.headers?.[pos.columnIndex] ?? "";
+        const colLabel = headerTitle && headerTitle.trim().length > 0 ? headerTitle.trim() : `第 ${pos.columnIndex + 1} 列`;
+        selectionLabel = `当前选中：列 - ${colLabel}`;
+        const colFrame = columns[pos.columnIndex];
+        if (colFrame) {
+          colFrame.name = colLabel;
+          colWidthMode = getColumnWidthMode(colFrame);
+          // Get first cell to guess type/align? Or average?
+          // Usually check first body cell
+          const offset = await getHeaderOffset(colFrame);
+          if (colFrame.children.length > offset) {
+              const cell = colFrame.children[offset];
+              cellType = await getCellType(cell);
+              cellAlign = getCellAlignment(cell);
               if (cellType === "Tag" && !componentKey) {
-                componentKey = TAG_COMPONENT_KEY;
+                  componentKey = TAG_COMPONENT_KEY;
               } else if (cellType === "Avatar" && !componentKey) {
-                componentKey = AVATAR_COMPONENT_KEY;
+                  componentKey = AVATAR_COMPONENT_KEY;
               }
+          }
+        }
+      } else if (
+        pos.kind === "cell" &&
+        typeof pos.columnIndex === "number" &&
+        typeof pos.rowIndex === "number"
+      ) {
+        const headerTitle = tableContext?.headers?.[pos.columnIndex] ?? "";
+        const colLabel = headerTitle && headerTitle.trim().length > 0 ? headerTitle.trim() : `第 ${pos.columnIndex + 1} 列`;
+        const indexDisplay = pos.rowIndex + 1;
+        selectionLabel = `当前选中：单元格 - ${colLabel}-${indexDisplay}`;
+        const colFrame = columns[pos.columnIndex];
+        if (colFrame) {
+          const offset = await getHeaderOffset(colFrame);
+          colWidthMode = getColumnWidthMode(colFrame);
+          const cellNode = colFrame.children[offset + pos.rowIndex];
+          if (cellNode) {
+            cellNode.name = `${colLabel}-${indexDisplay}`;
+            cellType = await getCellType(cellNode);
+            cellAlign = getCellAlignment(cellNode);
+
+            const textDisplayMode = cellNode.getPluginData("textDisplayMode");
+            if (textDisplayMode) pluginData["textDisplayMode"] = textDisplayMode;
+
+            // Proactively sync cellValue to Plugin Data for Dev Mode visibility
+            const currentText = extractTextFromNode(cellNode, true);
+            cellNode.setPluginData("cellValue", currentText);
+            
+            // Also set on the actually selected node (which might be a child) for direct visibility in Dev Mode
+            if (node !== cellNode && "setPluginData" in node) {
+              (node as any).setPluginData("cellValue", currentText);
+            }
+            
+            pluginData["cellValue"] = currentText;
+
+            // If it's a tag/avatar cell (Frame), we might want to pretend it has the correct component key
+            if (cellType === "Tag" && !componentKey) {
+              componentKey = TAG_COMPONENT_KEY;
+            } else if (cellType === "Avatar" && !componentKey) {
+              componentKey = AVATAR_COMPONENT_KEY;
             }
           }
         }
-        figma.ui.postMessage({
-          type: "selection",
-          count: selection.length,
-          componentKey,
-          headerMode: toHeaderMode(headerProps),
-          tableContext: tableContext ?? undefined,
-          isSmartTable: isSmartTableFrame(tableFrame),
-          selectionKind,
-          selectionLabel,
-          tableSize: activeTableFrame ? getTableSize(activeTableFrame) : undefined,
-          rowAction: activeTableFrame ? getRowAction(activeTableFrame) : undefined,
-          tableSwitches: activeTableFrame ? getTableSwitches(activeTableFrame) : undefined,
-          colWidthMode,
-          cellType,
-          cellAlign,
-          pluginData
-        });
+      }
+      figma.ui.postMessage({
+        type: "selection",
+        count: selection.length,
+        componentKey,
+        headerMode: toHeaderMode(headerProps),
+        tableContext: tableContext ?? undefined,
+        isSmartTable: isSmartTableFrame(tableFrame),
+        selectionKind,
+        selectionLabel,
+        tableSize: activeTableFrame ? await getTableSize(activeTableFrame) : undefined,
+        rowAction: activeTableFrame ? await getRowAction(activeTableFrame) : undefined,
+        tableSwitches: activeTableFrame ? await getTableSwitches(activeTableFrame) : undefined,
+        colWidthMode,
+        cellType,
+        cellAlign,
+        pluginData
       });
       return;
     }
@@ -828,7 +846,7 @@ function postSelection() {
     if (columnFrame && columnFrame.children.length > 0) {
       const firstChild = columnFrame.children[0];
       if (firstChild.type === "INSTANCE") {
-          const main = firstChild.mainComponent;
+          const main = await (firstChild as InstanceNode).getMainComponentAsync();
           // 这里我们可以校验 Key，也可以宽松点，只要有对应的属性就认为是表头
           // main.parent 可能是 ComponentSetNode，它也有 key
           let isHeader = false;
@@ -837,12 +855,12 @@ function postSelection() {
               isHeader = true;
             } else if (main.parent && main.parent.type === "COMPONENT_SET") {
                // 如果 HEADER_COMPONENT_KEY 是 Set 的 Key
-               if (main.parent.key === HEADER_COMPONENT_KEY) {
+               if ((main.parent as ComponentSetNode).key === HEADER_COMPONENT_KEY) {
                  isHeader = true;
                } else {
                  // 如果 HEADER_COMPONENT_KEY 是某个 Variant 的 Key，
                  // 那么我们检查这个 Set 下是否包含该 Key 的 Variant
-                 if (main.parent.children.some(child => (child.type === "COMPONENT" || child.type === "COMPONENT_SET") && child.key === HEADER_COMPONENT_KEY)) {
+                 if ((main.parent as ComponentSetNode).children.some(child => (child.type === "COMPONENT" || child.type === "COMPONENT_SET") && child.key === HEADER_COMPONENT_KEY)) {
                    isHeader = true;
                  }
                }
@@ -851,9 +869,9 @@ function postSelection() {
 
           if (isHeader) {
             headerProps = {
-              filter: getBooleanPropValue(firstChild, PROP_KEYS.filter),
-              sort: getBooleanPropValue(firstChild, PROP_KEYS.sort),
-              search: getBooleanPropValue(firstChild, PROP_KEYS.search)
+              filter: getBooleanPropValue(firstChild as InstanceNode, PROP_KEYS.filter),
+              sort: getBooleanPropValue(firstChild as InstanceNode, PROP_KEYS.sort),
+              search: getBooleanPropValue(firstChild as InstanceNode, PROP_KEYS.search)
             };
           }
         }
@@ -870,7 +888,7 @@ function postSelection() {
     selectionLabel,
     tableSize: activeTableFrame ? getTableSize(activeTableFrame) : undefined,
     rowAction: activeTableFrame ? getRowAction(activeTableFrame) : undefined,
-    tableSwitches: activeTableFrame ? getTableSwitches(activeTableFrame) : undefined,
+    tableSwitches: activeTableFrame ? await getTableSwitches(activeTableFrame) : undefined,
     pluginData
   });
 }
@@ -966,16 +984,16 @@ function getColumnFrames(table: FrameNode): FrameNode[] {
   return table.children.filter((n) => n.type === "FRAME") as FrameNode[];
 }
 
-function getHeaderOffset(col: FrameNode): number {
+async function getHeaderOffset(col: FrameNode): Promise<number> {
   const first = col.children[0];
-  if (first && first.type === "INSTANCE" && isHeaderInstance(first as InstanceNode)) return 1;
+  if (first && first.type === "INSTANCE" && await isHeaderInstance(first as InstanceNode)) return 1;
   return 0;
 }
 
-function computeTableSelectionPosition(
+async function computeTableSelectionPosition(
   table: FrameNode,
   node: SceneNode
-): { kind?: "table" | "column" | "cell"; columnIndex?: number; rowIndex?: number } {
+): Promise<{ kind?: "table" | "column" | "cell"; columnIndex?: number; rowIndex?: number }> {
   if (node === table) {
     return { kind: "table" };
   }
@@ -1007,7 +1025,7 @@ function computeTableSelectionPosition(
   if (!cellNode) {
     return { kind: "column", columnIndex };
   }
-  const offset = getHeaderOffset(columnFrame);
+  const offset = await getHeaderOffset(columnFrame);
   const indexInCol = columnFrame.children.indexOf(cellNode);
   if (indexInCol < 0) {
     return { kind: "column", columnIndex };
@@ -1024,7 +1042,7 @@ async function applyHeaderModeToColumn(table: FrameNode, colIndex: number, mode:
   const col = cols[colIndex];
   if (!col) return;
   const first = col.children[0];
-  if (first && first.type === "INSTANCE" && isHeaderInstance(first as InstanceNode)) {
+  if (first && first.type === "INSTANCE" && await isHeaderInstance(first as InstanceNode)) {
     await applyHeaderModeToInstance(first as InstanceNode, mode);
   }
 }
@@ -1596,7 +1614,7 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
   const cols = getColumnFrames(table);
   const col = cols[colIndex];
   if (!col) return;
-  const offset = getHeaderOffset(col);
+  const offset = await getHeaderOffset(col);
 
   // Special handling for Custom Cells (Tag, Avatar, etc.)
   const customRenderer = CUSTOM_CELL_REGISTRY[type];
@@ -1704,7 +1722,7 @@ function clampInt(n: number, min: number, max: number) {
 }
 
 async function cloneOrCreateBodyCell(col: FrameNode): Promise<SceneNode> {
-  const offset = getHeaderOffset(col);
+  const offset = await getHeaderOffset(col);
   const template = col.children[offset];
   if (template) return (template as SceneNode).clone();
   const { createCell } = await resolveCellFactory(COMPONENT_KEY);
@@ -1743,11 +1761,11 @@ async function applyColumnAlignToColumn(table: FrameNode, colIndex: number, alig
   for (const child of col.children) {
     if (child.type === "INSTANCE") {
       const inst = child as InstanceNode;
-      if (isHeaderInstance(inst)) {
+      if (await isHeaderInstance(inst)) {
         // User explicitly asked for headers to be left aligned
-        setInstanceAlign(inst, "left");
+        await setInstanceAlign(inst, "left");
       } else {
-        setInstanceAlign(inst, align);
+        await setInstanceAlign(inst, align);
       }
     }
   }
@@ -1758,7 +1776,7 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
 
   if (op.op === "add_rows") {
     for (const col of cols) {
-      const offset = getHeaderOffset(col);
+      const offset = await getHeaderOffset(col);
       const currentRows = Math.max(0, col.children.length - offset);
       const pos =
         op.position === "start"
@@ -1787,7 +1805,7 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
   if (op.op === "remove_rows") {
     const sorted = [...op.indexes].sort((a, b) => b - a);
     for (const col of cols) {
-      const offset = getHeaderOffset(col);
+      const offset = await getHeaderOffset(col);
       const currentRows = Math.max(0, col.children.length - offset);
       for (const idx of sorted) {
         if (idx < 0 || idx >= currentRows) continue;
@@ -1801,7 +1819,7 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
   if (op.op === "add_cols") {
     const template = cols[0];
     if (!template) throw new Error("未找到可用列作为模板");
-    const hasHeader = getHeaderOffset(template) === 1;
+    const hasHeader = (await getHeaderOffset(template)) === 1;
     const currentCols = cols.length;
     const pos =
       op.position === "start"
@@ -1851,13 +1869,13 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
     const col = cols[op.index];
     if (!col) return;
     const first = col.children[0];
-    if (first && first.type === "INSTANCE" && isHeaderInstance(first as InstanceNode)) {
+    if (first && first.type === "INSTANCE" && await isHeaderInstance(first as InstanceNode)) {
       await setFirstText(first as any, op.title);
     }
     const title = op.title?.trim();
     if (title && title.length > 0) {
       col.name = title;
-      const offset = getHeaderOffset(col);
+      const offset = await getHeaderOffset(col);
       for (let r = 0; r < col.children.length - offset; r++) {
         const cellNode = col.children[offset + r];
         if (cellNode) {
@@ -2044,7 +2062,7 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
   if (op.op === "update_cell") {
     const col = cols[op.col];
     if (!col) return;
-    const offset = getHeaderOffset(col);
+    const offset = await getHeaderOffset(col);
     const cell = col.children[offset + op.row];
     if (!cell) return;
     await setFirstText(cell as any, op.value);
@@ -2054,7 +2072,7 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
   if (op.op === "fill_column") {
     const col = cols[op.col];
     if (!col) return;
-    const offset = getHeaderOffset(col);
+    const offset = await getHeaderOffset(col);
     for (let r = 0; r < op.values.length; r++) {
       const cell = col.children[offset + r];
       if (!cell) break;
@@ -2759,9 +2777,9 @@ function setColumnLayout(mode: "FIXED" | "FILL") {
   }
 }
 
-function setInstanceAlign(instance: InstanceNode, align: "left" | "center" | "right"): boolean {
+async function setInstanceAlign(instance: InstanceNode, align: "left" | "center" | "right"): Promise<boolean> {
   // Only allow alignment for Text cells
-  const type = getCellType(instance);
+  const type = await getCellType(instance);
   if (type !== "Text") return false;
 
   const props = instance.componentProperties;
@@ -2812,7 +2830,7 @@ async function init() {
     postSelection();
   });
 
-  figma.on("documentchange", (event) => {
+  figma.on("documentchange", async (event) => {
   const changes = event.documentChanges;
   const cellsToSync = new Map<string, { table: FrameNode; rowIndex: number; height: number }>();
 
@@ -2835,7 +2853,7 @@ async function init() {
             if (grandparent && grandparent.type === "FRAME" && grandparent.layoutMode === "HORIZONTAL") {
                if (isSmartTableFrame(grandparent as FrameNode)) {
                    // Identify row index
-                   const offset = getHeaderOffset(parent as FrameNode);
+                   const offset = await getHeaderOffset(parent as FrameNode);
                    const index = parent.children.indexOf(sceneNode);
                    if (index >= offset) {
                        const rowIndex = index - offset;
@@ -2864,7 +2882,7 @@ async function init() {
           
           // First pass: find max height
           for (const col of cols) {
-             const offset = getHeaderOffset(col);
+             const offset = await getHeaderOffset(col);
              if (rowIndex + offset < col.children.length) {
                  const cell = col.children[rowIndex + offset];
                  // If a cell is lineBreak mode, we should let it calculate its natural height first?
@@ -2890,7 +2908,7 @@ async function init() {
           //    This implies we sync height.
           
           for (const col of cols) {
-              const offset = getHeaderOffset(col);
+              const offset = await getHeaderOffset(col);
               if (rowIndex + offset < col.children.length) {
                   const cell = col.children[rowIndex + offset];
                   
@@ -3156,7 +3174,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
     }
     let updateCount = 0;
     for (const node of selection) {
-      const updateAlign = (n: SceneNode) => {
+      const updateAlign = async (n: SceneNode) => {
         if (n.type === "FRAME" && n.getPluginData("cellType") === "Text") {
            // For Text custom cell, we just change primaryAxisAlignItems
            const frame = n as FrameNode;
@@ -3176,7 +3194,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
              return true;
            }
         } else if (n.type === "INSTANCE") {
-            if (setInstanceAlign(n as InstanceNode, message.align)) {
+            if (await setInstanceAlign(n as InstanceNode, message.align)) {
               updateCount++;
               return true;
             }
@@ -3186,10 +3204,10 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
 
       if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
         for (let i = 0; i < node.children.length; i++) {
-          updateAlign(node.children[i]);
+          await updateAlign(node.children[i]);
         }
       } else {
-        updateAlign(node);
+        await updateAlign(node);
       }
     }
     if (updateCount > 0) {
@@ -3231,7 +3249,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                 for (const node of selection) {
                     let nodesToUpdate: SceneNode[] = [];
                     if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
-                        nodesToUpdate = node.children.slice(getHeaderOffset(node as FrameNode));
+                        nodesToUpdate = node.children.slice(await getHeaderOffset(node as FrameNode));
                         node.layoutSizingHorizontal = (cellType === "ActionText") ? "HUG" : "FILL";
                         node.counterAxisSizingMode = "FIXED";
                     } else if (node.type === "INSTANCE" || (node.type === "FRAME" && ["Text", "Tag", "Avatar", "ActionText", "Input", "Select"].includes(node.getPluginData("cellType")))) {
@@ -3312,7 +3330,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
        // If column selected, iterate children
        let nodesToUpdate: SceneNode[] = [];
        if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
-                        nodesToUpdate = node.children.slice(getHeaderOffset(node as FrameNode));
+                        nodesToUpdate = node.children.slice(await getHeaderOffset(node as FrameNode));
                         
                         // Ensure layout settings for non-ActionText
                         if (cellType !== "ActionText") {
@@ -3482,7 +3500,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       };
 
       if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
-        const children = node.children.slice(getHeaderOffset(node as FrameNode));
+        const children = node.children.slice(await getHeaderOffset(node as FrameNode));
         for (const child of children) {
           await updateNode(child as SceneNode);
         }
@@ -3721,7 +3739,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
     
     const cols = getColumnFrames(table);
     for (const col of cols) {
-       const offset = getHeaderOffset(col);
+       const offset = await getHeaderOffset(col);
        for (let i = offset; i < col.children.length; i++) {
           const cell = col.children[i] as FrameNode;
           
@@ -3787,7 +3805,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
      // Calculate rows (excluding header)
      // We look at other columns to determine row count
      const otherCol = cols.find(c => c.getPluginData("isRowActionColumn") !== "true") || cols[0];
-     const offset = getHeaderOffset(otherCol);
+     const offset = await getHeaderOffset(otherCol);
      const rowCount = otherCol.children.length - offset;
 
      // Create the new row action column at the beginning
@@ -3811,7 +3829,20 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
      if (!container || container.type !== "FRAME") return;
 
      if (message.key === "pagination") {
-         let pager = container.children.find(c => c.name.includes("Pagination") || (c.type === "INSTANCE" && (c.mainComponent?.key === PAGINATION_COMPONENT_KEY || (c.mainComponent?.parent?.type === "COMPONENT_SET" && c.mainComponent.parent.key === PAGINATION_COMPONENT_KEY))));
+         let pager: SceneNode | undefined;
+         for (const c of container.children) {
+             if (c.name.includes("Pagination")) {
+                 pager = c;
+                 break;
+             }
+             if (c.type === "INSTANCE") {
+                 const main = await (c as InstanceNode).getMainComponentAsync();
+                 if (main?.key === PAGINATION_COMPONENT_KEY || (main?.parent?.type === "COMPONENT_SET" && (main.parent as ComponentSetNode).key === PAGINATION_COMPONENT_KEY)) {
+                     pager = c;
+                     break;
+                 }
+             }
+         }
          
          if (!pager && message.enabled) {
                 try {
@@ -3981,7 +4012,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
           const node = selection[0];
           
           // Check for Filter component specifically
-          const isFilterResult = isFilter(node);
+          const isFilterResult = await isFilter(node);
           if (isFilterResult) {
                selectionLabel = "当前选中：筛选器";
                selectionKind = "table"; // Show table panel for filters as they are part of table controls
@@ -4000,7 +4031,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                       return "";
                   });
                   tableContext = {
-                      rows: cols[0]?.children.length - 1 || 0,
+                      rows: cols[0] ? cols[0].children.length - (await getHeaderOffset(cols[0])) : 0,
                       cols: cols.length,
                       headers
                   };
@@ -4041,7 +4072,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                       return "";
                   });
                   tableContext = {
-                      rows: cols[0]?.children.length - 1 || 0,
+                      rows: cols[0] ? cols[0].children.length - (await getHeaderOffset(cols[0])) : 0,
                       cols: cols.length,
                       headers
                   };

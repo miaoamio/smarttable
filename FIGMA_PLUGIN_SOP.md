@@ -8,7 +8,6 @@
   1. 安装依赖：`npm install`
   2. 启动后端网关：`npm run dev:gateway`
   3. 启动 Figma 插件构建：`npm run dev:plugin` 只需运行重新构建开发版，开发模式 Tab 就会重新出现。
-
   4. 在 Figma Desktop 中导入并运行插件
 
 ## 2) 一次性准备
