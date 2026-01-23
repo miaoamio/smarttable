@@ -38,8 +38,14 @@ function injectUiScript(uiHtml, uiJs, xlsxJs) {
 }
 
 async function buildOnce() {
-  const uiHtmlTemplate = await fs.readFile(path.join(srcDir, "ui.html"), "utf8");
-  
+  let uiHtmlTemplate = await fs.readFile(path.join(srcDir, "ui.html"), "utf8");
+  const isProduction = process.env.NODE_ENV === "production";
+
+  // If production, remove the debug tab from the template
+  if (isProduction) {
+    uiHtmlTemplate = uiHtmlTemplate.replace(/<button class="tab" data-tab="debug">开发模式<\/button>/g, '');
+  }
+
   // Read XLSX library content
   // Note: dependencies are hoisted to root node_modules in monorepo
   let xlsxPath = path.join(packageDir, "node_modules", "xlsx", "dist", "xlsx.full.min.js");
@@ -52,7 +58,6 @@ async function buildOnce() {
   
   const xlsxJs = await fs.readFile(xlsxPath, "utf8");
 
-  const isProduction = process.env.NODE_ENV === "production";
   const uiBuild = await esbuild.build({
     entryPoints: [path.join(srcDir, "ui.ts")],
     bundle: true,

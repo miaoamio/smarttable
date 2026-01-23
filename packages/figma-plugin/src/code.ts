@@ -2401,16 +2401,14 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
     colFrame.layoutMode = "VERTICAL";
     colFrame.primaryAxisSizingMode = "AUTO";
     
+    // Always set a default width and FIXED sizing first as a baseline
+    (colFrame as any).counterAxisSizingMode = "FIXED";
+    colFrame.resize(actionWidth, 100);
+
     if (type === "Switch") {
         if ("layoutSizingHorizontal" in colFrame) {
             (colFrame as any).layoutSizingHorizontal = "FILL";
-        } else {
-            (colFrame as any).counterAxisSizingMode = "FIXED";
-            (colFrame as any).resize(actionWidth, 100);
         }
-    } else {
-        (colFrame as any).counterAxisSizingMode = "FIXED"; 
-        (colFrame as any).resize(actionWidth, 100); 
     }
     colFrame.itemSpacing = 0;
     colFrame.paddingLeft = 0;
@@ -2421,7 +2419,51 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
     colFrame.clipsContent = false;
 
     // Leftmost placement
-    tableFrame.insertChild(0, colFrame);
+    // tableFrame.insertChild(0, colFrame);
+
+    if (type === "Switch") {
+        // Find if there is an "Action" column or if we should append to the end
+        // Or perhaps user wants it as the last column?
+        // Usually switches are at the end, but let's stick to the convention:
+        // If it's a row action, it's usually on the left.
+        // However, the user reported it's "gone".
+        // If layoutSizingHorizontal is FILL, maybe it's being squashed?
+        
+        // Let's force a minimum width if it's FILL, or change strategy.
+        // Actually, if it is FILL in a horizontal layout, and other columns are also FILL,
+        // it should share space.
+        
+        // Wait, if we insert at 0, and tableFrame has itemSpacing, it should be fine.
+        
+        // Let's check if we need to insert it at the end for Switch?
+        // Standard "Row Actions" (checkbox, radio, drag) are on the left.
+        // Switches are often on the right. 
+        // But the code treats all "Row Action Columns" as left-aligned (insertChild(0)).
+        
+        // If the user says "that column is completely gone", it might be 0 width.
+        // In createTable, tableFrame.primaryAxisSizingMode = "FIXED".
+        // If we add a FILL column to a FIXED container that is already full, what happens?
+        // It might be squashed.
+        
+        // Let's try to set it to FIXED width for now to see if it appears, 
+        // or ensure the tableFrame can accommodate it.
+        // But the user asked for "Switch column header cell width to fill" previously.
+        
+        // Reverting to FIXED width but keeping the internal fill logic might be safer,
+        // OR we ensure it has a minimum width.
+        
+        // Actually, let's keep it simple: insert at 0 is correct for "Row Action".
+        // But let's verify width.
+        
+        tableFrame.insertChild(0, colFrame);
+        
+        // Force a resize to ensure it has dimension if it was somehow 0
+        if (colFrame.width < 1) {
+             colFrame.resize(actionWidth, colFrame.height > 0 ? colFrame.height : 100);
+        }
+    } else {
+        tableFrame.insertChild(0, colFrame);
+    }
 
     // Header
     try {
@@ -2493,7 +2535,13 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
              } catch (e) {}
 
              if ("primaryAxisSizingMode" in headerInst) {
-                 (headerInst as any).primaryAxisSizingMode = "AUTO";
+                 if (type === "Switch") {
+                     // 对于 Switch，我们希望它充满，所以如果是水平布局，主轴不能是 AUTO (HUG)
+                     // 而是应该由 layoutSizingHorizontal = "FILL" 控制
+                     (headerInst as any).primaryAxisSizingMode = "FIXED"; 
+                 } else {
+                     (headerInst as any).primaryAxisSizingMode = "AUTO";
+                 }
              }
              if ("counterAxisSizingMode" in headerInst) {
                  (headerInst as any).counterAxisSizingMode = "AUTO";
@@ -2533,6 +2581,9 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
                     container.resize(actionWidth, container.height);
                 } else {
                     container.layoutAlign = "STRETCH";
+                    if ("layoutSizingHorizontal" in container) {
+                        (container as any).layoutSizingHorizontal = "FILL";
+                    }
                 }
                 
                 // If we detected a different height, apply it
