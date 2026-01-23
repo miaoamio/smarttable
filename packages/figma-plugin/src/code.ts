@@ -886,8 +886,8 @@ async function postSelection() {
     tableContext: tableContext ?? undefined,
     selectionKind,
     selectionLabel,
-    tableSize: activeTableFrame ? getTableSize(activeTableFrame) : undefined,
-    rowAction: activeTableFrame ? getRowAction(activeTableFrame) : undefined,
+    tableSize: activeTableFrame ? await getTableSize(activeTableFrame) : undefined,
+    rowAction: activeTableFrame ? await getRowAction(activeTableFrame) : undefined,
     tableSwitches: activeTableFrame ? await getTableSwitches(activeTableFrame) : undefined,
     pluginData
   });
