@@ -112,7 +112,6 @@ const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".tab
 const headerTypeSelect = document.getElementById("header-type-select") as HTMLSelectElement;
 const cellTypeSelect = document.getElementById("cell-type-select") as HTMLSelectElement;
 const applyToColumnBtn = document.getElementById("apply-to-column");
-const applyRowHeightBtn = document.getElementById("apply-row-height");
 
 const componentKeyInput = document.getElementById("component-key") as HTMLInputElement;
 const pluginDataOutput = document.getElementById("plugin-data-output") as HTMLDivElement;
@@ -1408,10 +1407,6 @@ alignRightBtn?.addEventListener("click", () => {
 
 applyToColumnBtn?.addEventListener("click", () => {
   post({ type: "apply_to_column" });
-});
-
-applyRowHeightBtn?.addEventListener("click", () => {
-  post({ type: "apply_row_height" });
 });
 
 function setupImageUpload() {

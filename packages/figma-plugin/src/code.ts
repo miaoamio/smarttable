@@ -137,7 +137,7 @@ const PAGINATION_COMPONENT_KEY = "4a052d113919473bb3079dd723e05ccd343042c5";
 const ROW_ACTION_COMPONENT_KEY = "de6d6250b7566cb97aaff74d5e3383e9a5316db9";
 
 // Row Action Components (New)
-const ACTION_CHECKBOX_KEY = "aa349dbe87d0e3691206728b8aaea198db839ead";
+const ACTION_CHECKBOX_KEY = "5d0f58a93a5ed9d198526fa58e73baf1174cf4f5";
 const ACTION_RADIO_KEY = "527424ae4a193ab57ae943d377b9bc7f23891824";
 const ACTION_DRAG_KEY = "75003cfee167850ea18191b92cb73918245ac38e";
 const ACTION_EXPAND_KEY = "5205f643a92b766838e43cdb9fc98f596053c9f5";
@@ -491,19 +491,32 @@ async function getTableSize(table: FrameNode): Promise<"mini" | "default" | "med
 }
 
 async function getRowAction(table: FrameNode): Promise<"none" | "multiple" | "single" | "drag" | "expand" | "switch"> {
-  // 优先从 Plugin Data 读取
+  const cols = getColumnFrames(table);
+  if (cols.length === 0) return "none";
+
+  // Check the first column to see if it's really an action column
+  const firstCol = cols[0];
+  const isActionCol = firstCol.getPluginData("isRowActionColumn") === "true";
+  
+  // If it's marked as action column, trust the plugin data
+  if (isActionCol) {
+    const type = firstCol.getPluginData("rowActionType");
+    if (type && type !== "none") return type as any;
+  }
+
+  // Fallback: 优先从 Table Plugin Data 读取，但要验证第一列是否可能包含操作
   try {
     const savedAction = table.getPluginData("rowActionType");
     if (savedAction && savedAction !== "none") {
-      return savedAction as any;
+      // 验证第一列是否有实例，防止误判
+      const offset = await getHeaderOffset(firstCol);
+      const cell = firstCol.children[offset];
+      if (cell) return savedAction as any;
     }
   } catch {}
 
-  const cols = getColumnFrames(table);
-  if (cols.length === 0) return "none";
-  const col = cols[0];
-  const offset = await getHeaderOffset(col);
-  const cell = col.children[offset];
+  const offset = await getHeaderOffset(firstCol);
+  const cell = firstCol.children[offset];
   if (!cell) return "none";
   
   // 简单判定：检查单元格是否有特定的 Variant 或名称
@@ -512,7 +525,7 @@ async function getRowAction(table: FrameNode): Promise<"none" | "multiple" | "si
     const props = getVariantProps(cell as InstanceNode);
     if (props) {
        // 检查 Checkbox
-       if (props["Checkbox"] === "True" || props["checked"] !== undefined || cell.getPluginData("isRowActionColumn") === "true") {
+       if (props["Checkbox"] === "True" || props["checked"] !== undefined || props["Checked 已选"] !== undefined || cell.getPluginData("isRowActionColumn") === "true") {
            // 如果有 Plugin Data 标记，直接信任它
            const type = cell.getPluginData("rowActionType");
            if (type) return type as any;
@@ -2210,28 +2223,51 @@ async function loadComponent(key: string, fallbackName?: string): Promise<Compon
       (n) => (n.type === "COMPONENT" || n.type === "COMPONENT_SET") && n.key === key
     );
 
-    // 3. Fallback: Search by Name in currentPage (if provided)
+    // 3. Fallback: Search by Name in document (if provided)
     if (!localComponent && fallbackName) {
-        console.warn(`Key search failed, trying fallback name: ${fallbackName}`);
+        console.warn(`Key search failed, trying fallback name in document: ${fallbackName}`);
         const searchName = fallbackName.toLowerCase();
-        localComponent = figma.currentPage.findOne(
-            (n) => (n.type === "COMPONENT" || n.type === "COMPONENT_SET") && 
-                   (n.name.toLowerCase() === searchName || 
-                    n.name.toLowerCase().includes(searchName) ||
-                    (searchName === "checkbox" && n.name.includes("复选框")) ||
-                    (searchName === "radio" && n.name.includes("单选")) ||
-                    (searchName === "switch" && n.name.includes("开关")) ||
-                    (searchName === "drag" && n.name.includes("拖拽")) ||
-                    (searchName === "expand" && n.name.includes("展开"))
-                   )
-        ) as ComponentNode | ComponentSetNode;
+        
+        // Use a consistent search predicate
+         const isTarget = (n: SceneNode | PageNode | DocumentNode) => 
+             (n.type === "COMPONENT" || n.type === "COMPONENT_SET") && 
+             (n.name.toLowerCase() === searchName || 
+              n.name.toLowerCase().includes(searchName) ||
+              (searchName === "checkbox" && (n.name.includes("复选框") || n.name.toLowerCase().includes("checkbox") || n.name.includes("多选"))) ||
+              (searchName === "radio" && (n.name.includes("单选") || n.name.toLowerCase().includes("radio") || n.name.includes("单选框"))) ||
+              (searchName === "switch" && (n.name.includes("开关") || n.name.toLowerCase().includes("switch"))) ||
+              (searchName === "drag" && (n.name.includes("拖拽") || n.name.toLowerCase().includes("drag") || n.name.includes("排序"))) ||
+              (searchName === "expand" && (n.name.includes("展开") || n.name.toLowerCase().includes("expand") || n.name.includes("详情")))
+             );
+
+        // First try current page (faster)
+        localComponent = figma.currentPage.findOne(isTarget) as ComponentNode | ComponentSetNode;
+
+        // If still not found, search the entire document (slower but thorough)
+        if (!localComponent) {
+            localComponent = figma.root.findOne(isTarget) as ComponentNode | ComponentSetNode;
+        }
     }
 
     if (localComponent) {
       componentCache.set(key, localComponent as ComponentNode | ComponentSetNode);
       return localComponent as ComponentNode | ComponentSetNode;
     }
-    
+
+    // 4. Ultimate Fallback: Try searching for any component that might be a checkbox
+    if (key === ACTION_CHECKBOX_KEY) {
+        const checkboxFallback = figma.root.findOne(n => 
+            (n.type === "COMPONENT" || n.type === "COMPONENT_SET") && 
+            (n.name.toLowerCase().includes("checkbox") || n.name.includes("复选框"))
+        ) as ComponentNode | ComponentSetNode;
+        if (checkboxFallback) {
+            console.log("Found a generic checkbox fallback by name search");
+            componentCache.set(key, checkboxFallback);
+            return checkboxFallback;
+        }
+    }
+
+    // 5. If still not found, notify and throw
     const msg = `无法找到组件 (Key: ${key}${fallbackName ? `, Name: ${fallbackName}` : ""})。请确保该组件在当前文件中存在或已发布。`;
     figma.notify(msg, { error: true });
     throw new Error(msg);
@@ -2336,14 +2372,15 @@ async function resolveCellFactory(
   throw new Error("选中对象不是 Component/Component Set/Instance，请选中单元格组件。");
 }
 
-async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: "Checkbox" | "Radio" | "Drag" | "Expand" | "Switch") {
+async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: "Checkbox" | "Radio" | "Drag" | "Expand" | "Switch"): Promise<FrameNode> {
     const colFrame = figma.createFrame();
     colFrame.name = "Row Action Column";
     colFrame.setPluginData("isRowActionColumn", "true");
     colFrame.setPluginData("rowActionType", type);
     colFrame.layoutMode = "VERTICAL";
     colFrame.primaryAxisSizingMode = "AUTO";
-    colFrame.counterAxisSizingMode = "AUTO"; 
+    colFrame.counterAxisSizingMode = "FIXED"; 
+    colFrame.resize(40, 100); // Initial size, will be adjusted
     colFrame.itemSpacing = 0;
     colFrame.fills = [];
     colFrame.clipsContent = false;
@@ -2379,6 +2416,13 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
 
         if (headerInst) {
              colFrame.appendChild(headerInst);
+             
+             // Ensure the header spans the column width
+             headerInst.layoutAlign = "STRETCH";
+             if ("layoutSizingHorizontal" in headerInst) {
+                 (headerInst as any).layoutSizingHorizontal = "FILL";
+             }
+             
              if ("primaryAxisSizingMode" in headerInst) {
                  (headerInst as any).primaryAxisSizingMode = "AUTO";
              }
@@ -2392,11 +2436,26 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
 
     // Row Action Instances
     let actionKey = "";
-    if (type === "Checkbox") actionKey = ACTION_CHECKBOX_KEY;
-    else if (type === "Radio") actionKey = ACTION_RADIO_KEY;
-    else if (type === "Drag") actionKey = ACTION_DRAG_KEY;
-    else if (type === "Expand") actionKey = ACTION_EXPAND_KEY;
-    else if (type === "Switch") actionKey = ACTION_SWITCH_KEY;
+    let actionWidth = 50; // Default width for action column
+
+    if (type === "Checkbox") {
+        actionKey = ACTION_CHECKBOX_KEY;
+        actionWidth = 40;
+    } else if (type === "Radio") {
+        actionKey = ACTION_RADIO_KEY;
+        actionWidth = 40;
+    } else if (type === "Drag") {
+        actionKey = ACTION_DRAG_KEY;
+        actionWidth = 40;
+    } else if (type === "Expand") {
+        actionKey = ACTION_EXPAND_KEY;
+        actionWidth = 40;
+    } else if (type === "Switch") {
+        actionKey = ACTION_SWITCH_KEY;
+        actionWidth = 60;
+    }
+
+    colFrame.resize(actionWidth, colFrame.height);
 
     if (actionKey) {
         try {
@@ -2419,6 +2478,9 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
                 container.name = `Action Container ${i + 1}`;
                 applyCellCommonStyling(container); // Apply common styling: 40px height, white bg, gray bottom border
                 
+                // Set specific width for action column
+                container.resize(actionWidth, container.height);
+                
                 // If we detected a different height, apply it
                 if (rowHeights[i] !== undefined && Math.abs(rowHeights[i] - 40) > 0.1) {
                     container.resize(container.width, rowHeights[i]);
@@ -2434,7 +2496,7 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
                         criteria["Disabled 禁用"] = "False";
                         criteria["Language"] = "CN";
                     } else if (type === "Checkbox") {
-                        criteria["Label 标签#109762:15"] = false;
+                        criteria["label 标签#109762:15"] = false;
                         criteria["Checked 已选"] = "False";
                         criteria["Indeterminate 半选"] = "False";
                         criteria["Hover 悬浮"] = "False";
@@ -2479,6 +2541,8 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
             console.warn(`Failed to load row action ${type}`, e);
         }
     }
+    
+    return colFrame;
 }
 
 async function createTable(params: CreateTableOptions) {
@@ -2702,7 +2766,13 @@ async function createTable(params: CreateTableOptions) {
       if (hFactory) {
         const header = hFactory();
         colFrame.appendChild(header);
-        header.layoutSizingHorizontal = "FILL";
+        
+        // Ensure header fills column width
+        header.layoutAlign = "STRETCH";
+        if ("layoutSizingHorizontal" in header) {
+          (header as any).layoutSizingHorizontal = "FILL";
+        }
+        
         await setFirstText(header, colTitle);
         
       // Ensure header properties are set correctly (e.g. Filter)
@@ -3740,48 +3810,6 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
      figma.notify(`已将样式应用到 ${updateCount} 个单元格`);
   }
 
-  if (message.type === "apply_row_height") {
-     const selection = figma.currentPage.selection;
-     if (selection.length !== 1) {
-       figma.notify("请选中一个单元格");
-       return;
-     }
-
-     const cell = selection[0];
-     // Validation: Cell must be inside a Column (Vertical Frame) which is inside a Table (Horizontal Frame)
-     const parentCol = cell.parent;
-     if (!parentCol || parentCol.type !== "FRAME" || parentCol.layoutMode !== "VERTICAL") {
-       figma.notify("选中的不是表格列内的单元格");
-       return;
-     }
-
-     const table = parentCol.parent;
-     if (!table || table.type !== "FRAME" || table.layoutMode !== "HORIZONTAL") {
-        figma.notify("选中的不是表格内的单元格");
-        return;
-     }
-
-     const rowIndex = parentCol.children.indexOf(cell);
-     const targetHeight = cell.height;
-     let updateCount = 0;
-
-     for (const col of table.children) {
-        if (col.type === "FRAME" && col.layoutMode === "VERTICAL") {
-            if (rowIndex < col.children.length) {
-                const targetCell = col.children[rowIndex];
-                // Apply height
-                if ("layoutSizingVertical" in targetCell) {
-                   targetCell.layoutSizingVertical = "FIXED";
-                   targetCell.resize(targetCell.width, targetHeight);
-                   updateCount++;
-                }
-            }
-        }
-     }
-     
-     figma.notify(`已将行高 ${targetHeight.toFixed(1)} 应用到 ${updateCount} 个单元格`);
-  }
-
   if (message.type === "add_column") {
     const selection = figma.currentPage.selection;
     let table: FrameNode | null = null;
@@ -3955,22 +3983,35 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
          return;
      }
 
-     // If it's an action column but different type, or not an action column at all
-     if (isActionCol) {
-         firstCol.remove();
-     }
+    // If it's an action column but different type, or not an action column at all
+    if (isActionCol) {
+        // Record position to replace it exactly
+        const index = table.children.indexOf(firstCol);
+        firstCol.remove();
+        
+        // Calculate rows (excluding header)
+        // We look at other columns to determine row count
+        const otherCol = getColumnFrames(table)[0];
+        if (otherCol) {
+            const offset = await getHeaderOffset(otherCol);
+            const rowCount = otherCol.children.length - offset;
 
-     // Calculate rows (excluding header)
-     // We look at other columns to determine row count
-     const otherCol = cols.find(c => c.getPluginData("isRowActionColumn") !== "true") || cols[0];
-     const offset = await getHeaderOffset(otherCol);
-     const rowCount = otherCol.children.length - offset;
+            // Create the new row action column at the same position
+            const newCol = await createRowActionColumn(table, rowCount, type);
+            table.insertChild(index, newCol);
+        }
+    } else {
+        // Original logic for adding a new action column at the beginning
+        const otherCol = getColumnFrames(table)[0];
+        if (otherCol) {
+            const offset = await getHeaderOffset(otherCol);
+            const rowCount = otherCol.children.length - offset;
+            await createRowActionColumn(table, rowCount, type);
+        }
+    }
 
-     // Create the new row action column at the beginning
-     await createRowActionColumn(table, rowCount, type);
-     figma.notify(`已设置操作列为 ${type}`);
-     
-     postSelection();
+    figma.notify(`已设置操作列为 ${type}`);
+    postSelection();
   }
 
   if (message.type === "set_table_switch") {
@@ -4196,6 +4237,11 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                       cols: cols.length,
                       headers
                   };
+                  
+                  // 提取表格配置
+                  tableSize = await getTableSize(table);
+                  rowAction = await getRowAction(table);
+                  tableSwitches = await getTableSwitches(table);
                }
            } else if (node.type === "FRAME" && node.name.startsWith("Smart Table")) {
                if (!selectionLabel) selectionLabel = "当前选中：表格";
@@ -4237,6 +4283,11 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                       cols: cols.length,
                       headers
                   };
+
+                  // 提取表格配置
+                  tableSize = await getTableSize(table);
+                  rowAction = await getRowAction(table);
+                  tableSwitches = await getTableSwitches(table);
               } else {
                   selectionLabel = `当前选中：${node.name}`;
               }
