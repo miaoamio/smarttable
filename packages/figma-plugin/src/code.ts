@@ -909,15 +909,50 @@ async function loadTextNodeFonts(node: TextNode) {
           : [{ family: "Inter", style: "Regular" }])
       : [node.fontName as FontName];
 
+  const SAFE_DEFAULT_FONT: FontName = { family: "Inter", style: "Regular" };
+
   for (const f of fontNames) {
     try {
-      // Add timeout to prevent hanging
+      // 1. Try to load the original font
       await Promise.race([
         figma.loadFontAsync(f),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Font load timeout")), 2000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`Font load timeout: ${f.family} ${f.style}`)), 5000))
       ]);
     } catch (e) {
-      console.warn(`Failed to load font ${f.family} ${f.style}:`, e);
+      console.warn(`Failed to load font ${f.family} ${f.style}, attempting fallback:`, e);
+      
+      // 2. Specific fix for PingFang SC quirk (common in Chinese designs)
+      if (f.family.replace(/\s+/g, "") === "PingFangSC") {
+        try {
+          const altFont = { family: "Ping Fang SC", style: f.style };
+          await figma.loadFontAsync(altFont);
+          node.fontName = altFont;
+          console.log(`Applied alternative Ping Fang SC`);
+          continue;
+        } catch (e2) {}
+      }
+
+      // 3. Final Fallback: Use "Inter" which is guaranteed to be available in Figma
+      try {
+        const fallbackStyle = f.style === "Bold" || f.style === "Medium" || f.style === "Semibold" ? "Bold" : "Regular";
+        const fallbackFont = { family: "Inter", style: fallbackStyle };
+        await figma.loadFontAsync(fallbackFont);
+        
+        // If the whole node used the failing font, update it
+        if (node.fontName !== figma.mixed) {
+          node.fontName = fallbackFont;
+        } else {
+          // If it was mixed, we should ideally update the range, but for safety in plugins, 
+          // setting the whole node to fallback is often better than a crash.
+          node.fontName = fallbackFont;
+        }
+        console.log(`Fallback to safe font: Inter ${fallbackStyle}`);
+      } catch (fallbackErr) {
+        // Extreme fallback if even Inter fails (should not happen in Figma)
+        console.error("Critical: Default font Inter failed to load", fallbackErr);
+        await figma.loadFontAsync(SAFE_DEFAULT_FONT);
+        node.fontName = SAFE_DEFAULT_FONT;
+      }
     }
   }
 }

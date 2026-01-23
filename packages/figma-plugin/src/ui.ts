@@ -1510,56 +1510,125 @@ async function handleExcelFile(file: File, target: UploadTarget) {
       const magic = Array.from(uint8).map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase();
       console.log(`File: ${file.name}, Size: ${file.size} bytes, Magic: ${magic}`);
 
-      const userEncoding = "auto";
-
       let wb;
-      const isCSV = file.name.toLowerCase().endsWith(".csv");
-      const isXLS = file.name.toLowerCase().endsWith(".xls");
-      const isXLSX = file.name.toLowerCase().endsWith(".xlsx");
+      const isXLSX = magic.startsWith("50 4B"); // ZIP/XLSX
+      const isXLS = magic.startsWith("D0 CF");  // Old XLS (97-2003)
+      const isUTF16LE = magic.startsWith("FF FE"); // UTF-16LE BOM
+      const isUTF16BE = magic.startsWith("FE FF"); // UTF-16BE BOM
+      const isUTF8BOM = magic.startsWith("EF BB BF"); // UTF-8 BOM
+      const isHTML = magic.startsWith("3C 21") || magic.startsWith("3C 68") || magic.startsWith("3C 3F"); // <! or <h or <?
 
-      try {
-        if (userEncoding !== "auto") {
-          console.log(`Using user-specified encoding: ${userEncoding}`);
-          wb = XLSX.read(buffer, { type: "array", codepage: parseInt(userEncoding) });
-        } else {
-          // Auto detection
-          wb = XLSX.read(buffer, { type: "array" });
+      console.log(`[File Probe] Name: ${file.name}, Magic: ${magic}, isXLS: ${isXLS}, isHTML: ${isHTML}`);
+
+      const tryReadWithEncoding = (buf: ArrayBuffer, cp: number | string): { workbook: any, score: number, chineseCount: number, garbledCount: number } => {
+        try {
+          const readOptions: any = { type: "array" };
+          if (cp !== "auto") {
+            readOptions.codepage = typeof cp === 'string' ? parseInt(cp) : cp;
+          }
           
-          const firstSheetName = wb.SheetNames[0];
-          const firstSheet = wb.Sheets[firstSheetName];
+          const workbook = XLSX.read(buf, readOptions);
+          const firstSheetName = workbook.SheetNames[0];
+          if (!firstSheetName) return { workbook, score: -100, chineseCount: 0, garbledCount: 0 };
+          
+          const firstSheet = workbook.Sheets[firstSheetName];
+          let garbledCount = 0;
+          let chineseCount = 0;
+          let rareChineseCount = 0;
+          
+          const range = XLSX.utils.decode_range(firstSheet['!ref'] || 'A1:E10');
+          for (let r = range.s.r; r <= Math.min(range.e.r, 10); r++) {
+            for (let c = range.s.c; c <= Math.min(range.e.c, 10); c++) {
+              const cell = firstSheet[XLSX.utils.encode_cell({r, c})];
+              if (cell && typeof cell.v === 'string' && cell.v.trim().length > 0) {
+                const val = cell.v;
+                if (val.includes('\uFFFD')) garbledCount += 10; 
+                if (val.includes('\u0000')) garbledCount += 20; 
+                
+                // Detection of common Chinese characters
+                const commonChineseMatch = val.match(/[\u4e00-\u9fa5]/g);
+                if (commonChineseMatch) chineseCount += commonChineseMatch.length;
 
-          // For non-ZIP formats (CSV, XLS), check if it looks garbled
-          if (!magic.startsWith("50 4B") && firstSheet) {
-            let needsRetry = false;
-            const range = XLSX.utils.decode_range(firstSheet['!ref'] || 'A1:C10');
-            const endRow = Math.min(range.e.r, 20);
-            const endCol = Math.min(range.e.c, 10);
-            
-            for (let r = 0; r <= endRow; r++) {
-              for (let c = 0; c <= endCol; c++) {
-                const cell = firstSheet[XLSX.utils.encode_cell({r, c})];
-                if (cell && typeof cell.v === 'string') {
-                  // Check for common mojibake patterns
-                  // 1. Unicode Replacement Character
-                  // 2. High-bit character sequences that are unlikely in UTF-8
-                  if (cell.v.includes('\uFFFD') || /[\u0080-\u00ff]{2,}/.test(cell.v)) {
-                    needsRetry = true;
-                    break;
-                  }
-                }
+                // Detection of rare/Mojibake-prone Chinese characters
+                // These are often seen when GBK is misread as UTF-8 or vice versa
+                const rareChineseMatch = val.match(/[\u3400-\u4DBF\u20000-\u2A6DF\u9FA6-\u9FFF]/g);
+                if (rareChineseMatch) rareChineseCount += rareChineseMatch.length;
               }
-              if (needsRetry) break;
-            }
-
-            if (needsRetry) {
-              console.log(`Detected potential encoding issue in ${file.name}, retrying with GBK (936)`);
-              wb = XLSX.read(buffer, { type: "array", codepage: 936 });
             }
           }
+
+          // Penalty for rare characters as they are often signs of Mojibake
+          // Bonus for UTF-8 if it has any valid Chinese and no garbled characters
+          let score = chineseCount * 10 - rareChineseCount * 15 - garbledCount * 20;
+          if ((cp === "auto" || cp === 65001) && garbledCount === 0 && chineseCount > 0) {
+            score += 500; // Strong preference for valid UTF-8
+          }
+          
+          return { workbook, score, chineseCount, garbledCount };
+        } catch (e) {
+          return { workbook: null, score: -999, chineseCount: 0, garbledCount: 999 };
+        }
+      };
+
+      try {
+        if (isXLSX || isXLS) {
+          console.log(isXLSX ? "Standard XLSX" : "Legacy XLS (97-2003)");
+          wb = XLSX.read(buffer, { type: "array" });
+        } else if (isUTF8BOM) {
+          console.log("UTF-8 with BOM detected");
+          wb = XLSX.read(buffer, { type: "array", codepage: 65001 });
+        } else if (isUTF16LE) {
+          console.log("UTF-16LE with BOM detected");
+          wb = XLSX.read(buffer, { type: "array", codepage: 1200 });
+        } else if (isUTF16BE) {
+          console.log("UTF-16BE with BOM detected");
+          wb = XLSX.read(buffer, { type: "array", codepage: 1201 });
+        } else if (isHTML) {
+          console.log("HTML/XML table detected");
+          wb = XLSX.read(buffer, { type: "array" });
+        } else {
+          const encodings = [
+            { name: 'UTF-8', cp: 65001 },
+            { name: 'GB18030', cp: 54936 }, 
+            { name: 'UTF-16LE', cp: 1200 },
+            { name: 'UTF-16BE', cp: 1201 },
+            { name: 'Big5', cp: 950 },
+            { name: 'Shift-JIS', cp: 932 }
+          ];
+
+          // If it looks like UTF-16LE (many nulls in even positions), prioritize it
+          const uint8View = new Uint8Array(buffer);
+          let nullCount = 0;
+          for (let i = 1; i < Math.min(uint8View.length, 1000); i += 2) {
+            if (uint8View[i] === 0) nullCount++;
+          }
+          if (nullCount > 50) {
+            console.log("File looks like UTF-16LE (null byte heuristic)");
+            const leIdx = encodings.findIndex(e => e.name === 'UTF-16LE');
+            if (leIdx > -1) {
+              const [le] = encodings.splice(leIdx, 1);
+              encodings.unshift(le);
+            }
+          }
+
+          let bestEnc = encodings[0];
+          let bestRes = tryReadWithEncoding(buffer, bestEnc.cp);
+
+          for (let i = 1; i < encodings.length; i++) {
+            const res = tryReadWithEncoding(buffer, encodings[i].cp);
+            console.log(`[Probe] ${encodings[i].name}: Score ${res.score}, Chinese ${res.chineseCount}, Garbled ${res.garbledCount}`);
+            if (res.score > bestRes.score) {
+              bestRes = res;
+              bestEnc = encodings[i];
+            }
+          }
+
+          console.log(`[Final Decision] Using ${bestEnc.name}`);
+          wb = bestRes.workbook || XLSX.read(buffer, { type: "array" });
         }
       } catch (e) {
-        console.error("XLSX read error, trying fallback GBK:", e);
-        wb = XLSX.read(buffer, { type: "array", codepage: 936 });
+        console.error("Parse failed:", e);
+        wb = XLSX.read(buffer, { type: "array" });
       }
     const sheetName = wb.SheetNames[0];
       if (wb.SheetNames.length > 1) {

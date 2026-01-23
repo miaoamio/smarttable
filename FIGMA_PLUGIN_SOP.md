@@ -72,23 +72,34 @@ curl -s -X POST http://localhost:8787/tools/llm_chat \
 - 返回 JSON 且包含 `text`
 - `text` 里能看到“连接成功”
 
-## 5) 启动插件并在 Figma 导入
+## 5) 启动插件与开发调试
 
-启动插件开发：
-
+### 启动插件开发模式
+在项目根目录执行：
 ```bash
 npm run dev:plugin
 ```
+此命令会启动监听模式，每当你保存代码（`Cmd + S`），它都会自动重新构建插件代码到 `dist` 目录。
 
-Figma Desktop 导入插件：
-- Plugins → Development → Import plugin from manifest…
-- 选择：`/Users/bytedance/Desktop/table/packages/figma-plugin/manifest.json`
+### 如何更新到 Figma？
+Figma 插件不会自动“热更新”界面，你需要在修改代码后执行以下操作：
+1. **保存代码**：确保终端中的 `npm run dev:plugin` 运行正常且没有报错。
+2. **刷新插件**：在 Figma 窗口中按下 **`Cmd + Option + P`** (Mac) 或 **`Ctrl + Alt + P`** (Windows)。
+   - 这会重新运行你最后一次使用的插件。
+   - 如果快捷键失效，可以通过右键菜单：`Plugins` -> `Development` -> `你的插件名` 重新打开。
 
-运行插件：
-- Plugins → Development → 选择插件
-- 执行一次“生成/运行”等动作，确认 UI 有返回、文档有变化
+---
 
-## 6) 最小排障
+## 6) 核心命令说明
+
+| 命令 | 场景 | 效果 |
+| :--- | :--- | :--- |
+| **`npm run dev:plugin`** | **日常开发** | **自动更新**。监听代码变化并实时编译。终端会保持运行。 |
+| **`npm run build`** | **发布/交付** | **单次构建**。代码压缩优化，运行一次即结束，用于最终发布。 |
+
+---
+
+## 7) 最小排障
 
 - `缺少大模型 API Key`
   - `.env.local` 是否在项目根目录
