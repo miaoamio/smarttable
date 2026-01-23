@@ -88,8 +88,8 @@ function getInitial(char: string): string {
 }
 
 console.log("Smart Table plugin starting...");
-
-const COMPONENT_KEY = CELL_COMPONENT_KEY;
+  
+  const COMPONENT_KEY = CELL_COMPONENT_KEY;
 const HEADER_COMPONENT_KEY = SHARED_HEADER_COMPONENT_KEY;
 
 function isHeaderNode(node: SceneNode): boolean {
@@ -1767,20 +1767,38 @@ async function renderSelectCell(
 async function renderAvatarCell(
   cellFrame: FrameNode,
   text: string,
-  context: { avatarComponent?: ComponentNode | ComponentSetNode; overrideDisplayValue?: string }
+  context: { avatarComponent?: ComponentNode | ComponentSetNode; overrideDisplayValue?: string; isAI?: boolean }
 ) {
-  const { avatarComponent, overrideDisplayValue } = context;
-  if (!avatarComponent) return;
+  const { avatarComponent, overrideDisplayValue, isAI } = context;
+  console.log(`[renderAvatarCell] input text: "${text}", override: "${overrideDisplayValue}", isAI: ${isAI}`);
+  if (!avatarComponent) {
+    console.warn("[renderAvatarCell] avatarComponent is missing!");
+    return;
+  }
 
-  const finalName = overrideDisplayValue || text || "宋明杰";
+  // Requirement 1 & 3: If in AI mode, use "宋明杰"
+  // Requirement 2: If overrideDisplayValue is set (e.g. switching type), use it
+  let finalName = overrideDisplayValue || text || "宋明杰";
+  if (isAI && !overrideDisplayValue) {
+    finalName = "宋明杰";
+  }
+  
+  console.log(`[renderAvatarCell] finalName determined as: "${finalName}"`);
   
   // If we have an override (e.g. switching column type), we preserve the original text in cellValue
   // otherwise we update cellValue to match the rendered text
   if (overrideDisplayValue) {
     // Requirement 2: Switch to Avatar column uses default name "宋明杰" in UI, 
     // but we don't modify cellValue. We keep whatever was there.
-    if (text && !cellFrame.getPluginData("cellValue")) {
-      cellFrame.setPluginData("cellValue", text);
+    // If text exists, we ensure it's saved in cellValue if not already there
+    const existingValue = cellFrame.getPluginData("cellValue");
+    if (text && (!existingValue || existingValue === "宋明杰")) {
+       // If switching from another type, text is the original content
+       // If switching from Avatar, cellValue might be "宋明杰" (default) or real name
+       // We only overwrite if we have meaningful text
+       if (text !== "宋明杰") {
+         cellFrame.setPluginData("cellValue", text);
+       }
     }
   } else {
     cellFrame.setPluginData("cellValue", finalName);
@@ -2034,6 +2052,10 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
           const n = childrenSnapshot[i];
           if (n.parent !== col) continue;
           
+          // Extract original text BEFORE node replacement or removal
+          let originalText = extractTextFromNode(n);
+          let currentContext = Object.assign({}, context);
+          
           let cellFrame: FrameNode;
           let parent = n.parent;
           let index = parent ? parent.children.indexOf(n) : -1;
@@ -2061,20 +2083,12 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
             cellFrame.counterAxisSizingMode = "FIXED";
           }
           
-          // Special handling for Avatar type: Requirement 2
-          // When manually switching to Avatar column, we force "宋明杰" regardless of original text
-          let originalText = extractTextFromNode(n);
-          let currentContext = Object.assign({}, context);
-          
           if (type === "ActionIcon" || type === "ActionText") {
             originalText = "编辑 删除 …";
           } else if (type === "Avatar") {
-            // Force the display value to be "宋明杰" during type switching
+            // Requirement 2: Force the display value to be "宋明杰" during type switching
             currentContext.overrideDisplayValue = "宋明杰";
-            
-            // If the cell was already an Avatar cell, we might be re-applying it.
-            // But if it was another type, we want to ensure "宋明杰" is shown.
-            // The renderAvatarCell will handle using overrideDisplayValue.
+            console.log(`[SwitchType] Switching to Avatar. originalText: ${originalText}, override: ${currentContext.overrideDisplayValue}`);
           }
           
           await customRenderer(cellFrame, originalText, currentContext);
