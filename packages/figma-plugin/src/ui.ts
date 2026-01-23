@@ -742,11 +742,12 @@ function post(msg: UiToPluginMessage) {
 
 function extractJsonText(raw: string) {
   const s = raw.trim();
-  if (!s.startsWith("```")) return s;
-  const firstNl = s.indexOf("\n");
-  const lastFence = s.lastIndexOf("```");
-  if (firstNl === -1 || lastFence <= firstNl) return s;
-  return s.slice(firstNl + 1, lastFence).trim();
+  // 改进：即使 markdown 块不在开头也能找到它
+  const match = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (match) {
+    return match[1].trim();
+  }
+  return s;
 }
 
 function extractAllJsonObjects(raw: string): string[] {
@@ -783,6 +784,9 @@ function extractAllJsonObjects(raw: string): string[] {
       if (depth === 0 && start !== -1) {
         result.push(s.slice(start, i + 1).trim());
         start = -1;
+      } else if (depth < 0) {
+        // 容错：忽略多余的闭合括号
+        depth = 0;
       }
     }
   }
@@ -801,9 +805,6 @@ function extractAllJsonObjects(raw: string): string[] {
       truncated += '"';
     }
     
-    // Very basic fix: if it looks like it's inside an array or object property
-    // we don't do complex repairs, just close the braces.
-    // JSON.parse might still fail, but it's better than giving up immediately.
     result.push(truncated + closure);
   }
 
@@ -814,10 +815,12 @@ function tryParseTruncatedJson(s: string): any {
   try {
     return JSON.parse(s);
   } catch (e) {
-    // If it fails, try to aggressively repair the most common truncation issues
-    // 1. Unclosed strings
-    // 2. Unclosed arrays/objects
     let repaired = s.trim();
+    
+    // 容错：如果末尾有多余的闭合括号，尝试移除它们
+    while (repaired.endsWith("}") && !repaired.startsWith("{")) {
+        repaired = repaired.slice(0, -1).trim();
+    }
     
     // Count braces and brackets
     let openBraces = (repaired.match(/\{/g) || []).length;
@@ -825,10 +828,10 @@ function tryParseTruncatedJson(s: string): any {
     let openBrackets = (repaired.match(/\[/g) || []).length;
     let closeBrackets = (repaired.match(/\]/g) || []).length;
     
-    // Check for trailing comma which is invalid in JSON
+    // 移除末尾非法逗号
     repaired = repaired.replace(/,\s*$/, "");
     
-    // Add missing closures
+    // 自动闭合
     while (openBrackets > closeBrackets) {
       repaired += "]";
       closeBrackets++;
@@ -838,11 +841,17 @@ function tryParseTruncatedJson(s: string): any {
       closeBraces++;
     }
     
-    try {
-      return JSON.parse(repaired);
-    } catch (inner) {
-      return null;
+    // 再次尝试：如果闭合括号过多，尝试逐个移除末尾的 } 直到解析成功
+    let attempt = repaired;
+    while (attempt.endsWith("}")) {
+        try {
+            return JSON.parse(attempt);
+        } catch {
+            attempt = attempt.slice(0, -1).trim();
+        }
     }
+    
+    return null;
   }
 }
 
@@ -979,6 +988,12 @@ function coerceLegacyToEnvelope(obj: any): AiTableEnvelope {
   if (obj && typeof obj === "object" && "envelope" in obj) {
     return coerceLegacyToEnvelope((obj as any).envelope);
   }
+
+  // 改进：处理嵌套的 schema
+  if (obj && obj.schema && obj.schema.schema && typeof obj.schema.schema === "object") {
+    return coerceLegacyToEnvelope({ ...obj, schema: obj.schema.schema });
+  }
+
   if (obj && String(obj.intent).toLowerCase() === "create") {
     const s = (obj as any).schema ?? {};
     const cols = normalizeRows(s.cols, Array.isArray(s.columns) ? s.columns.length : (Array.isArray(s.data) && s.data.length > 0 ? s.data[0].length : 3));
@@ -987,7 +1002,7 @@ function coerceLegacyToEnvelope(obj: any): AiTableEnvelope {
     const columns = rawCols.slice(0, cols).map((c, i) => ({
       id: typeof c?.id === "string" ? c.id : `col_${i + 1}`,
       title: typeof c?.title === "string" ? c.title : "",
-      type: isColumnType(c?.type) ? (c.type as ColumnType) : "Text",
+      type: isColumnType(c?.type) ? (c.type as ColumnType) : (String(c?.type).toLowerCase() === "number" ? "Text" : "Text"),
       header: isHeaderMode(c?.header) ? (c.header as HeaderMode) : "none"
     }));
     const data = normalizeData(rows, cols, s.data, columns.map((c) => ({ title: c.title, type: c.type as ColumnType })));

@@ -33,12 +33,14 @@ export function distributePrompt(
     taskInstruction = `# Task: Create a New Table
 你是一个 Figma 表格设计专家。请根据用户需求和提供的参考资料，从零开始设计一个表格。
 必须确保生成的 JSON 符合 "intent": "create" 协议。
+**重要：请只输出 JSON 对象本身，不要包含任何前导或后继文字，不要使用 Markdown 代码块包裹。**
 **表格行数限制：请务必生成正好 ${rowCount} 行数据内容。**
 **功能组件配置：请务必在 JSON 的 "config" 字段中配置 "filters"（筛选器）和 "buttons"（按钮组），除非用户明确要求不需要。**`;
   } else {
     taskInstruction = `# Task: Edit Existing Table
 你是一个 Figma 表格编辑专家。用户当前正在对一个已有的 Figma 表格进行增量修改。
 你必须基于提供的 [Current Table Context] 进行修改，并返回 "intent": "edit" 协议。
+**重要：请只输出 JSON 对象本身，不要包含任何前导或后继文字，不要使用 Markdown 代码块包裹。**
 **表格行数限制：如果涉及新增行或重新生成内容，请确保最终结果中包含正好 ${rowCount} 行数据内容。**`;
   }
 
