@@ -2373,15 +2373,50 @@ async function resolveCellFactory(
 }
 
 async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: "Checkbox" | "Radio" | "Drag" | "Expand" | "Switch"): Promise<FrameNode> {
+    // Row Action Instances
+    let actionKey = "";
+    let actionWidth = 50; // Default width for action column
+
+    if (type === "Checkbox") {
+        actionKey = ACTION_CHECKBOX_KEY;
+        actionWidth = 38;
+    } else if (type === "Radio") {
+        actionKey = ACTION_RADIO_KEY;
+        actionWidth = 38;
+    } else if (type === "Drag") {
+        actionKey = ACTION_DRAG_KEY;
+        actionWidth = 38;
+    } else if (type === "Expand") {
+        actionKey = ACTION_EXPAND_KEY;
+        actionWidth = 38;
+    } else if (type === "Switch") {
+        actionKey = ACTION_SWITCH_KEY;
+        actionWidth = 60;
+    }
+
     const colFrame = figma.createFrame();
     colFrame.name = "Row Action Column";
     colFrame.setPluginData("isRowActionColumn", "true");
     colFrame.setPluginData("rowActionType", type);
     colFrame.layoutMode = "VERTICAL";
     colFrame.primaryAxisSizingMode = "AUTO";
-    colFrame.counterAxisSizingMode = "FIXED"; 
-    colFrame.resize(40, 100); // Initial size, will be adjusted
+    
+    if (type === "Switch") {
+        if ("layoutSizingHorizontal" in colFrame) {
+            (colFrame as any).layoutSizingHorizontal = "FILL";
+        } else {
+            (colFrame as any).counterAxisSizingMode = "FIXED";
+            (colFrame as any).resize(actionWidth, 100);
+        }
+    } else {
+        (colFrame as any).counterAxisSizingMode = "FIXED"; 
+        (colFrame as any).resize(actionWidth, 100); 
+    }
     colFrame.itemSpacing = 0;
+    colFrame.paddingLeft = 0;
+    colFrame.paddingRight = 0;
+    colFrame.paddingTop = 0;
+    colFrame.paddingBottom = 0;
     colFrame.fills = [];
     colFrame.clipsContent = false;
 
@@ -2396,10 +2431,19 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
             const criteria: Record<string, string> = {
                 "Check 多选": type === "Checkbox" ? "True" : "False",
                 "Expand 展开": type === "Expand" ? "True" : "False",
-                "Size 尺寸": "Default 40",
+                "Size 尺寸": "Default 40", // 统一使用 Default 40，这是高度属性
                 "Fixdrow 固定表头": "False",
                 "Align 排列方式": "Left 左"
             };
+            
+            // 再次确保对于 Switch，这些都是 False
+            if (type === "Switch") {
+                criteria["Check 多选"] = "False";
+                criteria["Expand 展开"] = "False";
+                // Switch 表头不需要充满，而是居中或者靠左，但 headerInst 本身需要 FILL
+                // 这里我们不需要特别改属性，因为 "Size 尺寸" 和 "Align 排列方式" 已经设置了
+            }
+            
             const variant = findVariant(headerComp, criteria);
             if (variant) {
                 headerInst = variant.createInstance();
@@ -2419,10 +2463,35 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
              
              // Ensure the header spans the column width
              headerInst.layoutAlign = "STRETCH";
+             
+             // 恢复为 FILL 模式，它会自动填充父容器 (colFrame) 的宽度
              if ("layoutSizingHorizontal" in headerInst) {
-                 (headerInst as any).layoutSizingHorizontal = "FILL";
+                 // 对于 Switch 开关列，表头应该充满
+                 if (type === "Switch") {
+                    (headerInst as any).layoutSizingHorizontal = "FILL";
+                 } else {
+                    (headerInst as any).layoutSizingHorizontal = "FILL"; 
+                 }
              }
              
+             // 再次强制应用变体属性，确保 Check/Expand 都是 False
+             try {
+                const finalProps: any = {
+                    "Check 多选": "False",
+                    "Expand 展开": "False",
+                    "Size 尺寸": "Default 40",
+                    "Fixdrow 固定表头": "False"
+                };
+                
+                // 如果是 Switch，确保 Align 是 Left，但因为宽度是 Fill，它会占满
+                if (type === "Switch") {
+                    // 如果组件支持宽度调整，这里可能不需要额外操作，
+                    // 因为 layoutSizingHorizontal = "FILL" 已经让它充满了。
+                }
+
+                headerInst.setProperties(finalProps);
+             } catch (e) {}
+
              if ("primaryAxisSizingMode" in headerInst) {
                  (headerInst as any).primaryAxisSizingMode = "AUTO";
              }
@@ -2434,28 +2503,9 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
         console.warn("Failed to load row action header", e);
     }
 
-    // Row Action Instances
-    let actionKey = "";
-    let actionWidth = 50; // Default width for action column
-
-    if (type === "Checkbox") {
-        actionKey = ACTION_CHECKBOX_KEY;
-        actionWidth = 40;
-    } else if (type === "Radio") {
-        actionKey = ACTION_RADIO_KEY;
-        actionWidth = 40;
-    } else if (type === "Drag") {
-        actionKey = ACTION_DRAG_KEY;
-        actionWidth = 40;
-    } else if (type === "Expand") {
-        actionKey = ACTION_EXPAND_KEY;
-        actionWidth = 40;
-    } else if (type === "Switch") {
-        actionKey = ACTION_SWITCH_KEY;
-        actionWidth = 60;
+    if (type !== "Switch") {
+        colFrame.resize(actionWidth, colFrame.height);
     }
-
-    colFrame.resize(actionWidth, colFrame.height);
 
     if (actionKey) {
         try {
@@ -2479,7 +2529,11 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
                 applyCellCommonStyling(container); // Apply common styling: 40px height, white bg, gray bottom border
                 
                 // Set specific width for action column
-                container.resize(actionWidth, container.height);
+                if (type !== "Switch") {
+                    container.resize(actionWidth, container.height);
+                } else {
+                    container.layoutAlign = "STRETCH";
+                }
                 
                 // If we detected a different height, apply it
                 if (rowHeights[i] !== undefined && Math.abs(rowHeights[i] - 40) > 0.1) {

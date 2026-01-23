@@ -1862,7 +1862,15 @@ window.onmessage = (event) => {
       tableSizeSelect.value = msg.tableSize;
     }
     if (msg.rowAction && tableRowActionSelect) {
-      tableRowActionSelect.value = msg.rowAction;
+      // Normalize old values to new ones if necessary
+      let val = msg.rowAction;
+      if (val === "Checkbox") val = "multiple";
+      if (val === "Radio") val = "single";
+      if (val === "Switch") val = "switch";
+      if (val === "Drag") val = "drag";
+      if (val === "Expand") val = "expand";
+      
+      tableRowActionSelect.value = val;
     }
     if (msg.headerMode && headerTypeSelect) {
       if (msg.headerMode === "filter") headerTypeSelect.value = "Filter";
