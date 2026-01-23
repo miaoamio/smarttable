@@ -567,9 +567,13 @@ async function uploadImageToCoze(file: File, target: UploadTarget) {
 }
 
 async function fetchWithTimeout(url: string, options: RequestInit & { timeout?: number } = {}) {
-  const { timeout = 10000 } = options;
+  // 增加默认超时到 120s，因为 AI 生成复杂表格可能非常慢
+  const { timeout = 120000 } = options;
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
+  const id = setTimeout(() => {
+    console.warn(`Fetch aborted due to timeout (${timeout}ms): ${url}`);
+    controller.abort();
+  }, timeout);
   try {
     const response = await fetch(url, {
       ...options,
@@ -1174,28 +1178,36 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
 
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (gatewayToken) headers.authorization = `Bearer ${gatewayToken.replace(/^Bearer\s+/i, "")}`;
-
-    const res = await fetchWithTimeout(`${gatewayUrl.replace(/\/$/, "")}/tools/llm_chat`, {
-      method: "POST",
-      headers,
-      timeout: 60000, // 60 seconds for AI generation
-      body: JSON.stringify({
-        args: {
-          system: undefined,
-          prompt: userPrompt,
-          images:
-            imageAttachments.length > 0
-              ? imageAttachments.map((img) => ({
-                  fileId: img.fileId,
-                  fileName: img.fileName,
-                  url: img.url
-                }))
-              : undefined,
-          temperature: 0.1, // Lower temperature for more deterministic JSON
-          maxTokens: 2000   // Increase token limit for complex edits
-        }
-      })
-    });
+  
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(`${gatewayUrl.replace(/\/$/, "")}/tools/llm_chat`, {
+        method: "POST",
+        headers,
+        timeout: 120000, // 120 seconds for AI generation
+        body: JSON.stringify({
+          args: {
+            system: undefined,
+            prompt: userPrompt,
+            images:
+              imageAttachments.length > 0
+                ? imageAttachments.map((img) => ({
+                    fileId: img.fileId,
+                    fileName: img.fileName,
+                    url: img.url
+                  }))
+                : undefined,
+            temperature: 0.1, // Lower temperature for more deterministic JSON
+            maxTokens: 2000   // Increase token limit for complex edits
+          }
+        })
+      });
+    } catch (e: any) {
+      if (e.name === "AbortError" || (e.message && e.message.includes("abort"))) {
+        throw new Error("请求超时 (120s)。生成 10 行数据且包含图片识别可能需要较长时间，请尝试减少行数或稍后再试。");
+      }
+      throw e;
+    }
 
     let json: any;
     const rawText = await res.text();

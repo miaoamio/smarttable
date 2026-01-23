@@ -5,7 +5,7 @@
     "api/gateway.js": {
       "includeFiles": "packages/mcp-server/dist/**",
       "memory": 1024,
-      "maxDuration": 60
+      "maxDuration": 120
     }
   },
   "routes": [
