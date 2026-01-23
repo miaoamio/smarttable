@@ -1394,7 +1394,15 @@ function applyCellCommonStyling(cellFrame: FrameNode) {
   cellFrame.strokes = [{ type: "SOLID", color: { r: 0.9176, g: 0.9294, b: 0.9451 } }];
   cellFrame.strokeAlign = "INSIDE";
   cellFrame.strokeWeight = 0;
-  cellFrame.strokeBottomWeight = 1;
+  cellWeightFix(cellFrame);
+}
+
+function cellWeightFix(cellFrame: FrameNode) {
+  if ("strokeBottomWeight" in cellFrame) {
+    (cellFrame as any).strokeBottomWeight = 1;
+  } else {
+    (cellFrame as any).strokeWeight = 1;
+  }
 }
 
 /**
@@ -1688,7 +1696,7 @@ async function renderHeaderCell(
     (cellFrame as any).strokeBottomWeight = 1;
   } else {
     // Fallback if individual stroke weights are not supported
-    cellFrame.strokeWeight = 1;
+    (cellFrame as any).strokeWeight = 1;
   }
 
   // 2. Clear children
@@ -2139,7 +2147,20 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
       headerNode.remove();
     }
     
-    await renderHeaderCell(headerFrame, headerText, { iconComponent });
+    const savedHeaderType = headerNode.getPluginData("headerType") || col.getPluginData("headerType") || "none";
+    const { filter, sort, search, info } = headerPropsFromMode(savedHeaderType as HeaderMode);
+    
+    let iconType: "Filter" | "Sort" | "Search" | "Info" | undefined;
+    if (filter) iconType = "Filter";
+    else if (sort) iconType = "Sort";
+    else if (search) iconType = "Search";
+    else if (info) iconType = "Info";
+
+    await renderHeaderCell(headerFrame, headerText, { iconType, iconComponent });
+    
+    // Ensure Plugin Data is preserved
+    headerFrame.setPluginData("headerType", savedHeaderType);
+    col.setPluginData("headerType", savedHeaderType);
     headerFrame.layoutSizingHorizontal = "FILL";
     if ("layoutAlign" in headerFrame) {
       (headerFrame as any).layoutAlign = "STRETCH";
@@ -2465,9 +2486,25 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
         newCol.layoutSizingHorizontal = "FILL";
       }
 
-      if (hasHeader && newCol.children[0] && newCol.children[0].type === "INSTANCE") {
-        await setFirstText(newCol.children[0] as any, title);
-        if (header) await applyHeaderModeToInstance(newCol.children[0] as any, header);
+      if (hasHeader && newCol.children[0]) {
+        const first = newCol.children[0];
+        if (first.type === "INSTANCE") {
+          await setFirstText(first as any, title);
+          if (header) await applyHeaderModeToInstance(first as InstanceNode, header);
+        } else if (first.type === "FRAME" && first.getPluginData("cellType") === "Header") {
+          const headerFrame = first as FrameNode;
+          const textNode = headerFrame.findOne(n => n.type === "TEXT") as TextNode;
+          if (textNode && title) {
+            await loadTextNodeFonts(textNode);
+            textNode.characters = title;
+          }
+          if (header) {
+            const colIndex = getColumnFrames(table).indexOf(newCol);
+            if (colIndex !== -1) {
+              await applyHeaderModeToColumn(table, colIndex, header);
+            }
+          }
+        }
       }
       if (type) {
         const idx = table.children.indexOf(newCol);
@@ -2490,8 +2527,16 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
     const col = cols[op.index];
     if (!col) return;
     const first = col.children[0];
-    if (first && first.type === "INSTANCE" && await isHeaderInstance(first as InstanceNode)) {
-      await setFirstText(first as any, op.title);
+    if (first) {
+      if (first.type === "INSTANCE" && await isHeaderInstance(first as InstanceNode)) {
+        await setFirstText(first as any, op.title);
+      } else if (first.type === "FRAME" && first.getPluginData("cellType") === "Header") {
+        const textNode = first.findOne(n => n.type === "TEXT") as TextNode;
+        if (textNode) {
+          await loadTextNodeFonts(textNode);
+          textNode.characters = op.title;
+        }
+      }
     }
     const title = op.title?.trim();
     if (title && title.length > 0) {
@@ -3343,12 +3388,13 @@ async function createTable(params: CreateTableOptions) {
       }
       
       const { component: iconComponent } = await resolveCellFactory(HEADER_ICON_COMPONENT_KEY);
-      const { filter, sort, search } = headerPropsFromMode(headerMode);
+      const { filter, sort, search, info } = headerPropsFromMode(headerMode);
       
       let iconType: "Filter" | "Sort" | "Search" | "Info" | undefined;
       if (filter) iconType = "Filter";
       else if (sort) iconType = "Sort";
       else if (search) iconType = "Search";
+      else if (info) iconType = "Info";
       
       await renderHeaderCell(headerFrame, colTitle, { iconType, iconComponent });
       
