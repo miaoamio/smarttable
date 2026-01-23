@@ -9,6 +9,15 @@
     }
   },
   "routes": [
+    {
+      "src": "/(.*)",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS,DELETE",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With"
+      },
+      "continue": true
+    },
     { "src": "/admin", "dest": "/api/gateway" },
     { "src": "/admin/components", "dest": "/api/gateway" },
     { "src": "/components", "dest": "/api/gateway" },
