@@ -125,6 +125,7 @@ async function isHeaderInstance(instance: InstanceNode): Promise<boolean> {
 const TOKENS = {
   colors: {
     "text-1": "0C0D0E",
+    "text-2": "42464E", // Added text-2 color
     "link-6": "1664FF",
     "danger-6": "D7312A",
     "color-fill-2": "737A87",
@@ -144,6 +145,11 @@ const TOKENS = {
     md: 13,
     lg: 14,
     "body-2": 13,
+  },
+  typography: {
+    fontFamily: "PingFang SC",
+    lineHeight: 22,
+    letterSpacing: 0.3, // in percent
   }
 };
 
@@ -991,60 +997,40 @@ function postStatus(message: string) {
   if (figma.ui) figma.ui.postMessage({ type: "status", message });
 }
 
-async function loadTextNodeFonts(node: TextNode) {
-  const fontNames: FontName[] =
-    node.fontName === figma.mixed
-      ? (node.characters.length > 0
-          ? (node.getRangeAllFontNames(0, node.characters.length) as FontName[])
-          : [{ family: "Inter", style: "Regular" }])
-      : [node.fontName as FontName];
+async function loadTextNodeFonts(node: TextNode, style: string = "Regular") {
+  const family = TOKENS.typography.fontFamily;
+  const primaryFont: FontName = { family, style };
+  const altFamily = "PingFangSC"; // Alternative name for some environments
+  const altFont: FontName = { family: altFamily, style };
+  const fallbackFont: FontName = { family: "Inter", style: style === "Medium" || style === "Bold" ? "Medium" : "Regular" };
 
-  const SAFE_DEFAULT_FONT: FontName = { family: "Inter", style: "Regular" };
-
-  for (const f of fontNames) {
+  try {
+    // 1. Try PingFang SC
+    await figma.loadFontAsync(primaryFont);
+    node.fontName = primaryFont;
+  } catch (e) {
     try {
-      // 1. Try to load the original font
-      await Promise.race([
-        figma.loadFontAsync(f),
-        new Promise((_, reject) => setTimeout(() => reject(new Error(`Font load timeout: ${f.family} ${f.style}`)), 5000))
-      ]);
-    } catch (e) {
-      console.warn(`Failed to load font ${f.family} ${f.style}, attempting fallback:`, e);
-      
-      // 2. Specific fix for PingFang SC quirk (common in Chinese designs)
-      if (f.family.replace(/\s+/g, "") === "PingFangSC") {
-        try {
-          const altFont = { family: "Ping Fang SC", style: f.style };
-          await figma.loadFontAsync(altFont);
-          node.fontName = altFont;
-          console.log(`Applied alternative Ping Fang SC`);
-          continue;
-        } catch (e2) {}
-      }
-
-      // 3. Final Fallback: Use "Inter" which is guaranteed to be available in Figma
-      try {
-        const fallbackStyle = f.style === "Bold" || f.style === "Medium" || f.style === "Semibold" ? "Bold" : "Regular";
-        const fallbackFont = { family: "Inter", style: fallbackStyle };
-        await figma.loadFontAsync(fallbackFont);
-        
-        // If the whole node used the failing font, update it
-        if (node.fontName !== figma.mixed) {
-          node.fontName = fallbackFont;
-        } else {
-          // If it was mixed, we should ideally update the range, but for safety in plugins, 
-          // setting the whole node to fallback is often better than a crash.
-          node.fontName = fallbackFont;
-        }
-        console.log(`Fallback to safe font: Inter ${fallbackStyle}`);
-      } catch (fallbackErr) {
-        // Extreme fallback if even Inter fails (should not happen in Figma)
-        console.error("Critical: Default font Inter failed to load", fallbackErr);
-        await figma.loadFontAsync(SAFE_DEFAULT_FONT);
-        node.fontName = SAFE_DEFAULT_FONT;
-      }
+      // 2. Try alternative PingFangSC
+      await figma.loadFontAsync(altFont);
+      node.fontName = altFont;
+    } catch (e2) {
+      // 3. Final Fallback to Inter
+      console.warn(`Failed to load PingFang SC (${style}), falling back to Inter:`, e2);
+      await figma.loadFontAsync(fallbackFont);
+      node.fontName = fallbackFont;
     }
   }
+
+  // Always apply standard typography after loading font
+  applyStandardTypography(node);
+}
+
+/**
+ * Applies standard typography (line height, letter spacing) to a text node
+ */
+function applyStandardTypography(node: TextNode) {
+  node.lineHeight = { value: TOKENS.typography.lineHeight, unit: "PIXELS" };
+  node.letterSpacing = { value: TOKENS.typography.letterSpacing, unit: "PERCENT" };
 }
 
 async function setFirstText(node: SceneNode, value: string) {
@@ -1085,7 +1071,7 @@ function headerPropsFromMode(mode: HeaderMode): { filter: boolean; sort: boolean
 }
 
 async function applyHeaderModeToInstance(instance: InstanceNode, mode: HeaderMode) {
-  const { filter, sort, search } = headerPropsFromMode(mode);
+  const { filter, sort, search, info } = headerPropsFromMode(mode);
   const currentProps = instance.componentProperties;
   const newProps: any = {};
 
@@ -1103,6 +1089,7 @@ async function applyHeaderModeToInstance(instance: InstanceNode, mode: HeaderMod
   setProp("filter", filter);
   setProp("sort", sort);
   setProp("search", search);
+  setProp("info", info);
   
   // Always ensure header is left aligned as per user request
   const alignKey = Object.keys(currentProps).find(k => k.toLowerCase().includes("align") || k.includes("排列方式"));
@@ -1116,6 +1103,9 @@ async function applyHeaderModeToInstance(instance: InstanceNode, mode: HeaderMod
   if (Object.keys(newProps).length > 0) {
     instance.setProperties(newProps);
   }
+  
+  // Requirement: Save header type in instance plugin data
+  instance.setPluginData("headerType", mode);
 }
 
 function getColumnFrames(table: FrameNode): FrameNode[] {
@@ -1184,6 +1174,8 @@ async function applyHeaderModeToColumn(table: FrameNode, colIndex: number, mode:
 
   if (first.type === "INSTANCE" && await isHeaderInstance(first as InstanceNode)) {
     await applyHeaderModeToInstance(first as InstanceNode, mode);
+    // Save header type in column plugin data
+    col.setPluginData("headerType", mode);
   } else if (first.type === "FRAME" && first.getPluginData("cellType") === "Header") {
     const headerFrame = first as FrameNode;
     const headerText = extractTextFromNode(headerFrame);
@@ -1677,17 +1669,25 @@ async function renderHeaderCell(
     iconComponent?: ComponentNode | ComponentSetNode;
   }
 ) {
-  const { iconType, align = "left", iconComponent } = context;
+  const { iconType, align: alignProp, iconComponent } = context;
   
+  // Get alignment from prop or plugin data, default to left
+  const savedAlign = cellFrame.getPluginData("textAlign") as "left" | "right";
+  const align = alignProp || savedAlign || "left";
+
   // 1. Styling
   cellFrame.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["color-bg-4"]) }];
   cellFrame.layoutMode = "HORIZONTAL";
   cellFrame.primaryAxisAlignItems = align === "left" ? "MIN" : "MAX";
   cellFrame.counterAxisAlignItems = "CENTER";
-  cellFrame.paddingLeft = 12;
-  cellFrame.paddingRight = 12;
+  cellFrame.paddingLeft = 16;
+  cellFrame.paddingRight = 16;
   cellFrame.itemSpacing = 4;
   
+  // Ensure align is saved to plugin data if not already there
+  if (align) cellFrame.setPluginData("textAlign", align);
+  if (iconType) cellFrame.setPluginData("headerType", iconType.toLowerCase());
+
   // Bottom border simulation
   cellFrame.strokeWeight = 0;
   cellFrame.dashPattern = [];
@@ -1706,20 +1706,11 @@ async function renderHeaderCell(
 
   // 3. Create Text
   const textNode = figma.createText();
-  await loadTextNodeFonts(textNode);
+  await loadTextNodeFonts(textNode, "Medium");
   textNode.characters = text || "Header";
   textNode.fontSize = TOKENS.fontSizes["body-2"];
-  
-  // Load and apply bold font if possible
-  try {
-    const boldFont = { family: (textNode.fontName as FontName).family, style: "Bold" };
-    await figma.loadFontAsync(boldFont);
-    textNode.fontName = boldFont;
-  } catch (e) {
-    console.warn("Could not load bold font for header, using default style");
-  }
-
-  textNode.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["text-1"]) }];
+  textNode.textAlignHorizontal = align === "right" ? "RIGHT" : "LEFT";
+  textNode.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["text-2"]) }];
   
   cellFrame.appendChild(textNode);
 
@@ -1737,24 +1728,31 @@ async function renderHeaderCell(
       
       const variantName = variantMap[iconType];
       try {
+        // Try finding variant by exact name match first
         const variant = iconComponent.findOne(c => 
           c.type === "COMPONENT" && 
-          c.name.includes(variantName) && 
-          c.name.includes("Default 默认")
+          (c.name === variantName || c.name.includes(variantName)) && 
+          (c.name.includes("Default 默认") || c.name.includes("Default"))
         ) as ComponentNode;
         
         if (!variant) {
            iconInst = iconComponent.defaultVariant.createInstance();
            if ("setProperties" in iconInst) {
-             (iconInst as any).setProperties({
-               "Type 类型": variantName,
-               "State 状态": "Default 默认"
-             });
+             const props = (iconInst as any).componentProperties;
+             const typeKey = Object.keys(props).find(k => k.includes("Type") || k.includes("类型"));
+             const stateKey = Object.keys(props).find(k => k.includes("State") || k.includes("状态"));
+             
+             const finalProps: any = {};
+             if (typeKey) finalProps[typeKey] = variantName;
+             if (stateKey) finalProps[stateKey] = "Default 默认";
+             
+             (iconInst as any).setProperties(finalProps);
            }
         } else {
            iconInst = variant.createInstance();
         }
       } catch (e) {
+        console.warn("Failed to create icon instance via variant search, using default", e);
         iconInst = (iconComponent.defaultVariant || iconComponent.children[0] as ComponentNode).createInstance();
       }
     } else {
@@ -1793,12 +1791,24 @@ async function renderTextCell(
   
   applyCellCommonStyling(cellFrame);
   
-  if (oldAlign === "MAX") {
-      cellFrame.primaryAxisAlignItems = "MAX";
-      textNode.textAlignHorizontal = "RIGHT";
+  // Restore alignment from plugin data if available, otherwise use oldAlign logic
+  const savedAlign = cellFrame.getPluginData("textAlign") as "left" | "center" | "right";
+  
+  if (savedAlign) {
+    cellFrame.primaryAxisAlignItems = savedAlign === "right" ? "MAX" : (savedAlign === "center" ? "CENTER" : "MIN");
+    textNode.textAlignHorizontal = savedAlign === "right" ? "RIGHT" : (savedAlign === "center" ? "CENTER" : "LEFT");
+  } else if (oldAlign === "MAX") {
+    cellFrame.primaryAxisAlignItems = "MAX";
+    textNode.textAlignHorizontal = "RIGHT";
+    cellFrame.setPluginData("textAlign", "right");
+  } else if (oldAlign === "CENTER") {
+    cellFrame.primaryAxisAlignItems = "CENTER";
+    textNode.textAlignHorizontal = "CENTER";
+    cellFrame.setPluginData("textAlign", "center");
   } else {
-      cellFrame.primaryAxisAlignItems = "MIN";
-      textNode.textAlignHorizontal = "LEFT";
+    cellFrame.primaryAxisAlignItems = "MIN";
+    textNode.textAlignHorizontal = "LEFT";
+    cellFrame.setPluginData("textAlign", "left");
   }
 
   // Handle Display Mode: single-line ellipsis or line break
@@ -2380,6 +2390,9 @@ async function applyColumnAlignToColumn(table: FrameNode, colIndex: number, alig
   const col = cols[colIndex];
   if (!col) return;
 
+  // Save alignment in column plugin data
+  col.setPluginData("textAlign", align);
+
   for (const child of col.children) {
     if (child.type === "INSTANCE") {
       const inst = child as InstanceNode;
@@ -2395,8 +2408,8 @@ async function applyColumnAlignToColumn(table: FrameNode, colIndex: number, alig
       
       if (type === "Header") {
         // Custom Header - support left/right
-        // We preserve existing icon if any, but since we don't store iconType, we'll need to re-render or just adjust alignment
         cellFrame.primaryAxisAlignItems = align === "right" ? "MAX" : "MIN";
+        cellFrame.setPluginData("textAlign", align === "right" ? "right" : "left");
         const textNode = cellFrame.findOne(n => n.type === "TEXT") as TextNode;
         if (textNode) {
           textNode.textAlignHorizontal = align === "right" ? "RIGHT" : "LEFT";
@@ -2404,6 +2417,7 @@ async function applyColumnAlignToColumn(table: FrameNode, colIndex: number, alig
       } else {
         // Custom body cells
         cellFrame.primaryAxisAlignItems = align === "right" ? "MAX" : (align === "center" ? "CENTER" : "MIN");
+        cellFrame.setPluginData("textAlign", align);
         const textNode = cellFrame.findOne(n => n.type === "TEXT") as TextNode;
         if (textNode) {
           textNode.textAlignHorizontal = align === "right" ? "RIGHT" : (align === "center" ? "CENTER" : "LEFT");
@@ -3402,6 +3416,10 @@ async function createTable(params: CreateTableOptions) {
       headerFrame.setPluginData("headerType", headerMode);
       colFrame.setPluginData("headerType", headerMode);
       
+      const colAlign = colSpec?.align || "left";
+      colFrame.setPluginData("textAlign", colAlign);
+      headerFrame.setPluginData("textAlign", colAlign);
+      
       // Apply column metadata
       colFrame.setPluginData("cellType", colType);
 
@@ -3648,9 +3666,14 @@ async function setInstanceAlign(instance: InstanceNode, align: "left" | "center"
   const target = map[align];
   if (!target) return false; // Block if align is not supported (e.g. center if we removed it from map)
 
-  if (typeof current === "string" && current === target) return false;
+  if (typeof current === "string" && current === target) {
+    // Still save metadata even if visual didn't change (might be missing in data)
+    instance.setPluginData("textAlign", align);
+    return false;
+  }
   try {
     instance.setProperties({ [key]: target });
+    instance.setPluginData("textAlign", align);
     return true;
   } catch {
     return false;
