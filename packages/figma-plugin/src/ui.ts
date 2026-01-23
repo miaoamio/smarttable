@@ -1197,10 +1197,25 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
       })
     });
 
-    const json = (await res.json()) as any;
+    let json: any;
+    const rawText = await res.text();
     if (requestId !== currentRequestSeq) {
       return;
     }
+
+    try {
+      json = JSON.parse(rawText);
+    } catch (e) {
+      if (!res.ok) {
+        const msg = `网关请求失败 (${res.status}): ${res.statusText || "服务器超时或发生错误"}`;
+        setOutput(msg);
+        showAlert("error", msg);
+        setLoading(btn, false);
+        return;
+      }
+      throw new Error(`无法解析网关响应: ${rawText.slice(0, 200)}`);
+    }
+
     if (!res.ok) {
       const msg = `网关请求失败: ${json?.error ? String(json.error) : res.statusText}`;
       setOutput(msg);

@@ -154,6 +154,7 @@ async function cozeWorkflowChat(input) {
         additional_messages.push({ role: "user", content: input.prompt, content_type: "text", type: "question" });
     }
     const workflowUrl = new URL("/v1/workflows/chat", apiBase);
+    console.log(`[Coze] Starting workflow ${workflowId} for user ${userId} at ${workflowUrl.toString()}`);
     const response = await fetch(workflowUrl.toString(), {
         method: "POST",
         headers: {
@@ -183,6 +184,7 @@ async function cozeWorkflowChat(input) {
     let finalContent = "";
     let isCompleted = false;
     const debugEvents = [];
+    let eventCount = 0;
     try {
         while (true) {
             const { done, value } = await reader.read();
@@ -194,6 +196,9 @@ async function cozeWorkflowChat(input) {
             for (const line of lines) {
                 if (line.trim() === "")
                     continue;
+                eventCount++;
+                if (eventCount % 10 === 0)
+                    console.log(`[Coze] Received ${eventCount} SSE lines...`);
                 if (line.startsWith("event:")) {
                     const eventName = line.slice(6).trim();
                     if (debugEvents.length < 20)
@@ -242,6 +247,7 @@ async function cozeWorkflowChat(input) {
     if (!finalContent) {
         throw new Error(`Workflow finished but no content was extracted. Debug trace: ${debugEvents.join("; ")}`);
     }
+    console.log(`[Coze] Workflow completed, extracted ${finalContent.length} chars`);
     return finalContent;
 }
 async function cozeBotChat(input) {
