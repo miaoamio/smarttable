@@ -71,16 +71,22 @@ console.log(
 );
 
 function withCors(req: http.IncomingMessage, res: http.ServerResponse) {
-  const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
-  const allowAll = corsOrigins.includes("*");
-  if (allowAll) {
-    res.setHeader("access-control-allow-origin", origin ?? "*");
-  } else if (origin && corsOrigins.includes(origin)) {
-    res.setHeader("access-control-allow-origin", origin);
+  let origin = req.headers.origin;
+  if (origin === "null") {
+    origin = undefined;
   }
-  if (origin) res.setHeader("vary", "origin");
-  res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
-  res.setHeader("access-control-allow-headers", "content-type, authorization");
+
+  const allowAll = corsOrigins.includes("*");
+
+  if (allowAll || !origin) {
+    res.setHeader("access-control-allow-origin", "*");
+  } else if (origin && corsOrigins.includes(origin as string)) {
+    res.setHeader("access-control-allow-origin", origin);
+    res.setHeader("vary", "origin");
+  }
+
+  res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS,DELETE");
+  res.setHeader("access-control-allow-headers", "content-type, authorization, x-requested-with");
 }
 
 function sendJson(req: http.IncomingMessage, res: http.ServerResponse, status: number, body: unknown) {

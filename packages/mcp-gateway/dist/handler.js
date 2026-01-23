@@ -89,16 +89,21 @@ console.log(JSON.stringify({
     }
 }));
 function withCors(req, res) {
-    const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
-    if (origin) {
+    let origin = req.headers.origin;
+    // Figma 插件的 origin 为 "null"，某些环境对 "null" 支持不佳，统一转为 "*" 处理
+    if (origin === "null") {
+        origin = undefined;
+    }
+    const allowAll = corsOrigins.includes("*");
+    if (allowAll || !origin) {
+        res.setHeader("access-control-allow-origin", "*");
+    }
+    else if (origin && corsOrigins.includes(origin)) {
         res.setHeader("access-control-allow-origin", origin);
         res.setHeader("vary", "origin");
     }
-    else {
-        res.setHeader("access-control-allow-origin", "*");
-    }
     res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS,DELETE");
-    res.setHeader("access-control-allow-headers", "content-type, authorization");
+    res.setHeader("access-control-allow-headers", "content-type, authorization, x-requested-with");
 }
 function sendJson(req, res, status, body) {
     withCors(req, res);

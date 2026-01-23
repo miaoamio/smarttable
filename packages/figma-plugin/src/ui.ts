@@ -80,11 +80,12 @@ const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".tab
 
     // 默认隐藏开发模式标签，仅在开发环境显示
     const debugTabBtn = tabButtons.find(btn => btn.dataset.tab === "debug");
+    console.log("Debug tab button found:", !!debugTabBtn, "NODE_ENV:", process.env.NODE_ENV);
     if (debugTabBtn) {
       if (process.env.NODE_ENV === "production") {
         debugTabBtn.style.display = "none";
       } else {
-        debugTabBtn.style.display = "inline-flex"; // 或者根据 CSS 设定的默认显示方式
+        debugTabBtn.style.display = ""; // 移除 inline style，使用 CSS 默认显示
       }
     }
 
@@ -96,11 +97,14 @@ const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".tab
     const gatewayUrlInput = document.getElementById("gateway-url") as HTMLInputElement;
     const gatewayTokenInput = document.getElementById("gateway-token") as HTMLInputElement;
 
+    // TODO: 修改为正式的线上网关地址
     const DEFAULT_GATEWAY = process.env.NODE_ENV === "production" 
-      ? "https://smartable-nine.vercel.app" 
+      ? "https://smartable-nine.vercel.app" // 恢复为之前的有效地址
       : "http://localhost:8787";
 
-    // Set default gateway URL in production
+    console.log("Using gateway:", DEFAULT_GATEWAY);
+
+    // Set default gateway URL
     if (gatewayUrlInput) {
       gatewayUrlInput.value = DEFAULT_GATEWAY;
     }
