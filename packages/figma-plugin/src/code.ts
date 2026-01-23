@@ -93,9 +93,29 @@ console.log("Smart Table plugin starting...");
 const HEADER_COMPONENT_KEY = SHARED_HEADER_COMPONENT_KEY;
 
 function isHeaderNode(node: SceneNode): boolean {
+  if (node.type === "FRAME" && node.getPluginData("cellType") === "Header") return true;
   return node.name === "Header" || 
          node.getPluginData("isHeader") === "true" || 
-         node.name.toLowerCase().includes("header");
+         node.name.toLowerCase().includes("header") ||
+         node.name.toLowerCase().includes("表头");
+}
+
+async function isHeaderInstance(instance: InstanceNode): Promise<boolean> {
+  if (instance.getPluginData("cellType") === "Header") return true;
+  const main = await instance.getMainComponentAsync();
+  if (!main) return false;
+  if (main.key === HEADER_COMPONENT_KEY || main.key === ACTION_HEADER_KEY) return true;
+  if (main.parent && main.parent.type === "COMPONENT_SET") {
+    const parentKey = (main.parent as ComponentSetNode).key;
+    if (parentKey === HEADER_COMPONENT_KEY || parentKey === ACTION_HEADER_KEY) return true;
+    if ((main.parent as ComponentSetNode).children.some((child) => (child.type === "COMPONENT" || child.type === "COMPONENT_SET") && (child.key === HEADER_COMPONENT_KEY || child.key === ACTION_HEADER_KEY))) {
+      return true;
+    }
+  }
+  const props = instance.componentProperties;
+  const hasAny = (keys: string[]) => Object.keys(props).some((k) => keys.some((x) => k.includes(x)));
+  if (hasAny(PROP_KEYS.filter) || hasAny(PROP_KEYS.sort) || hasAny(PROP_KEYS.search)) return true;
+  return false;
 }
 
 /**
@@ -109,6 +129,7 @@ const TOKENS = {
     "danger-6": "D7312A",
     "color-fill-2": "737A87",
     "color-fill-3": "42464E",
+    "color-bg-4": "F6F8FA", // Added header background color
   },
   sizes: {
     base: 4,
@@ -161,6 +182,7 @@ const ACTION_MORE_ICON_COMPONENT_KEY = "27e130c675fe44532f717656d04b2597eb05a67d
 const INPUT_COMPONENT_KEY = "e1c520fea681ece9994290c63d0b77ad19dbf7fa";
 const SELECT_COMPONENT_KEY = "27245acbfd46e812fb383443f0aac88df751fa15";
 const STATE_COMPONENT_KEY = "e8ec559c3604ae1e23b354c120d63b481f333527";
+const HEADER_ICON_COMPONENT_KEY = "e53fcaef4cf94334b30b019356eaeedde137887b";
 
 const componentCache = new Map<string, ComponentNode | ComponentSetNode>();
 
@@ -314,7 +336,7 @@ function isSmartTableFrame(table: FrameNode): boolean {
 }
 
 function findColumnFrame(node: SceneNode): FrameNode | null {
-  let cur: BaseNode | null = node.parent;
+  let cur: BaseNode | null = node; // Start from node itself
   while (cur) {
     if (cur.type === "FRAME") {
       const f = cur as FrameNode;
@@ -361,23 +383,6 @@ async function getFirstTextValue(node: SceneNode): Promise<string | null> {
   return t.characters;
 }
 
-async function isHeaderInstance(instance: InstanceNode): Promise<boolean> {
-  const main = await instance.getMainComponentAsync();
-  if (!main) return false;
-  if (main.key === HEADER_COMPONENT_KEY || main.key === ACTION_HEADER_KEY) return true;
-  if (main.parent && main.parent.type === "COMPONENT_SET") {
-    const parentKey = (main.parent as ComponentSetNode).key;
-    if (parentKey === HEADER_COMPONENT_KEY || parentKey === ACTION_HEADER_KEY) return true;
-    if ((main.parent as ComponentSetNode).children.some((child) => (child.type === "COMPONENT" || child.type === "COMPONENT_SET") && (child.key === HEADER_COMPONENT_KEY || child.key === ACTION_HEADER_KEY))) {
-      return true;
-    }
-  }
-  const props = instance.componentProperties;
-  const hasAny = (keys: string[]) => Object.keys(props).some((k) => keys.some((x) => k.includes(x)));
-  if (hasAny(PROP_KEYS.filter) || hasAny(PROP_KEYS.sort) || hasAny(PROP_KEYS.search)) return true;
-  return false;
-}
-
 async function getTableContext(table: FrameNode): Promise<TableContext | null> {
   const columns = table.children.filter((n) => n.type === "FRAME") as FrameNode[];
   const cols = columns.length;
@@ -387,13 +392,13 @@ async function getTableContext(table: FrameNode): Promise<TableContext | null> {
   if (firstCol.layoutMode !== "VERTICAL") return null;
 
   const firstChild = firstCol.children[0];
-  const hasHeader = Boolean(firstChild && firstChild.type === "INSTANCE" && await isHeaderInstance(firstChild as InstanceNode));
+  const hasHeader = Boolean(firstChild && (firstChild.type === "INSTANCE" || firstChild.type === "FRAME") && isHeaderNode(firstChild));
   const rows = Math.max(0, firstCol.children.length - (hasHeader ? 1 : 0));
   const headers: string[] = [];
   for (let c = 0; c < cols; c++) {
     const col = columns[c];
     const headerNode = hasHeader ? col.children[0] : null;
-    if (headerNode && headerNode.type === "INSTANCE") {
+    if (headerNode && (headerNode.type === "INSTANCE" || headerNode.type === "FRAME")) {
       const text = await getFirstTextValue(headerNode);
       headers.push(text ?? "");
     } else {
@@ -1071,11 +1076,12 @@ async function setFirstText(node: SceneNode, value: string) {
 
 
 
-function headerPropsFromMode(mode: HeaderMode): { filter: boolean; sort: boolean; search: boolean } {
-  if (mode === "filter") return { filter: true, sort: false, search: false };
-  if (mode === "sort") return { filter: false, sort: true, search: false };
-  if (mode === "search") return { filter: false, sort: false, search: true };
-  return { filter: false, sort: false, search: false };
+function headerPropsFromMode(mode: HeaderMode): { filter: boolean; sort: boolean; search: boolean; info: boolean } {
+  if (mode === "filter") return { filter: true, sort: false, search: false, info: false };
+  if (mode === "sort") return { filter: false, sort: true, search: false, info: false };
+  if (mode === "search") return { filter: false, sort: false, search: true, info: false };
+  if (mode === "info") return { filter: false, sort: false, search: false, info: true };
+  return { filter: false, sort: false, search: false, info: false };
 }
 
 async function applyHeaderModeToInstance(instance: InstanceNode, mode: HeaderMode) {
@@ -1118,7 +1124,7 @@ function getColumnFrames(table: FrameNode): FrameNode[] {
 
 async function getHeaderOffset(col: FrameNode): Promise<number> {
   const first = col.children[0];
-  if (first && first.type === "INSTANCE" && await isHeaderInstance(first as InstanceNode)) return 1;
+  if (first && (first.type === "INSTANCE" || first.type === "FRAME") && isHeaderNode(first)) return 1;
   return 0;
 }
 
@@ -1174,8 +1180,35 @@ async function applyHeaderModeToColumn(table: FrameNode, colIndex: number, mode:
   const col = cols[colIndex];
   if (!col) return;
   const first = col.children[0];
-  if (first && first.type === "INSTANCE" && await isHeaderInstance(first as InstanceNode)) {
+  if (!first) return;
+
+  if (first.type === "INSTANCE" && await isHeaderInstance(first as InstanceNode)) {
     await applyHeaderModeToInstance(first as InstanceNode, mode);
+  } else if (first.type === "FRAME" && first.getPluginData("cellType") === "Header") {
+    const headerFrame = first as FrameNode;
+    const headerText = extractTextFromNode(headerFrame);
+    const { component: iconComponent } = await resolveCellFactory(HEADER_ICON_COMPONENT_KEY);
+    
+    const { filter, sort, search, info } = headerPropsFromMode(mode);
+    
+    let iconType: "Filter" | "Sort" | "Search" | "Info" | undefined;
+    if (filter) iconType = "Filter";
+    else if (sort) iconType = "Sort";
+    else if (search) iconType = "Search";
+    else if (info) iconType = "Info";
+    
+    await renderHeaderCell(headerFrame, headerText, { iconType, iconComponent });
+    
+    // Requirement: Save header type in cell and column plugin data
+    headerFrame.setPluginData("headerType", mode);
+    col.setPluginData("headerType", mode);
+  }
+}
+
+async function applyHeaderModeToTable(table: FrameNode, mode: HeaderMode) {
+  const cols = getColumnFrames(table);
+  for (let i = 0; i < cols.length; i++) {
+    await applyHeaderModeToColumn(table, i, mode);
   }
 }
 
@@ -1627,6 +1660,105 @@ ALL_COLUMN_TYPES.forEach(type => {
   }
 });
 
+async function renderHeaderCell(
+  cellFrame: FrameNode,
+  text: string,
+  context: { 
+    iconType?: "Filter" | "Sort" | "Search" | "Info";
+    align?: "left" | "right";
+    iconComponent?: ComponentNode | ComponentSetNode;
+  }
+) {
+  const { iconType, align = "left", iconComponent } = context;
+  
+  // 1. Styling
+  cellFrame.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["color-bg-4"]) }];
+  cellFrame.layoutMode = "HORIZONTAL";
+  cellFrame.primaryAxisAlignItems = align === "left" ? "MIN" : "MAX";
+  cellFrame.counterAxisAlignItems = "CENTER";
+  cellFrame.paddingLeft = 12;
+  cellFrame.paddingRight = 12;
+  cellFrame.itemSpacing = 4;
+  
+  // Bottom border simulation
+  cellFrame.strokeWeight = 0;
+  cellFrame.dashPattern = [];
+  cellFrame.strokes = [{ type: "SOLID", color: hexToRgb("E5E6EB") }];
+  if ("strokeBottomWeight" in cellFrame) {
+    (cellFrame as any).strokeBottomWeight = 1;
+  } else {
+    // Fallback if individual stroke weights are not supported
+    cellFrame.strokeWeight = 1;
+  }
+
+  // 2. Clear children
+  for (const child of cellFrame.children) {
+    child.remove();
+  }
+
+  // 3. Create Text
+  const textNode = figma.createText();
+  await loadTextNodeFonts(textNode);
+  textNode.characters = text || "Header";
+  textNode.fontSize = TOKENS.fontSizes["body-2"];
+  
+  // Load and apply bold font if possible
+  try {
+    const boldFont = { family: (textNode.fontName as FontName).family, style: "Bold" };
+    await figma.loadFontAsync(boldFont);
+    textNode.fontName = boldFont;
+  } catch (e) {
+    console.warn("Could not load bold font for header, using default style");
+  }
+
+  textNode.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["text-1"]) }];
+  
+  cellFrame.appendChild(textNode);
+
+  // 4. Handle Icon
+  if (iconType && iconComponent) {
+    let iconInst: InstanceNode;
+    if (iconComponent.type === "COMPONENT_SET") {
+      // Variants mapping
+      const variantMap: Record<string, string> = {
+        "Info": "info-circle 提示",
+        "Search": "Search 搜索",
+        "Sort": "Sort 排序",
+        "Filter": "Filter 筛选"
+      };
+      
+      const variantName = variantMap[iconType];
+      try {
+        const variant = iconComponent.findOne(c => 
+          c.type === "COMPONENT" && 
+          c.name.includes(variantName) && 
+          c.name.includes("Default 默认")
+        ) as ComponentNode;
+        
+        if (!variant) {
+           iconInst = iconComponent.defaultVariant.createInstance();
+           if ("setProperties" in iconInst) {
+             (iconInst as any).setProperties({
+               "Type 类型": variantName,
+               "State 状态": "Default 默认"
+             });
+           }
+        } else {
+           iconInst = variant.createInstance();
+        }
+      } catch (e) {
+        iconInst = (iconComponent.defaultVariant || iconComponent.children[0] as ComponentNode).createInstance();
+      }
+    } else {
+      iconInst = (iconComponent as ComponentNode).createInstance();
+    }
+    
+    cellFrame.appendChild(iconInst);
+  }
+
+  textNode.layoutSizingHorizontal = "HUG";
+}
+
 async function renderTextCell(
   cellFrame: FrameNode,
   text: string,
@@ -1770,37 +1902,47 @@ async function renderAvatarCell(
   context: { avatarComponent?: ComponentNode | ComponentSetNode; overrideDisplayValue?: string; isAI?: boolean }
 ) {
   const { avatarComponent, overrideDisplayValue, isAI } = context;
-  console.log(`[renderAvatarCell] input text: "${text}", override: "${overrideDisplayValue}", isAI: ${isAI}`);
+  console.log("[renderAvatarCell] Starting render", { 
+    text, 
+    overrideDisplayValue, 
+    isAI,
+    cellValue: cellFrame.getPluginData("cellValue")
+  });
+
   if (!avatarComponent) {
     console.warn("[renderAvatarCell] avatarComponent is missing!");
     return;
   }
 
-  // Requirement 1 & 3: If in AI mode, use "宋明杰"
-  // Requirement 2: If overrideDisplayValue is set (e.g. switching type), use it
-  let finalName = overrideDisplayValue || text || "宋明杰";
-  if (isAI && !overrideDisplayValue) {
-    finalName = "宋明杰";
+  // Logic update based on user request:
+  // 1. If overrideDisplayValue is provided (manual type switch), use it (usually "宋明杰").
+  // 2. If it's AI generated/modified (isAI is true), use the provided text (from JSON/Coze).
+  // 3. Fallback to text or "宋明杰".
+  let finalName = "宋明杰";
+  if (overrideDisplayValue) {
+    finalName = overrideDisplayValue;
+    console.log("[renderAvatarCell] Using overrideDisplayValue:", finalName);
+  } else if (text && text.trim() !== "") {
+    finalName = text;
+    console.log("[renderAvatarCell] Using provided text:", finalName);
   }
   
-  console.log(`[renderAvatarCell] finalName determined as: "${finalName}"`);
+  console.log("[renderAvatarCell] finalName determined:", finalName);
   
-  // If we have an override (e.g. switching column type), we preserve the original text in cellValue
-  // otherwise we update cellValue to match the rendered text
+  // Requirement 2: Switch to Avatar column uses default name "宋明杰" in UI, 
+  // but we don't modify cellValue. We keep whatever was there.
   if (overrideDisplayValue) {
-    // Requirement 2: Switch to Avatar column uses default name "宋明杰" in UI, 
-    // but we don't modify cellValue. We keep whatever was there.
-    // If text exists, we ensure it's saved in cellValue if not already there
     const existingValue = cellFrame.getPluginData("cellValue");
+    // If switching from another type, text is the original content. 
+    // We save it to cellValue if it's not already set to something meaningful.
     if (text && (!existingValue || existingValue === "宋明杰")) {
-       // If switching from another type, text is the original content
-       // If switching from Avatar, cellValue might be "宋明杰" (default) or real name
-       // We only overwrite if we have meaningful text
        if (text !== "宋明杰") {
          cellFrame.setPluginData("cellValue", text);
        }
     }
+    // Note: finalName is "宋明杰" (UI only), cellValue is preserved.
   } else {
+    // For AI generation or normal usage, we sync cellValue with finalName
     cellFrame.setPluginData("cellValue", finalName);
   }
 
@@ -1982,6 +2124,28 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
     col.setPluginData("cellValue", "编辑 删除 …");
   }
 
+  // --- NEW: Convert Header to Custom Frame if needed ---
+  if (offset > 0) {
+    const headerNode = col.children[0];
+    const headerText = extractTextFromNode(headerNode);
+    const { component: iconComponent } = await resolveCellFactory(HEADER_ICON_COMPONENT_KEY);
+    
+    let headerFrame: FrameNode;
+    if (headerNode.type === "FRAME" && headerNode.getPluginData("cellType") === "Header") {
+      headerFrame = headerNode as FrameNode;
+    } else {
+      headerFrame = createCustomCellFrame(headerNode.name, "Header");
+      col.insertChild(0, headerFrame);
+      headerNode.remove();
+    }
+    
+    await renderHeaderCell(headerFrame, headerText, { iconComponent });
+    headerFrame.layoutSizingHorizontal = "FILL";
+    if ("layoutAlign" in headerFrame) {
+      (headerFrame as any).layoutAlign = "STRETCH";
+    }
+  }
+
   // Special handling for Custom Cells (Tag, Avatar, etc.)
   const customRenderer = CUSTOM_CELL_REGISTRY[type];
   if (customRenderer) {
@@ -1994,7 +2158,10 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
         context = { tagComponent, counterComponent: counterComponent || tagComponent };
       } else if (type === "Avatar") {
         const { component: avatarComponent } = await resolveCellFactory(AVATAR_COMPONENT_KEY);
-        context = { avatarComponent };
+        context = { 
+          avatarComponent,
+          overrideDisplayValue: "宋明杰" // Requirement 2: Manual switch uses default name
+        };
       } else if (type === "ActionText") {
         const { component: moreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
         context = { moreIconComponent };
@@ -2046,7 +2213,7 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
         }
 
         // Snapshot children to avoid mutation issues during iteration
-        const childrenSnapshot = [...col.children];
+        const childrenSnapshot = Array.from(col.children);
 
         for (let i = offset; i < childrenSnapshot.length; i++) {
           const n = childrenSnapshot[i];
@@ -2056,6 +2223,10 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
           let originalText = extractTextFromNode(n);
           let currentContext = Object.assign({}, context);
           
+          if (type === "ActionIcon" || type === "ActionText") {
+            originalText = "编辑 删除 …";
+          }
+
           let cellFrame: FrameNode;
           let parent = n.parent;
           let index = parent ? parent.children.indexOf(n) : -1;
@@ -2081,14 +2252,6 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
             cellFrame.layoutMode = "HORIZONTAL";
             cellFrame.primaryAxisSizingMode = "AUTO"; // HUG in Figma API
             cellFrame.counterAxisSizingMode = "FIXED";
-          }
-          
-          if (type === "ActionIcon" || type === "ActionText") {
-            originalText = "编辑 删除 …";
-          } else if (type === "Avatar") {
-            // Requirement 2: Force the display value to be "宋明杰" during type switching
-            currentContext.overrideDisplayValue = "宋明杰";
-            console.log(`[SwitchType] Switching to Avatar. originalText: ${originalText}, override: ${currentContext.overrideDisplayValue}`);
           }
           
           await customRenderer(cellFrame, originalText, currentContext);
@@ -2196,20 +2359,34 @@ async function applyColumnAlignToColumn(table: FrameNode, colIndex: number, alig
   const col = cols[colIndex];
   if (!col) return;
 
-  // Apply to header too if it exists? Usually header alignment matches column alignment or is separate.
-  // For now, let's apply to all instances in the column including header if possible, 
-  // or maybe just body cells if headers have their own style.
-  // The user said "Alignment" is open to the large model.
-  // Let's apply to all instances.
-  
   for (const child of col.children) {
     if (child.type === "INSTANCE") {
       const inst = child as InstanceNode;
       if (await isHeaderInstance(inst)) {
-        // User explicitly asked for headers to be left aligned
-        await setInstanceAlign(inst, "left");
+        // Legacy instance headers - user previously asked for left, but now wants support for left/right
+        await setInstanceAlign(inst, align === "center" ? "left" : align);
       } else {
         await setInstanceAlign(inst, align);
+      }
+    } else if (child.type === "FRAME" && child.getPluginData("cellType")) {
+      const cellFrame = child as FrameNode;
+      const type = cellFrame.getPluginData("cellType");
+      
+      if (type === "Header") {
+        // Custom Header - support left/right
+        // We preserve existing icon if any, but since we don't store iconType, we'll need to re-render or just adjust alignment
+        cellFrame.primaryAxisAlignItems = align === "right" ? "MAX" : "MIN";
+        const textNode = cellFrame.findOne(n => n.type === "TEXT") as TextNode;
+        if (textNode) {
+          textNode.textAlignHorizontal = align === "right" ? "RIGHT" : "LEFT";
+        }
+      } else {
+        // Custom body cells
+        cellFrame.primaryAxisAlignItems = align === "right" ? "MAX" : (align === "center" ? "CENTER" : "MIN");
+        const textNode = cellFrame.findOne(n => n.type === "TEXT") as TextNode;
+        if (textNode) {
+          textNode.textAlignHorizontal = align === "right" ? "RIGHT" : (align === "center" ? "CENTER" : "LEFT");
+        }
       }
     }
   }
@@ -2247,7 +2424,7 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
   }
 
   if (op.op === "remove_rows") {
-    const sorted = [...op.indexes].sort((a, b) => b - a);
+    const sorted = Array.from(op.indexes).sort((a, b) => b - a);
     for (const col of cols) {
       const offset = await getHeaderOffset(col);
       const currentRows = Math.max(0, col.children.length - offset);
@@ -2301,7 +2478,7 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
   }
 
   if (op.op === "remove_cols") {
-    const sorted = [...op.indexes].sort((a, b) => b - a);
+    const sorted = Array.from(op.indexes).sort((a, b) => b - a);
     for (const idx of sorted) {
       const col = cols[idx];
       if (col) col.remove();
@@ -2509,6 +2686,17 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
     const offset = await getHeaderOffset(col);
     const cell = col.children[offset + op.row];
     if (!cell) return;
+    
+    // AI Update: If cell is Avatar, it needs full re-render to update the initials/etc.
+    const cellType = cell.getPluginData("cellType");
+    if (cellType === "Avatar") {
+       const { component: avatarComponent } = await resolveCellFactory(AVATAR_COMPONENT_KEY);
+       if (avatarComponent && cell.type === "FRAME") {
+          await renderAvatarCell(cell as FrameNode, op.value, { avatarComponent, isAI: true });
+          return;
+       }
+    }
+
     await setFirstText(cell as any, op.value);
     if (cell.type === "FRAME") {
       cell.setPluginData("cellValue", op.value);
@@ -2520,13 +2708,26 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
     const col = cols[op.col];
     if (!col) return;
     const offset = await getHeaderOffset(col);
+    const cellType = col.getPluginData("cellType");
+    
+    let avatarComponent: ComponentNode | ComponentSetNode | undefined;
+    if (cellType === "Avatar") {
+       const res = await resolveCellFactory(AVATAR_COMPONENT_KEY);
+       avatarComponent = res.component;
+    }
+
     for (let r = 0; r < op.values.length; r++) {
       const cell = col.children[offset + r];
       if (!cell) break;
       const val = String(op.values[r]);
-      await setFirstText(cell as any, val);
-      if (cell.type === "FRAME") {
-        cell.setPluginData("cellValue", val);
+
+      if (cellType === "Avatar" && avatarComponent && cell.type === "FRAME") {
+         await renderAvatarCell(cell as FrameNode, val, { avatarComponent, isAI: true });
+      } else {
+         await setFirstText(cell as any, val);
+         if (cell.type === "FRAME") {
+           cell.setPluginData("cellValue", val);
+         }
       }
     }
     return;
@@ -2980,69 +3181,9 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
 async function createTable(params: CreateTableOptions) {
   const { rows, cols, rowGap, colGap, rowActionType, envelopeSchema } = params;
 
-  // 1. Load basic components (Header and Cell)
-  const headerComponent = await loadComponent(HEADER_COMPONENT_KEY, "Header");
+  // 1. Load basic components (Cell)
   const cellComponent = await loadComponent(CELL_COMPONENT_KEY, "Cell");
   const actionTextComponent = await loadComponent(ROW_ACTION_COMPONENT_KEY, "ActionText").catch(() => null);
-  // Basic components for type checking/fallback
-  const baseTagComponent = await loadComponent(TAG_COMPONENT_KEY, "Tag");
-  const baseAvatarComponent = await loadComponent(AVATAR_COMPONENT_KEY, "Avatar");
-  const baseInputComponent = await loadComponent(INPUT_COMPONENT_KEY, "Input");
-  const baseSelectComponent = await loadComponent(SELECT_COMPONENT_KEY, "Select");
-
-  // Header factory helper
-  const getHeaderFactory = (headerMode: HeaderMode = "none") => {
-    if (!headerComponent) return null;
-    if (headerComponent.type === "COMPONENT_SET") {
-      const criteria = {
-        "Filter": headerMode === "filter" ? "True" : "False",
-        "Select": headerMode === "filter" ? "True" : "False",
-        "Sort": headerMode === "sort" ? "True" : "False",
-        "Search": headerMode === "search" ? "True" : "False",
-        "筛选": headerMode === "filter" ? "True" : "False",
-        "排序": headerMode === "sort" ? "True" : "False",
-        "搜索": headerMode === "search" ? "True" : "False",
-        "Align 排列方式": "Left 左"
-      };
-      const target = findVariant(headerComponent, criteria);
-      return target ? () => {
-        const inst = target.createInstance();
-        try {
-          // Use more flexible property matching for setProperties
-          const currentProps = inst.componentProperties;
-          const finalProps: any = {};
-          for (const [ckey, cval] of Object.entries(criteria)) {
-            const actualKey = Object.keys(currentProps).find(k => k.trim() === ckey.trim()) || 
-                             Object.keys(currentProps).find(k => k.includes(ckey));
-            if (actualKey) {
-                const propInfo = currentProps[actualKey] as any;
-                let finalVal: any = cval;
-                
-                // Ensure value matches property type (Boolean vs String)
-                if (propInfo.type === "BOOLEAN") {
-                    finalVal = (String(cval) === "True" || cval === (true as any));
-                } else {
-                    finalVal = typeof cval === "boolean" ? (cval ? "True" : "False") : String(cval);
-                }
-                
-                // Special handling for State type mismatch issues
-                // If it's a VARIANT property but the component expects a string that looks like boolean
-                if (propInfo.type === "VARIANT" && typeof finalVal === "boolean") {
-                   finalVal = finalVal ? "True" : "False";
-                }
-
-                finalProps[actualKey] = finalVal;
-            }
-          }
-          inst.setProperties(finalProps);
-        } catch (e) {
-          console.warn("Failed to set header properties during creation", e);
-        }
-        return inst;
-      } : null;
-    }
-    return () => (headerComponent as ComponentNode).createInstance();
-  };
 
   // Cell factory helper
   const getCellFactory = (type: ColumnType = "Text") => {
@@ -3193,49 +3334,30 @@ async function createTable(params: CreateTableOptions) {
         colFrame.layoutSizingHorizontal = "FILL";
       }
 
-      // Apply initial header property from envelopeSchema if provided
-      const hFactory = getHeaderFactory(headerMode);
-      if (hFactory) {
-        const header = hFactory();
-        colFrame.appendChild(header);
-        
-        // Ensure header fills column width
-        header.layoutAlign = "STRETCH";
-        if ("layoutSizingHorizontal" in header) {
-          (header as any).layoutSizingHorizontal = "FILL";
-        }
-        
-        await setFirstText(header, colTitle);
-        
-      // Ensure header properties are set correctly (e.g. Filter)
-      if (header.type === "INSTANCE" && headerMode !== "none") {
-        try {
-          const criteria: any = {
-            "Filter": headerMode === "filter" ? "True" : "False",
-            "Select": headerMode === "filter" ? "True" : "False",
-            "Sort": headerMode === "sort" ? "True" : "False",
-            "Search": headerMode === "search" ? "True" : "False",
-            "筛选": headerMode === "filter" ? "True" : "False",
-            "排序": headerMode === "sort" ? "True" : "False",
-            "搜索": headerMode === "search" ? "True" : "False",
-            "Align 排列方式": "Left 左"
-          };
-          const currentProps = header.componentProperties;
-          const finalProps: any = {};
-          for (const [ckey, cval] of Object.entries(criteria)) {
-            const actualKey = Object.keys(currentProps).find(k => k.trim() === ckey.trim()) || 
-                             Object.keys(currentProps).find(k => k.includes(ckey));
-            if (actualKey) {
-                const normalizedVal = typeof cval === "boolean" ? (cval ? "True" : "False") : cval;
-                finalProps[actualKey] = normalizedVal;
-            }
-          }
-          header.setProperties(finalProps);
-        } catch (e) {
-          console.warn("Failed to set header properties on instance", e);
-        }
+      // Create Header
+      const headerFrame = createCustomCellFrame(colTitle, "Header");
+      colFrame.appendChild(headerFrame);
+      headerFrame.layoutAlign = "STRETCH";
+      if ("layoutSizingHorizontal" in headerFrame) {
+        (headerFrame as any).layoutSizingHorizontal = "FILL";
       }
-      }
+      
+      const { component: iconComponent } = await resolveCellFactory(HEADER_ICON_COMPONENT_KEY);
+      const { filter, sort, search } = headerPropsFromMode(headerMode);
+      
+      let iconType: "Filter" | "Sort" | "Search" | "Info" | undefined;
+      if (filter) iconType = "Filter";
+      else if (sort) iconType = "Sort";
+      else if (search) iconType = "Search";
+      
+      await renderHeaderCell(headerFrame, colTitle, { iconType, iconComponent });
+      
+      // Requirement: Save header type in cell and column plugin data
+      headerFrame.setPluginData("headerType", headerMode);
+      colFrame.setPluginData("headerType", headerMode);
+      
+      // Apply column metadata
+      colFrame.setPluginData("cellType", colType);
 
     // 2. Add Cells and Fill Data
     const cFactory = getCellFactory(colType);
@@ -3749,109 +3871,54 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
   }
 
   if (message.type === "set_header_props") {
-    const { filter, sort, search } = message.props;
+    const { filter, sort, search, info } = message.props;
     const selection = figma.currentPage.selection;
     if (selection.length === 0) {
       figma.notify("请先选中单元格");
       return;
     }
 
-    let updateCount = 0;
+    // Determine mode from props
+    let mode: HeaderMode = "none";
+    if (filter) mode = "filter";
+    else if (sort) mode = "sort";
+    else if (search) mode = "search";
+    else if (info) mode = "info";
 
     for (const node of selection) {
-      // Find the Header instance
-      // 1. If selected is Instance, check if it's header.
-      // 2. If selected is Column Frame, check first child.
-      
-      let headerInstance: InstanceNode | null = null;
-      
-      if (node.type === "INSTANCE") {
-         // Is this a header?
-         const main = await node.getMainComponentAsync();
-         const isHeader = (m: ComponentNode | null) => {
-             if (!m) return false;
-             if (m.key === HEADER_COMPONENT_KEY) return true;
-             if (m.parent && m.parent.type === "COMPONENT_SET") {
-                return m.parent.key === HEADER_COMPONENT_KEY || 
-                       m.parent.children.some(c => (c.type === "COMPONENT" || c.type === "COMPONENT_SET") && c.key === HEADER_COMPONENT_KEY);
-             }
-             return false;
-          };
-
-         if (isHeader(main)) {
-             headerInstance = node;
-         } else {
-             // Maybe it's a cell, try to find the header in the same column?
-             const col = node.parent;
-             if (col && col.type === "FRAME" && col.children.length > 0) {
-                 const first = col.children[0];
-                 if (first.type === "INSTANCE") {
-                    const m = await first.getMainComponentAsync();
-                    if (isHeader(m)) {
-                        headerInstance = first;
-                    }
-                 }
-             }
-         }
-      } else if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
-          // Column selected
-          if (node.children.length > 0 && node.children[0].type === "INSTANCE") {
-              headerInstance = node.children[0] as InstanceNode;
-          }
-      }
-
-      if (headerInstance) {
-          // Update props
-          // Since it might be a variant switch or prop update
-          // Let's try setProperties first if it's the right component set
-          const main = await headerInstance.getMainComponentAsync();
-          if (main && main.parent && main.parent.type === "COMPONENT_SET") {
-               // Try to switch variant based on props
-               // We need to know the current props and merge with new ones
-               // But our findVariant logic is simple.
-               // Let's just try to update the boolean props if they exist.
-               
-               const currentProps = headerInstance.componentProperties;
-               const newProps: any = {};
-               
-               // Map our UI keys to Component Keys
-               // filter -> "Filter", sort -> "Sort", search -> "Search"
-               const setProp = (uiKey: string, val: boolean) => {
-                   const key = Object.keys(currentProps).find(k => k.toLowerCase().includes(uiKey));
-                   if (key) {
-                       const currentVal = currentProps[key].value;
-                       if (typeof currentVal === "boolean") {
-                           newProps[key] = val;
-                       } else if (typeof currentVal === "string") {
-                           newProps[key] = val ? "True" : "False";
-                       }
-                   }
-               };
-
-               setProp("filter", filter);
-               setProp("sort", sort);
-               setProp("search", search);
-               
-               if (Object.keys(newProps).length > 0) {
-                   try {
-                       headerInstance.setProperties(newProps);
-                       updateCount++;
-                   } catch (e) {
-                       console.log("Set props failed, trying swap", e);
-                       // If setProperties fails, maybe we need to find a variant?
-                       // But setProperties usually handles variant switching if props match.
-                   }
-               }
-          }
+      const col = findColumnFrame(node);
+      if (col) {
+        const table = col.parent as FrameNode;
+        const cols = getColumnFrames(table);
+        const colIndex = cols.indexOf(col);
+        if (colIndex !== -1) {
+          await applyHeaderModeToColumn(table, colIndex, mode);
+        }
       }
     }
+    figma.notify("已更新表头设置");
+  }
 
-    if (updateCount > 0) {
-      figma.notify("已更新表头设置");
-      postSelection(); 
-    } else {
-      figma.notify("未选中表格列或列首不是表头组件，或者属性名不匹配");
+  if (message.type === "set_header_mode") {
+    const { mode } = message;
+    const selection = figma.currentPage.selection;
+    if (selection.length === 0) {
+      figma.notify("请先选中单元格");
+      return;
     }
+
+    for (const node of selection) {
+      const col = findColumnFrame(node);
+      if (col) {
+        const table = col.parent as FrameNode;
+        const cols = getColumnFrames(table);
+        const colIndex = cols.indexOf(col);
+        if (colIndex !== -1) {
+          await applyHeaderModeToColumn(table, colIndex, mode);
+        }
+      }
+    }
+    figma.notify("已更新表头设置");
   }
 
   if (message.type === "set_cell_align") {
@@ -3922,7 +3989,11 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                 context = { tagComponent, counterComponent: counterComponent || tagComponent };
             } else if (cellType === "Avatar") {
                 const { component: avatarComponent } = await resolveCellFactory(AVATAR_COMPONENT_KEY);
-                context = { avatarComponent };
+                context = { 
+                  avatarComponent,
+                  overrideDisplayValue: "宋明杰" // Requirement 2: Manual switch uses default name
+                };
+                console.log("[set_cell_type] Avatar context prepared", context);
             } else if (cellType === "ActionText") {
                 const { component: moreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
                 context = { moreIconComponent };
@@ -4041,6 +4112,12 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                              cellFrame.setPluginData("cellValue", textToRender);
                          }
 
+                         console.log("[set_cell_type] Calling customRenderer", { 
+                           cellType, 
+                           textToRender, 
+                           hasOverride: !!context.overrideDisplayValue,
+                           override: context.overrideDisplayValue 
+                         });
                          await customRenderer(cellFrame, textToRender, context);
                          
                          updateCount++;
@@ -4281,8 +4358,13 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       return;
     }
     const sourceCell = figma.currentPage.selection[0];
-    if (sourceCell.type !== "INSTANCE") {
-      figma.notify("选中的不是组件实例");
+    
+    // Support both Instances and our custom Frame-based cells
+    const cellTypeData = sourceCell.getPluginData("cellType");
+    const cellType = cellTypeData as ColumnType;
+    const isCustomCell = sourceCell.type === "FRAME" && cellTypeData !== "";
+    if (sourceCell.type !== "INSTANCE" && !isCustomCell) {
+      figma.notify("选中的不是有效的单元格");
       return;
     }
 
@@ -4292,59 +4374,50 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       return;
     }
 
-    const children = columnFrame.children;
-    const header = children.length > 0 ? children[0] : null;
-
-    // Determine if source is header
-    const isSourceHeader = sourceCell === header;
-
-    if (isSourceHeader) {
-      figma.notify("不能将表头样式应用到整列");
+    const table = findTableFrameFromNode(columnFrame);
+    if (!table) {
+      figma.notify("未找到表格容器");
       return;
     }
 
-    let updateCount = 0;
- 
-     // Clone strategy for "Apply to Column"
-     // We want to replicate the source cell exactly (variant, props, overrides maybe?)
-     // The user said: "copy this component instead of just applying props"
-     // and "originally hidden icon showed up" -> implying we need to keep overrides or exact state.
-     
-     // 1. We can clone the sourceCell.
-     // 2. But we need to replace the target cells in the column layout.
-     
-     for (let i = 0; i < children.length; i++) {
-       const target = children[i];
-       // Skip header and source cell
-       if (target === header || target === sourceCell) continue;
- 
-       if (target.type === "INSTANCE") {
+    const cols = getColumnFrames(table);
+    const colIndex = cols.indexOf(columnFrame);
+    if (colIndex === -1) {
+      figma.notify("未找到列索引");
+      return;
+    }
+
+    // If it's a custom cell type, we prefer using applyColumnTypeToColumn 
+    // to ensure data preservation (it extracts text and renders new UI)
+    if (isCustomCell && cellType) {
+      await applyColumnTypeToColumn(table, colIndex, cellType);
+      figma.notify(`已将 ${cellType} 类型应用到整列`);
+    } else {
+      // For standard instances, we still use the clone strategy
+      const children = columnFrame.children;
+      const header = children.length > 0 ? children[0] : null;
+      let updateCount = 0;
+
+      for (let i = 0; i < children.length; i++) {
+        const target = children[i];
+        if (target === header || target === sourceCell) continue;
+
+        if (target.type === "INSTANCE" || target.type === "FRAME") {
           try {
-             // Clone source
-             const newCell = sourceCell.clone();
-             
-             // Insert new cell at same index
-             columnFrame.insertChild(i, newCell);
-             
-             // Remove old cell
-             target.remove();
-             
-             // Ensure layout props are preserved? 
-             // Usually clone preserves layout props, but if the old cell had specific sizing...
-             // The user said "all cells should be fill width initially".
-             // Let's ensure the new cell is FILL width if the old one was or if it should be.
-             if ("layoutSizingHorizontal" in newCell) {
-                 newCell.layoutSizingHorizontal = "FILL";
-             }
-             
-             updateCount++;
+            const newCell = sourceCell.clone();
+            columnFrame.insertChild(i, newCell);
+            target.remove();
+            if ("layoutSizingHorizontal" in newCell) {
+              (newCell as any).layoutSizingHorizontal = "FILL";
+            }
+            updateCount++;
           } catch (e) {
-             console.error("Failed to clone/replace cell", e);
+            console.error("Failed to clone/replace cell", e);
           }
-       }
-     }
- 
-     figma.notify(`已将样式应用到 ${updateCount} 个单元格`);
+        }
+      }
+      figma.notify(`已将样式应用到 ${updateCount} 个单元格`);
+    }
   }
 
   if (message.type === "add_column") {
@@ -4918,7 +4991,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
         });
 
         if (actionIndices.length > 0) {
-          const newOrder = [...nonActionIndices, ...actionIndices];
+          const newOrder = nonActionIndices.concat(actionIndices);
           
           spec.columns = newOrder.map(i => spec.columns![i]);
           if (spec.headers) spec.headers = newOrder.map(i => spec.headers[i]);

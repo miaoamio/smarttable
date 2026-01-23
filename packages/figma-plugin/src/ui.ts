@@ -99,9 +99,7 @@ const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".tab
     const gatewayTokenInput = document.getElementById("gateway-token") as HTMLInputElement;
 
     // TODO: 修改为正式的线上网关地址
-    const DEFAULT_GATEWAY = process.env.NODE_ENV === "production" 
-      ? "https://smartable-nine.vercel.app" // 恢复为之前的有效地址
-      : "http://localhost:8787";
+    const DEFAULT_GATEWAY = "https://smartable-nine.vercel.app";
 
     console.log("Using gateway:", DEFAULT_GATEWAY);
 
@@ -289,9 +287,7 @@ function setActiveTab(tab: "ai" | "manual" | "debug") {
 
 function getGatewayBaseUrl() {
   const v = gatewayUrlInput?.value?.trim();
-  const DEFAULT_GATEWAY = process.env.NODE_ENV === "production" 
-    ? "https://smartable-nine.vercel.app" 
-    : "http://localhost:8787";
+  const DEFAULT_GATEWAY = "https://smartable-nine.vercel.app";
   return (v && v.length > 0 ? v : DEFAULT_GATEWAY).replace(/\/$/, "");
 }
 
@@ -504,7 +500,7 @@ async function uploadImageToCoze(file: File, target: UploadTarget) {
     type: "image"
   };
 
-  const next = [...currentAttachments, tempState];
+  const next = currentAttachments.concat([tempState]);
   setAttachments(target, next);
   renderAttachmentPreview(target);
 
@@ -547,7 +543,7 @@ async function uploadImageToCoze(file: File, target: UploadTarget) {
     const latest = getAttachments(target);
     const updated = latest.map((item) => {
       if (item.previewUrl === tempUrl) {
-        return { ...item, fileId, loading: false };
+        return Object.assign({}, item, { fileId: fileId, loading: false });
       }
       return item;
     });
@@ -575,10 +571,9 @@ async function fetchWithTimeout(url: string, options: RequestInit & { timeout?: 
     controller.abort();
   }, timeout);
   try {
-    const response = await fetch(url, {
-      ...options,
+    const response = await fetch(url, Object.assign({}, options, {
       signal: controller.signal
-    });
+    }));
     clearTimeout(id);
     return response;
   } catch (error) {
@@ -1006,7 +1001,7 @@ function coerceLegacyToEnvelope(obj: any): AiTableEnvelope {
 
   // 改进：处理嵌套的 schema
   if (obj && obj.schema && obj.schema.schema && typeof obj.schema.schema === "object") {
-    return coerceLegacyToEnvelope({ ...obj, schema: obj.schema.schema });
+    return coerceLegacyToEnvelope(Object.assign({}, obj, { schema: obj.schema.schema }));
   }
 
   if (obj && String(obj.intent).toLowerCase() === "create") {
@@ -1334,13 +1329,14 @@ btnAddCol?.addEventListener("click", () => {
 // Header Type Change
 headerTypeSelect?.addEventListener("change", () => {
   const val = headerTypeSelect.value;
-  // Map dropdown values to boolean props
-  const props: any = { filter: false, sort: false, search: false };
-  if (val === "Filter") props.filter = true;
-  if (val === "Sort") props.sort = true;
-  if (val === "Search") props.search = true;
+  // Map dropdown values to HeaderMode
+  let mode: HeaderMode = "none";
+  if (val === "Filter") mode = "filter";
+  else if (val === "Sort") mode = "sort";
+  else if (val === "Search") mode = "search";
+  else if (val === "Info") mode = "info";
   
-  post({ type: "set_header_props", props });
+  post({ type: "set_header_mode", mode });
 });
 
 // Cell Type Change
@@ -1501,7 +1497,7 @@ async function handleExcelFile(file: File, target: UploadTarget) {
     type: "table"
   };
 
-  const next = [...currentAttachments, tempState];
+  const next = currentAttachments.concat([tempState]);
   setAttachments(target, next);
   renderAttachmentPreview(target);
 
@@ -1681,7 +1677,7 @@ async function handleExcelFile(file: File, target: UploadTarget) {
       const latest = getAttachments(target);
       const updated = latest.map((item) => {
         if (item.fileId === tempId) {
-          return { ...item, loading: false, data: spec };
+          return Object.assign({}, item, { loading: false, data: spec });
         }
         return item;
       });

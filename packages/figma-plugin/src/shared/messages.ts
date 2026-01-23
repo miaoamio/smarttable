@@ -23,7 +23,7 @@ export type ColumnType =
   | "DatePicker"
   | "Upload";
 
-export type HeaderMode = "none" | "filter" | "sort" | "search";
+export type HeaderMode = "none" | "filter" | "sort" | "search" | "info";
 
 export interface AiTableSpec {
   rows: number;
@@ -95,7 +95,8 @@ export type UiToPluginMessage =
   | { type: "ai_apply_envelope"; envelope: AiTableEnvelope }
   | { type: "update_component_key"; key: string }
   | { type: "set_col_width"; mode: "Fixed" | "Fill" | "Hug" }
-  | { type: "set_header_props"; props: { filter: boolean; sort: boolean; search: boolean } }
+  | { type: "set_header_props"; props: { filter: boolean; sort: boolean; search: boolean; info: boolean } }
+  | { type: "set_header_mode"; mode: HeaderMode }
   | { type: "set_cell_type"; cellType: string }
   | { type: "set_cell_align"; align: "left" | "center" | "right" }
   | { type: "set_text_display_mode"; mode: "ellipsis" | "lineBreak" }
