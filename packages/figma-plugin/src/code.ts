@@ -2405,11 +2405,6 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
     (colFrame as any).counterAxisSizingMode = "FIXED";
     colFrame.resize(actionWidth, 100);
 
-    if (type === "Switch") {
-        if ("layoutSizingHorizontal" in colFrame) {
-            (colFrame as any).layoutSizingHorizontal = "FILL";
-        }
-    }
     colFrame.itemSpacing = 0;
     colFrame.paddingLeft = 0;
     colFrame.paddingRight = 0;
@@ -2419,50 +2414,31 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
     colFrame.clipsContent = false;
 
     // Leftmost placement
-    // tableFrame.insertChild(0, colFrame);
+    tableFrame.insertChild(0, colFrame);
 
+    // After insertion, we can set FILL if it's a Switch
     if (type === "Switch") {
-        // Find if there is an "Action" column or if we should append to the end
-        // Or perhaps user wants it as the last column?
-        // Usually switches are at the end, but let's stick to the convention:
-        // If it's a row action, it's usually on the left.
-        // However, the user reported it's "gone".
-        // If layoutSizingHorizontal is FILL, maybe it's being squashed?
+        // User wants fixed width for the column, but header to fill (inside the fixed column)
+        // Wait, if column is fixed 60px, header filling it means header is 60px.
+        // If user said "Switch column 60px fixed width, header fill", that means:
+        // Column width = 60px (FIXED)
+        // Header width = FILL (so it takes 60px)
+        // Previous code was setting column to FILL, which made it huge.
         
-        // Let's force a minimum width if it's FILL, or change strategy.
-        // Actually, if it is FILL in a horizontal layout, and other columns are also FILL,
-        // it should share space.
+        // So we should NOT set column to FILL. It should stay FIXED 60px.
+        // But we need to ensure Header fills that 60px.
         
-        // Wait, if we insert at 0, and tableFrame has itemSpacing, it should be fine.
-        
-        // Let's check if we need to insert it at the end for Switch?
-        // Standard "Row Actions" (checkbox, radio, drag) are on the left.
-        // Switches are often on the right. 
-        // But the code treats all "Row Action Columns" as left-aligned (insertChild(0)).
-        
-        // If the user says "that column is completely gone", it might be 0 width.
-        // In createTable, tableFrame.primaryAxisSizingMode = "FIXED".
-        // If we add a FILL column to a FIXED container that is already full, what happens?
-        // It might be squashed.
-        
-        // Let's try to set it to FIXED width for now to see if it appears, 
-        // or ensure the tableFrame can accommodate it.
-        // But the user asked for "Switch column header cell width to fill" previously.
-        
-        // Reverting to FIXED width but keeping the internal fill logic might be safer,
-        // OR we ensure it has a minimum width.
-        
-        // Actually, let's keep it simple: insert at 0 is correct for "Row Action".
-        // But let's verify width.
-        
-        tableFrame.insertChild(0, colFrame);
-        
-        // Force a resize to ensure it has dimension if it was somehow 0
-        if (colFrame.width < 1) {
-             colFrame.resize(actionWidth, colFrame.height > 0 ? colFrame.height : 100);
+        // Remove the FILL setting for the column itself
+        /*
+        if ("layoutSizingHorizontal" in colFrame) {
+            (colFrame as any).layoutSizingHorizontal = "FILL";
         }
-    } else {
-        tableFrame.insertChild(0, colFrame);
+        */
+        
+        // Ensure it has a valid width immediately
+        if (colFrame.width < 1) {
+            colFrame.resize(actionWidth, colFrame.height > 0 ? colFrame.height : 100);
+        }
     }
 
     // Header
@@ -2553,6 +2529,9 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
 
     if (type !== "Switch") {
         colFrame.resize(actionWidth, colFrame.height);
+    } else {
+        // For Switch, ensure it's also fixed width
+        colFrame.resize(actionWidth, colFrame.height);
     }
 
     if (actionKey) {
@@ -2577,14 +2556,7 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
                 applyCellCommonStyling(container); // Apply common styling: 40px height, white bg, gray bottom border
                 
                 // Set specific width for action column
-                if (type !== "Switch") {
-                    container.resize(actionWidth, container.height);
-                } else {
-                    container.layoutAlign = "STRETCH";
-                    if ("layoutSizingHorizontal" in container) {
-                        (container as any).layoutSizingHorizontal = "FILL";
-                    }
-                }
+                container.resize(actionWidth, container.height);
                 
                 // If we detected a different height, apply it
                 if (rowHeights[i] !== undefined && Math.abs(rowHeights[i] - 40) > 0.1) {
@@ -2605,6 +2577,10 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
                         criteria["Checked 已选"] = "False";
                         criteria["Indeterminate 半选"] = "False";
                         criteria["Hover 悬浮"] = "False";
+                        criteria["Disabled 禁用"] = "False";
+                    } else if (type === "Switch") {
+                        criteria["Label 标签"] = false;
+                        criteria["Status 状态"] = "False";
                         criteria["Disabled 禁用"] = "False";
                     }
                     
