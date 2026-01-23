@@ -94,7 +94,7 @@ export type UiToPluginMessage =
   | { type: "ai_create_table"; spec: AiTableSpec }
   | { type: "ai_apply_envelope"; envelope: AiTableEnvelope }
   | { type: "update_component_key"; key: string }
-  | { type: "set_col_width"; mode: "Fixed" | "Fill" }
+  | { type: "set_col_width"; mode: "Fixed" | "Fill" | "Hug" }
   | { type: "set_header_props"; props: { filter: boolean; sort: boolean; search: boolean } }
   | { type: "set_cell_type"; cellType: string }
   | { type: "set_cell_align"; align: "left" | "center" | "right" }

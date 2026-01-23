@@ -92,6 +92,12 @@ console.log("Smart Table plugin starting...");
 const COMPONENT_KEY = CELL_COMPONENT_KEY;
 const HEADER_COMPONENT_KEY = SHARED_HEADER_COMPONENT_KEY;
 
+function isHeaderNode(node: SceneNode): boolean {
+  return node.name === "Header" || 
+         node.getPluginData("isHeader") === "true" || 
+         node.name.toLowerCase().includes("header");
+}
+
 /**
  * Design Tokens
  * 用于维护全局色彩、尺寸、字号变量
@@ -102,6 +108,7 @@ const TOKENS = {
     "link-6": "1664FF",
     "danger-6": "D7312A",
     "color-fill-2": "737A87",
+    "color-fill-3": "42464E",
   },
   sizes: {
     base: 4,
@@ -148,8 +155,12 @@ const TAG_COMPONENT_KEY = "63afa78c2d544c859634166c877d00da5346ed18";
 const TAG_COUNTER_COMPONENT_KEY = "76f72d9a460e6f65e823c601d64ac7512fc1f9b2";
 const AVATAR_COMPONENT_KEY = "8365ec79313a17f0687ed671a0fde43bc64e8f14";
 const MORE_ICON_COMPONENT_KEY = "1a4450f46c58d5dacd02d9cde1450a5edbf493c4";
+const EDIT_ICON_COMPONENT_KEY = "53c9064cdbb04581b764c7bfe92ef2862ca6af8d";
+const DELETE_ICON_COMPONENT_KEY = "3cf68ee183ff9840dffb8e4ba760dfea519e4a8d";
+const ACTION_MORE_ICON_COMPONENT_KEY = "27e130c675fe44532f717656d04b2597eb05a67d";
 const INPUT_COMPONENT_KEY = "e1c520fea681ece9994290c63d0b77ad19dbf7fa";
 const SELECT_COMPONENT_KEY = "27245acbfd46e812fb383443f0aac88df751fa15";
+const STATE_COMPONENT_KEY = "e8ec559c3604ae1e23b354c120d63b481f333527";
 
 const componentCache = new Map<string, ComponentNode | ComponentSetNode>();
 
@@ -633,8 +644,8 @@ function getColumnWidthMode(col: FrameNode): "FIXED" | "FILL" {
 async function getCellType(cell: SceneNode): Promise<string | undefined> {
   // Check for Custom Frame types
   const customCellType = cell.getPluginData("cellType");
-  if (cell.type === "FRAME" && ["Text", "Tag", "Avatar", "ActionText", "Input", "Select"].includes(customCellType)) {
-      return customCellType;
+  if (cell.type === "FRAME" && customCellType) {
+    return customCellType;
   }
 
   if (cell.type !== "INSTANCE") return undefined;
@@ -824,10 +835,24 @@ async function postSelection() {
               const cell = colFrame.children[offset];
               cellType = await getCellType(cell);
               cellAlign = getCellAlignment(cell);
+
+              // Proactively sync cellValue to Column for Dev Mode visibility
+              let currentText = extractTextFromNode(cell, true);
+              if (cellType === "ActionIcon" && (!currentText || currentText.trim() === "")) {
+                currentText = "编辑 删除 …";
+              }
+
+              if (currentText) {
+                colFrame.setPluginData("cellValue", currentText);
+                pluginData["cellValue"] = currentText;
+              }
+
               if (cellType === "Tag" && !componentKey) {
                   componentKey = TAG_COMPONENT_KEY;
               } else if (cellType === "Avatar" && !componentKey) {
                   componentKey = AVATAR_COMPONENT_KEY;
+              } else if ((cellType === "ActionText" || cellType === "ActionIcon") && !componentKey) {
+                  componentKey = ACTION_MORE_ICON_COMPONENT_KEY;
               }
           }
         }
@@ -854,21 +879,31 @@ async function postSelection() {
             if (textDisplayMode) pluginData["textDisplayMode"] = textDisplayMode;
 
             // Proactively sync cellValue to Plugin Data for Dev Mode visibility
-            const currentText = extractTextFromNode(cellNode, true);
-            cellNode.setPluginData("cellValue", currentText);
-            
-            // Also set on the actually selected node (which might be a child) for direct visibility in Dev Mode
-            if (node !== cellNode && "setPluginData" in node) {
-              (node as any).setPluginData("cellValue", currentText);
+            let currentText = extractTextFromNode(cellNode, true);
+            if (cellType === "ActionIcon" && (!currentText || currentText.trim() === "")) {
+                currentText = "编辑 删除 …";
+            }
+
+            if (currentText) {
+                cellNode.setPluginData("cellValue", currentText);
+                pluginData["cellValue"] = currentText;
             }
             
-            pluginData["cellValue"] = currentText;
+            // Also set on the actually selected node (which might be a child) for direct visibility in Dev Mode
+            const finalValue = pluginData["cellValue"] || currentText;
+            if (node !== cellNode && "setPluginData" in node && finalValue) {
+              (node as any).setPluginData("cellValue", finalValue);
+            }
+            
+            if (finalValue) pluginData["cellValue"] = finalValue;
 
             // If it's a tag/avatar cell (Frame), we might want to pretend it has the correct component key
             if (cellType === "Tag" && !componentKey) {
               componentKey = TAG_COMPONENT_KEY;
             } else if (cellType === "Avatar" && !componentKey) {
               componentKey = AVATAR_COMPONENT_KEY;
+            } else if ((cellType === "ActionText" || cellType === "ActionIcon") && !componentKey) {
+              componentKey = MORE_ICON_COMPONENT_KEY;
             }
           }
         }
@@ -1009,9 +1044,21 @@ async function loadTextNodeFonts(node: TextNode) {
 
 async function setFirstText(node: SceneNode, value: string) {
   const anyNode = node as any;
-  const textNodes: TextNode[] =
-    typeof anyNode.findAll === "function" ? (anyNode.findAll((n: SceneNode) => n.type === "TEXT") as TextNode[]) : [];
-  const t = textNodes[0];
+  
+  let t: TextNode | null = null;
+  
+  // If it's a frame (like our custom Avatar/Tag cells), try to find a direct child text node first
+  // This is more reliable than findAll which might find text nodes inside nested instances (like avatar initials)
+  if (node.type === "FRAME") {
+    t = node.children.find(c => c.type === "TEXT") as TextNode;
+  }
+  
+  if (!t) {
+    const textNodes: TextNode[] =
+      typeof anyNode.findAll === "function" ? (anyNode.findAll((n: SceneNode) => n.type === "TEXT") as TextNode[]) : [];
+    t = textNodes[0];
+  }
+
   if (!t) return false;
   await loadTextNodeFonts(t);
   try {
@@ -1250,14 +1297,17 @@ function extractTextFromNode(n: SceneNode, skipCache: boolean = false): string {
         // ignoring text nodes inside the avatar instance (the initials).
         const t = n.children.find(x => x.type === "TEXT") as TextNode;
         return t ? t.characters : "";
-      } else if (cellType === "ActionText") {
+      } else if (cellType === "ActionText" || cellType === "ActionIcon") {
         const texts: string[] = [];
         n.children.forEach(c => {
           if (c.type === "TEXT") {
             texts.push(c.characters);
           }
         });
-        return texts.join("，");
+        if (texts.length > 0) return texts.join("，");
+        
+        // Fallback for ActionIcon if no text nodes found
+        return n.getPluginData("cellValue") || (cellType === "ActionIcon" ? "编辑 删除 …" : "");
       } else if (cellType === "Input" || cellType === "Select" || cellType === "Text") {
         // Find all text nodes inside the instance or frame
         const textNodes = n.findAll(child => child.type === "TEXT") as TextNode[];
@@ -1278,10 +1328,14 @@ type CustomCellRenderer = (
     tagComponent?: ComponentNode | ComponentSetNode;
     counterComponent?: ComponentNode | ComponentSetNode;
     avatarComponent?: ComponentNode | ComponentSetNode;
-    moreIconComponent?: ComponentNode | ComponentSetNode;
-    inputComponent?: ComponentNode | ComponentSetNode;
-    selectComponent?: ComponentNode | ComponentSetNode;
-    [key: string]: any;
+  moreIconComponent?: ComponentNode | ComponentSetNode;
+  editIconComponent?: ComponentNode | ComponentSetNode;
+  deleteIconComponent?: ComponentNode | ComponentSetNode;
+  actionMoreIconComponent?: ComponentNode | ComponentSetNode;
+  inputComponent?: ComponentNode | ComponentSetNode;
+  selectComponent?: ComponentNode | ComponentSetNode;
+  stateComponent?: ComponentNode | ComponentSetNode;
+  [key: string]: any;
   }
 ) => Promise<void>;
 
@@ -1323,6 +1377,83 @@ function createCustomCellFrame(name: string, type: string): FrameNode {
   return cellFrame;
 }
 
+async function renderActionIconCell(
+  cellFrame: FrameNode,
+  text: string,
+  context: {
+    editIconComponent?: ComponentNode | ComponentSetNode,
+    deleteIconComponent?: ComponentNode | ComponentSetNode,
+    actionMoreIconComponent?: ComponentNode | ComponentSetNode
+  }
+) {
+  const { editIconComponent, deleteIconComponent, actionMoreIconComponent } = context;
+
+  // Store original text in Plugin Data
+  cellFrame.setPluginData("cellValue", text || "编辑 删除 …");
+
+  // Clear existing children
+  for (const child of cellFrame.children) {
+    child.remove();
+  }
+
+  // Helper to create icon instance
+  const createIcon = (comp?: ComponentNode | ComponentSetNode) => {
+    if (!comp) return null;
+    let inst: InstanceNode;
+    if (comp.type === "COMPONENT_SET") {
+      const def = comp.defaultVariant as ComponentNode;
+      inst = (def ?? comp.children[0]).createInstance();
+    } else {
+      inst = (comp as ComponentNode).createInstance();
+    }
+    return inst;
+  };
+
+  // Render 3 specific icons
+  const editInst = createIcon(editIconComponent);
+  const deleteInst = createIcon(deleteIconComponent);
+  const moreInst = createIcon(actionMoreIconComponent);
+
+  const icons = [editInst, deleteInst, moreInst];
+  const fillColor = hexToRgb(TOKENS.colors["color-fill-3"]);
+
+  for (const inst of icons) {
+    if (inst) {
+      inst.resize(16, 16);
+      // Recursively apply color to all vector children
+      const applyColor = (node: SceneNode) => {
+        // Only apply color to vector-like nodes that are part of the icon
+        // Avoid applying color to the root instance or frames that might be backgrounds
+        const isVectorPart = node.type === "VECTOR" || 
+                           node.type === "BOOLEAN_OPERATION" || 
+                           node.type === "STAR" || 
+                           node.type === "LINE" || 
+                           node.type === "ELLIPSE" || 
+                           node.type === "POLYGON";
+        
+        if (isVectorPart && "fills" in node) {
+          node.fills = [{ type: "SOLID", color: fillColor }];
+        }
+        
+        if ("children" in node) {
+          for (const child of node.children) {
+            applyColor(child);
+          }
+        }
+      };
+      applyColor(inst);
+      cellFrame.appendChild(inst);
+    }
+  }
+
+  // Layout styling
+  cellFrame.itemSpacing = 24; // User requested 24px spacing
+  cellFrame.layoutMode = "HORIZONTAL";
+  (cellFrame as any).layoutSizingHorizontal = "HUG";
+  cellFrame.counterAxisSizingMode = "FIXED";
+  cellFrame.counterAxisAlignItems = "CENTER";
+}
+
 async function renderActionCell(
   cellFrame: FrameNode,
   text: string,
@@ -1341,12 +1472,22 @@ async function renderActionCell(
   const parts = text.split(/[\s,，、]+/).filter(s => s.trim().length > 0);
   if (parts.length === 0) return;
 
-  const MAX_VISIBLE = 3;
-  const showMore = parts.length > MAX_VISIBLE;
-  const visibleCount = showMore ? 2 : parts.length;
+  const ellipsisIndex = parts.findIndex(p => p === "…" || p === "...");
+  const showMore = ellipsisIndex !== -1 || parts.length > 3;
+  
+  let visibleParts = parts;
+  if (showMore) {
+    if (ellipsisIndex !== -1) {
+       visibleParts = parts.slice(0, ellipsisIndex);
+    } else {
+       visibleParts = parts.slice(0, 2);
+    }
+  }
+
+  const visibleCount = visibleParts.length;
 
   for (let i = 0; i < visibleCount; i++) {
-    const part = parts[i];
+    const part = visibleParts[i];
     const textNode = figma.createText();
     await loadTextNodeFonts(textNode);
     textNode.characters = part;
@@ -1368,6 +1509,30 @@ async function renderActionCell(
     } else {
       iconInst = (moreIconComponent as ComponentNode).createInstance();
     }
+    
+    // Apply size and color to more icon
+    iconInst.resize(16, 16);
+    const fillColor = hexToRgb(TOKENS.colors["color-fill-2"]);
+    const applyColor = (node: SceneNode) => {
+      const isVectorPart = node.type === "VECTOR" || 
+                         node.type === "BOOLEAN_OPERATION" || 
+                         node.type === "STAR" || 
+                         node.type === "LINE" || 
+                         node.type === "ELLIPSE" || 
+                         node.type === "POLYGON";
+      
+      if (isVectorPart && "fills" in node) {
+        node.fills = [{ type: "SOLID", color: fillColor }];
+      }
+      
+      if ("children" in node) {
+        for (const child of node.children) {
+          applyColor(child);
+        }
+      }
+    };
+    applyColor(iconInst);
+    
     cellFrame.appendChild(iconInst);
   }
 
@@ -1379,14 +1544,88 @@ async function renderActionCell(
   cellFrame.counterAxisAlignItems = "CENTER";
 }
 
-const CUSTOM_CELL_REGISTRY: Partial<Record<ColumnType, CustomCellRenderer>> = {
+async function renderStateCell(
+  cellFrame: FrameNode,
+  text: string,
+  context: { stateComponent?: ComponentNode | ComponentSetNode }
+) {
+  const { stateComponent } = context;
+
+  // Store original text in Plugin Data
+  cellFrame.setPluginData("cellValue", text);
+
+  // Clear existing children
+  for (const child of cellFrame.children) {
+    child.remove();
+  }
+
+  if (stateComponent) {
+    let inst: InstanceNode;
+    if (stateComponent.type === "COMPONENT_SET") {
+      // Create instance from default variant
+      const def = stateComponent.defaultVariant as ComponentNode;
+      inst = (def ?? stateComponent.children[0]).createInstance();
+    } else {
+      inst = (stateComponent as ComponentNode).createInstance();
+    }
+    
+    // Set properties
+    // Default: { "Type 类型": "L2 二级标签", "Theme 主题": "Success 成功", "Size 尺寸": "Default 20", "Icon 图标": "True", "Dropdown 下拉选择": "False", "State 状态": "Default 默认", "Disabled 禁用": "False" }
+    // If text is provided, try to map it to "State 状态" or just set as text override?
+    // For now, we just stick to default as requested, maybe mapping text later if needed.
+    // The user said: "稍后我们再讨论如何完善状态的显示", so we just use default props.
+    
+    // Explicitly set default props to ensure consistency
+    try {
+        inst.setProperties({
+            "Type 类型": "L2 二级标签",
+            "Theme 主题": "Success 成功",
+            "Size 尺寸": "Default 20",
+            "Icon 图标": "True",
+            "Dropdown 下拉选择": "False",
+            "State 状态": "Default 默认",
+            "Disabled 禁用": "False"
+        });
+    } catch (e) {
+        console.warn("Failed to set properties on State component", e);
+    }
+    
+    cellFrame.appendChild(inst);
+  }
+
+  // Layout styling
+  cellFrame.layoutMode = "HORIZONTAL";
+  cellFrame.layoutSizingHorizontal = "FILL";
+  cellFrame.layoutSizingVertical = "FIXED";
+  cellFrame.paddingLeft = 8;
+  cellFrame.paddingRight = 8;
+  cellFrame.counterAxisSizingMode = "FIXED";
+  cellFrame.counterAxisAlignItems = "CENTER";
+  cellFrame.primaryAxisAlignItems = "MIN";
+}
+
+const CUSTOM_CELL_REGISTRY: Record<string, CustomCellRenderer> = {
   "Tag": renderTagCell,
   "Avatar": renderAvatarCell,
   "ActionText": renderActionCell,
+  "ActionIcon": renderActionIconCell,
   "Input": renderInputCell,
   "Select": renderSelectCell,
+  "State": renderStateCell,
   "Text": renderTextCell,
 };
+
+// Ensure all column types use custom frame-based rendering
+const ALL_COLUMN_TYPES = [
+  "Icon", "Button", "Link", "Badge", "Checkbox", "Radio", 
+  "Switch", "Progress", "Rating", "Slider", "Stepper", "Textarea", 
+  "TimePicker", "DatePicker", "Upload"
+];
+ALL_COLUMN_TYPES.forEach(type => {
+  if (!CUSTOM_CELL_REGISTRY[type]) {
+    (CUSTOM_CELL_REGISTRY as any)[type] = renderTextCell;
+  }
+});
 
 async function renderTextCell(
   cellFrame: FrameNode,
@@ -1528,14 +1767,22 @@ async function renderSelectCell(
 async function renderAvatarCell(
   cellFrame: FrameNode,
   text: string,
-  context: { avatarComponent?: ComponentNode | ComponentSetNode }
+  context: { avatarComponent?: ComponentNode | ComponentSetNode; overrideDisplayValue?: string }
 ) {
-  const { avatarComponent } = context;
+  const { avatarComponent, overrideDisplayValue } = context;
   if (!avatarComponent) return;
 
-  const finalName = text || "宋明杰";
-  // Store original text in Plugin Data immediately
-  cellFrame.setPluginData("cellValue", finalName);
+  const finalName = overrideDisplayValue || text || "宋明杰";
+  
+  // If we have an override (e.g. switching column type), we preserve the original text in cellValue
+  // otherwise we update cellValue to match the rendered text
+  if (overrideDisplayValue) {
+    if (text) {
+      cellFrame.setPluginData("cellValue", text);
+    }
+  } else {
+    cellFrame.setPluginData("cellValue", finalName);
+  }
 
   // Clear existing children
   for (const child of cellFrame.children) {
@@ -1709,6 +1956,12 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
   if (!col) return;
   const offset = await getHeaderOffset(col);
 
+  // Set column-level metadata for better identification in Dev Mode
+  col.setPluginData("cellType", type);
+  if (type === "ActionIcon" || type === "ActionText") {
+    col.setPluginData("cellValue", "编辑 删除 …");
+  }
+
   // Special handling for Custom Cells (Tag, Avatar, etc.)
   const customRenderer = CUSTOM_CELL_REGISTRY[type];
   if (customRenderer) {
@@ -1723,20 +1976,54 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
         const { component: avatarComponent } = await resolveCellFactory(AVATAR_COMPONENT_KEY);
         context = { avatarComponent };
       } else if (type === "ActionText") {
-        const { component: moreIconComponent } = await resolveCellFactory(MORE_ICON_COMPONENT_KEY);
+        const { component: moreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
         context = { moreIconComponent };
+      } else if (type === "ActionIcon") {
+        const { component: editIconComponent } = await resolveCellFactory(EDIT_ICON_COMPONENT_KEY);
+        const { component: deleteIconComponent } = await resolveCellFactory(DELETE_ICON_COMPONENT_KEY);
+        const { component: actionMoreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
+        context = { editIconComponent, deleteIconComponent, actionMoreIconComponent };
       } else if (type === "Input") {
         const { component: inputComponent } = await resolveCellFactory(INPUT_COMPONENT_KEY);
         context = { inputComponent };
       } else if (type === "Select") {
         const { component: selectComponent } = await resolveCellFactory(SELECT_COMPONENT_KEY);
         context = { selectComponent };
+      } else if (type === "State") {
+        const { component: stateComponent } = await resolveCellFactory(STATE_COMPONENT_KEY);
+        context = { stateComponent };
+      } else if (type === "Text") {
+        context = {};
       }
 
-      if (Object.keys(context).some(k => context[k])) {
+      // Always use the custom renderer if it exists in our registry
+      // This ensures we use the new frame-based custom cells instead of old instance-swapping
+      if (customRenderer) {
         // Set column layout props
-        col.layoutSizingHorizontal = type === "ActionText" ? "HUG" : "FILL";
-        col.counterAxisSizingMode = "FIXED";
+        const isHug = (type === "ActionText" || type === "ActionIcon");
+        col.layoutSizingHorizontal = isHug ? "HUG" : "FILL";
+        if (!isHug) {
+          col.counterAxisSizingMode = "FIXED";
+        }
+        
+        // Also ensure all cells within the column have consistent sizing
+        for (const child of col.children) {
+          if (child.type === "FRAME" || child.type === "INSTANCE") {
+            if (isHeaderNode(child)) {
+              (child as any).layoutSizingHorizontal = "FILL";
+              if ("layoutAlign" in child) {
+                (child as any).layoutAlign = "STRETCH";
+              }
+            } else {
+              (child as any).layoutSizingHorizontal = isHug ? "HUG" : "FILL";
+              if (isHug && "layoutAlign" in child) {
+                (child as any).layoutAlign = "INHERIT";
+              } else if (!isHug && "layoutAlign" in child) {
+                (child as any).layoutAlign = "STRETCH";
+              }
+            }
+          }
+        }
 
         // Snapshot children to avoid mutation issues during iteration
         const childrenSnapshot = [...col.children];
@@ -1759,14 +2046,31 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
             }
           }
 
-          cellFrame.layoutSizingHorizontal = type === "ActionText" ? "HUG" : "FILL";
-          cellFrame.layoutSizingVertical = "FIXED";
-          cellFrame.layoutAlign = type === "ActionText" ? "INHERIT" : "STRETCH"; 
-          
           applyCellCommonStyling(cellFrame);
+
+          cellFrame.layoutSizingHorizontal = (type === "ActionText" || type === "ActionIcon") ? "HUG" : "FILL";
+          cellFrame.layoutSizingVertical = "FIXED";
+          cellFrame.layoutAlign = (type === "ActionText" || type === "ActionIcon") ? "INHERIT" : "STRETCH"; 
           
-          const originalText = extractTextFromNode(n);
-          await customRenderer(cellFrame, originalText, context);
+          // Force layout mode and sizing again after renderer to ensure it sticks
+          if (type === "ActionText" || type === "ActionIcon") {
+            cellFrame.layoutMode = "HORIZONTAL";
+            cellFrame.primaryAxisSizingMode = "AUTO"; // HUG in Figma API
+            cellFrame.counterAxisSizingMode = "FIXED";
+          }
+          
+          let originalText = extractTextFromNode(n);
+          let currentContext = { ...context };
+          
+          if (type === "ActionIcon" || type === "ActionText") {
+            originalText = "编辑 删除 …";
+          } else if (type === "Avatar") {
+            // Requirement 2: Switch to Avatar column uses default name "宋明杰" in UI, 
+            // but we don't modify cellValue.
+            currentContext.overrideDisplayValue = "宋明杰";
+          }
+          
+          await customRenderer(cellFrame, originalText, currentContext);
         }
         return;
       }
@@ -1792,6 +2096,11 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
     const targetVariant = findVariant(componentSet, criteria);
     if (targetVariant) {
       inst.swapComponent(targetVariant);
+      
+      if (type === "ActionIcon") {
+        inst.setPluginData("cellValue", "编辑 删除 …");
+      }
+
       // Ensure action cells are HUG if type is Action
       if (type === "ActionText" || type === "ActionIcon") {
         if ("layoutSizingHorizontal" in inst) {
@@ -1829,20 +2138,34 @@ async function cloneOrCreateBodyCell(col: FrameNode, rowIndex?: number): Promise
   return createCell();
 }
 
-async function applyColumnWidthToColumn(table: FrameNode, colIndex: number, mode: "FIXED" | "FILL") {
+async function applyColumnWidthToColumn(table: FrameNode, colIndex: number, mode: "FIXED" | "FILL" | "HUG") {
   const cols = getColumnFrames(table);
   const col = cols[colIndex];
   if (!col) return;
 
   if (mode === "FILL") {
     col.layoutSizingHorizontal = "FILL";
+  } else if (mode === "HUG") {
+    col.layoutSizingHorizontal = "HUG";
   } else {
     col.layoutSizingHorizontal = "FIXED";
   }
 
   for (const child of col.children) {
     if ("layoutSizingHorizontal" in child) {
-      child.layoutSizingHorizontal = "FILL";
+      if (isHeaderNode(child as SceneNode)) {
+        (child as any).layoutSizingHorizontal = "FILL";
+        if ("layoutAlign" in child) {
+          (child as any).layoutAlign = "STRETCH";
+        }
+      } else {
+        (child as any).layoutSizingHorizontal = mode === "HUG" ? "HUG" : "FILL";
+        if (mode === "HUG" && "layoutAlign" in child) {
+          (child as any).layoutAlign = "INHERIT";
+        } else if (mode !== "HUG" && "layoutAlign" in child) {
+          (child as any).layoutAlign = "STRETCH";
+        }
+      }
     }
   }
 }
@@ -1938,7 +2261,7 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
       const type = (spec as any).type as ColumnType | undefined;
       const header = (spec as any).header as HeaderMode | undefined;
 
-      if (titleLower.includes("操作") || titleLower.includes("action") || type === "ActionText") {
+      if (titleLower.includes("操作") || titleLower.includes("action") || type === "ActionText" || type === "ActionIcon") {
         newCol.layoutSizingHorizontal = "HUG";
       } else {
         newCol.layoutSizingHorizontal = "FILL";
@@ -2166,6 +2489,9 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
     const cell = col.children[offset + op.row];
     if (!cell) return;
     await setFirstText(cell as any, op.value);
+    if (cell.type === "FRAME") {
+      cell.setPluginData("cellValue", op.value);
+    }
     return;
   }
 
@@ -2176,7 +2502,11 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
     for (let r = 0; r < op.values.length; r++) {
       const cell = col.children[offset + r];
       if (!cell) break;
-      await setFirstText(cell as any, String(op.values[r]));
+      const val = String(op.values[r]);
+      await setFirstText(cell as any, val);
+      if (cell.type === "FRAME") {
+        cell.setPluginData("cellValue", val);
+      }
     }
     return;
   }
@@ -2897,8 +3227,13 @@ async function createTable(params: CreateTableOptions) {
     let moreIconComponent: ComponentNode | ComponentSetNode | undefined;
     let inputComponent: ComponentNode | ComponentSetNode | undefined;
     let selectComponent: ComponentNode | ComponentSetNode | undefined;
+    let stateComponent: ComponentNode | ComponentSetNode | undefined;
+    let editIconComponent: ComponentNode | ComponentSetNode | undefined;
+    let deleteIconComponent: ComponentNode | ComponentSetNode | undefined;
+    let actionMoreIconComponent: ComponentNode | ComponentSetNode | undefined;
 
-    if (customRenderer) {
+    const hasCustomRenderer = !!customRenderer;
+    if (hasCustomRenderer) {
         if (colType === "Tag") {
             const res = await resolveCellFactory(TAG_COMPONENT_KEY);
             tagComponent = res.component;
@@ -2908,14 +3243,24 @@ async function createTable(params: CreateTableOptions) {
             const res = await resolveCellFactory(AVATAR_COMPONENT_KEY);
             avatarComponent = res.component;
         } else if (colType === "ActionText") {
-            const res = await resolveCellFactory(MORE_ICON_COMPONENT_KEY);
+            const res = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
             moreIconComponent = res.component;
+        } else if (colType === "ActionIcon") {
+            const res1 = await resolveCellFactory(EDIT_ICON_COMPONENT_KEY);
+            editIconComponent = res1.component;
+            const res2 = await resolveCellFactory(DELETE_ICON_COMPONENT_KEY);
+            deleteIconComponent = res2.component;
+            const res3 = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
+            actionMoreIconComponent = res3.component;
         } else if (colType === "Input") {
             const res = await resolveCellFactory(INPUT_COMPONENT_KEY);
             inputComponent = res.component;
         } else if (colType === "Select") {
             const res = await resolveCellFactory(SELECT_COMPONENT_KEY);
             selectComponent = res.component;
+        } else if (colType === "State") {
+            const res = await resolveCellFactory(STATE_COMPONENT_KEY);
+            stateComponent = res.component;
         }
     }
 
@@ -2925,7 +3270,7 @@ async function createTable(params: CreateTableOptions) {
       if (customRenderer) {
         const cellFrame = createCustomCellFrame(`${colType} Cell ${c + 1}-${r + 1}`, colType);
         colFrame.appendChild(cellFrame);
-        cellFrame.layoutSizingHorizontal = colType === "ActionText" ? "HUG" : "FILL";
+        cellFrame.layoutSizingHorizontal = (colType === "ActionText" || colType === "ActionIcon") ? "HUG" : "FILL";
         cellFrame.layoutSizingVertical = "FIXED";
         
         const context = {
@@ -2933,8 +3278,13 @@ async function createTable(params: CreateTableOptions) {
             counterComponent: counterComponent || tagComponent,
             avatarComponent,
             moreIconComponent,
+            editIconComponent,
+            deleteIconComponent,
+            actionMoreIconComponent,
             inputComponent,
-            selectComponent
+            selectComponent,
+            stateComponent,
+            isAI: !!envelopeSchema
         };
         
         await customRenderer(cellFrame, val, context);
@@ -3042,7 +3392,7 @@ async function createTable(params: CreateTableOptions) {
   return tableFrame;
 }
 
-function setColumnLayout(mode: "FIXED" | "FILL") {
+function setColumnLayout(mode: "FIXED" | "FILL" | "HUG") {
   const selection = figma.currentPage.selection;
   for (const node of selection) {
     let columnFrame: FrameNode | null = null;
@@ -3059,14 +3409,28 @@ function setColumnLayout(mode: "FIXED" | "FILL") {
     if (columnFrame) {
       if (mode === "FILL") {
          columnFrame.layoutSizingHorizontal = "FILL";
+      } else if (mode === "HUG") {
+         columnFrame.layoutSizingHorizontal = "HUG";
       } else {
          columnFrame.layoutSizingHorizontal = "FIXED";
       }
       
-      // ALSO ensure cells are filling the column
+      // ALSO ensure cells are filling the column, UNLESS it's HUG mode
       for (const child of columnFrame.children) {
          if ("layoutSizingHorizontal" in child) {
-            child.layoutSizingHorizontal = "FILL";
+            if (isHeaderNode(child as SceneNode)) {
+                (child as any).layoutSizingHorizontal = "FILL";
+                if ("layoutAlign" in child) {
+                    (child as any).layoutAlign = "STRETCH";
+                }
+            } else {
+                child.layoutSizingHorizontal = (mode === "HUG") ? "HUG" : "FILL";
+                if (mode === "HUG" && "layoutAlign" in child) {
+                    (child as any).layoutAlign = "INHERIT";
+                } else if (mode !== "HUG" && "layoutAlign" in child) {
+                    (child as any).layoutAlign = "STRETCH";
+                }
+            }
          }
       }
       
@@ -3302,10 +3666,10 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       figma.notify("请先选中单元格或列");
       return;
     }
-    const mode = message.mode === "Fixed" ? "FIXED" : "FILL";
+    const mode = message.mode === "Fixed" ? "FIXED" : message.mode === "Hug" ? "HUG" : "FILL";
     try {
       setColumnLayout(mode);
-      figma.notify(`列宽已设置为：${mode === "FIXED" ? "固定" : "充满"}`);
+      figma.notify(`列宽已设置为：${mode === "FIXED" ? "固定" : mode === "HUG" ? "适应" : "充满"}`);
     } catch (e: any) {
       figma.notify("设置列宽失败: " + e.message);
     }
@@ -3527,7 +3891,8 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
 
      // Special handling for Custom Cells (Tag, Avatar, etc.)
      const customRenderer = CUSTOM_CELL_REGISTRY[cellType as ColumnType];
-     if (customRenderer) {
+     const hasCustomRenderer = !!customRenderer;
+     if (hasCustomRenderer) {
         try {
             let context: any = {};
             if (cellType === "Tag") {
@@ -3538,25 +3903,69 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                 const { component: avatarComponent } = await resolveCellFactory(AVATAR_COMPONENT_KEY);
                 context = { avatarComponent };
             } else if (cellType === "ActionText") {
-                const { component: moreIconComponent } = await resolveCellFactory(MORE_ICON_COMPONENT_KEY);
+                const { component: moreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
                 context = { moreIconComponent };
+            } else if (cellType === "ActionIcon") {
+                const { component: editIconComponent } = await resolveCellFactory(EDIT_ICON_COMPONENT_KEY);
+                const { component: deleteIconComponent } = await resolveCellFactory(DELETE_ICON_COMPONENT_KEY);
+                const { component: actionMoreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
+                context = { editIconComponent, deleteIconComponent, actionMoreIconComponent };
             } else if (cellType === "Input") {
                 const { component: inputComponent } = await resolveCellFactory(INPUT_COMPONENT_KEY);
                 context = { inputComponent };
             } else if (cellType === "Select") {
                 const { component: selectComponent } = await resolveCellFactory(SELECT_COMPONENT_KEY);
                 context = { selectComponent };
+            } else if (cellType === "State") {
+                const { component: stateComponent } = await resolveCellFactory(STATE_COMPONENT_KEY);
+                context = { stateComponent };
             }
 
-            if (cellType === "Text" || Object.keys(context).some(k => context[k])) {
+            if (hasCustomRenderer) {
                 for (const node of selection) {
                     let nodesToUpdate: SceneNode[] = [];
                     if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
                         nodesToUpdate = node.children.slice(await getHeaderOffset(node as FrameNode));
-                        node.layoutSizingHorizontal = (cellType === "ActionText") ? "HUG" : "FILL";
-                        node.counterAxisSizingMode = "FIXED";
-                    } else if (node.type === "INSTANCE" || (node.type === "FRAME" && ["Text", "Tag", "Avatar", "ActionText", "Input", "Select"].includes(node.getPluginData("cellType")))) {
+                        const isHug = (cellType === "ActionText" || cellType === "ActionIcon");
+                        node.layoutSizingHorizontal = isHug ? "HUG" : "FILL";
+                        if (!isHug) {
+                            node.counterAxisSizingMode = "FIXED";
+                        }
+                        node.setPluginData("cellType", cellType);
+                        
+                        // Also update width of children cells
+                        for (const child of node.children) {
+                            if (child.type === "FRAME" || child.type === "INSTANCE") {
+                                if (isHeaderNode(child)) {
+                                    (child as any).layoutSizingHorizontal = "FILL";
+                                    if ("layoutAlign" in child) {
+                                        (child as any).layoutAlign = "STRETCH";
+                                    }
+                                } else {
+                                    (child as any).layoutSizingHorizontal = isHug ? "HUG" : "FILL";
+                                    if (isHug && "layoutAlign" in child) {
+                                        (child as any).layoutAlign = "INHERIT";
+                                    } else if (!isHug && "layoutAlign" in child) {
+                                        (child as any).layoutAlign = "STRETCH";
+                                    }
+                                }
+                            }
+                        }
+                        if (cellType === "ActionIcon" || cellType === "ActionText") {
+                            node.setPluginData("cellValue", "编辑 删除 …");
+                        }
+                    } else if (node.type === "INSTANCE" || (node.type === "FRAME" && node.getPluginData("cellType"))) {
                         nodesToUpdate = [node];
+                        // If we are updating individual cells, we should also check if the parent column needs a layout update
+                        const parentCol = findColumnFrame(node as SceneNode);
+                        if (parentCol) {
+                            const isHug = (cellType === "ActionText" || cellType === "ActionIcon");
+                            parentCol.layoutSizingHorizontal = isHug ? "HUG" : "FILL";
+                            if (!isHug) {
+                                parentCol.counterAxisSizingMode = "FIXED";
+                            }
+                            parentCol.setPluginData("cellType", cellType);
+                        }
                     }
 
                     for (const n of nodesToUpdate) {
@@ -3580,7 +3989,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                          }
 
                          applyCellCommonStyling(cellFrame);
-                         cellFrame.layoutSizingHorizontal = (cellType === "ActionText") ? "HUG" : "FILL"; 
+                         cellFrame.layoutSizingHorizontal = (cellType === "ActionText" || cellType === "ActionIcon") ? "HUG" : "FILL"; 
                          
                          if (cellType === "Text") {
                              const displayMode = cellFrame.getPluginData("textDisplayMode") || "ellipsis";
@@ -3596,9 +4005,22 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                              cellFrame.layoutSizingVertical = "FIXED";
                          }
                          
-                         cellFrame.layoutAlign = (cellType === "ActionText") ? "INHERIT" : "STRETCH"; 
+                         cellFrame.layoutAlign = (cellType === "ActionText" || cellType === "ActionIcon") ? "INHERIT" : "STRETCH"; 
                          
-                         await customRenderer(cellFrame, originalText, context);
+                         // Force layout mode and sizing again after renderer to ensure it sticks
+                         if (cellType === "ActionText" || cellType === "ActionIcon") {
+                             cellFrame.layoutMode = "HORIZONTAL";
+                             cellFrame.primaryAxisSizingMode = "AUTO"; // HUG in Figma API
+                             cellFrame.counterAxisSizingMode = "FIXED";
+                         }
+                         
+                         let textToRender = originalText;
+                         if (cellType === "ActionIcon" || cellType === "ActionText") {
+                             textToRender = "编辑 删除 …";
+                             cellFrame.setPluginData("cellValue", textToRender);
+                         }
+
+                         await customRenderer(cellFrame, textToRender, context);
                          
                          updateCount++;
                     }
@@ -3635,19 +4057,32 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
        if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
                         nodesToUpdate = node.children.slice(await getHeaderOffset(node as FrameNode));
                         
-                        // Ensure layout settings for non-ActionText
-                        if (cellType !== "ActionText") {
-                             node.layoutSizingHorizontal = "FILL";
+                        // Ensure layout settings
+                        const isHug = (cellType === "ActionText" || cellType === "ActionIcon");
+                        node.layoutSizingHorizontal = isHug ? "HUG" : "FILL";
+                        if (!isHug) {
+                            node.counterAxisSizingMode = "FIXED";
                         }
-                    } else if (node.type === "INSTANCE" || (node.type === "FRAME" && ["Tag", "Avatar", "ActionText", "Input", "Select"].includes(node.getPluginData("cellType")))) {
+                    } else if (node.type === "INSTANCE" || (node.type === "FRAME" && node.getPluginData("cellType"))) {
                         nodesToUpdate = [node];
+                        // Also update parent column if needed
+                        const parentCol = findColumnFrame(node as SceneNode);
+                        if (parentCol) {
+                            const isHug = (cellType === "ActionText" || cellType === "ActionIcon");
+                            parentCol.layoutSizingHorizontal = isHug ? "HUG" : "FILL";
+                            if (!isHug) {
+                                parentCol.counterAxisSizingMode = "FIXED";
+                            }
+                        }
                     }
 
-                    // Also ensure cells are FILL width if not ActionText
-                    if (cellType !== "ActionText") {
-                        for (const n of nodesToUpdate) {
-                            if ("layoutSizingHorizontal" in n) {
-                                (n as FrameNode | InstanceNode).layoutSizingHorizontal = "FILL";
+                    // Update cells width
+                    const isHug = (cellType === "ActionText" || cellType === "ActionIcon");
+                    for (const n of nodesToUpdate) {
+                        if ("layoutSizingHorizontal" in n) {
+                            (n as any).layoutSizingHorizontal = isHug ? "HUG" : "FILL";
+                            if (isHug && "layoutAlign" in n) {
+                                (n as any).layoutAlign = "INHERIT";
                             }
                         }
                     }

@@ -167,13 +167,19 @@
       input[type="number"],
       input[type="text"],
       select {
-        padding: 6px 8px;
+        padding: 6px 12px;
         border: 1px solid #e5e7eb;
         border-radius: 6px;
         font-size: var(--font-body-1);
         width: 100%;
         box-sizing: border-box;
         outline: none;
+        appearance: none;
+        background-color: #ffffff;
+        background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+        background-size: 14px;
       }
       input[type="number"] {
         width: 64px;
@@ -922,6 +928,15 @@
                       固定
                     </button>
                     <button
+                      id="col-width-hug"
+                      type="button"
+                      class="segment-button"
+                      data-col-width="HUG"
+                      style="margin-left: 4px;"
+                    >
+                      适应
+                    </button>
+                    <button
                       id="col-width-fill"
                       type="button"
                       class="segment-button"
@@ -933,6 +948,7 @@
                   </div>
                   <select id="column-width-select" style="display: none;">
                     <option value="FIXED" selected>固定</option>
+                    <option value="HUG">适应</option>
                     <option value="FILL">充满</option>
                   </select>
                 </div>

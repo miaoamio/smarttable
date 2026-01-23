@@ -62,6 +62,7 @@ const columnHeaderSection = document.getElementById("column-header-section") as 
 const cellActionsSection = document.getElementById("cell-actions-section") as HTMLDivElement | null;
 const colWidthSelect = document.getElementById("column-width-select") as HTMLSelectElement;
 const colWidthFixedBtn = document.getElementById("col-width-fixed") as HTMLButtonElement | null;
+const colWidthHugBtn = document.getElementById("col-width-hug") as HTMLButtonElement | null;
 const colWidthFillBtn = document.getElementById("col-width-fill") as HTMLButtonElement | null;
 const alignLeftBtn = document.getElementById("align-left") as HTMLButtonElement | null;
 const alignRightBtn = document.getElementById("align-right") as HTMLButtonElement | null;
@@ -1356,30 +1357,32 @@ cellTypeSelect?.addEventListener("change", () => {
 
 // Column Width Change
 colWidthSelect?.addEventListener("change", () => {
-  const mode = colWidthSelect.value === "FIXED" ? "Fixed" : "Fill";
+  let mode: "Fixed" | "Fill" | "Hug" = "Fixed";
+  if (colWidthSelect.value === "FILL") mode = "Fill";
+  else if (colWidthSelect.value === "HUG") mode = "Hug";
   post({ type: "set_col_width", mode });
 });
 
-function setColWidthMode(mode: "FIXED" | "FILL", emitEvent = true) {
+function setColWidthMode(mode: "FIXED" | "FILL" | "HUG", emitEvent = true) {
   if (!colWidthSelect) return;
   colWidthSelect.value = mode;
   if (emitEvent) {
     const evt = new Event("change");
     colWidthSelect.dispatchEvent(evt);
   }
-  if (colWidthFixedBtn && colWidthFillBtn) {
-    if (mode === "FIXED") {
-      colWidthFixedBtn.classList.add("active");
-      colWidthFillBtn.classList.remove("active");
-    } else {
-      colWidthFixedBtn.classList.remove("active");
-      colWidthFillBtn.classList.add("active");
-    }
+  if (colWidthFixedBtn && colWidthFillBtn && colWidthHugBtn) {
+    colWidthFixedBtn.classList.toggle("active", mode === "FIXED");
+    colWidthHugBtn.classList.toggle("active", mode === "HUG");
+    colWidthFillBtn.classList.toggle("active", mode === "FILL");
   }
 }
 
 colWidthFixedBtn?.addEventListener("click", () => {
   setColWidthMode("FIXED");
+});
+
+colWidthHugBtn?.addEventListener("click", () => {
+  setColWidthMode("HUG");
 });
 
 colWidthFillBtn?.addEventListener("click", () => {
