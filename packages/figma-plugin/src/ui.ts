@@ -35,6 +35,9 @@ const init = function() {
       console.warn("XLSX variable is undefined, checking if it is available via import...");
       // In bundled environment, XLSX is an object from import
     }
+    if (XLSX && typeof XLSX.set_cptable === "function" && XLSX.cptable) {
+      XLSX.set_cptable(XLSX.cptable);
+    }
     console.log("XLSX check passed or warned.");
 
     const promptCreateInput = document.getElementById("prompt-create") as HTMLTextAreaElement;
@@ -1517,8 +1520,20 @@ async function handleExcelFile(file: File, target: UploadTarget) {
       const isUTF16BE = magic.startsWith("FE FF"); // UTF-16BE BOM
       const isUTF8BOM = magic.startsWith("EF BB BF"); // UTF-8 BOM
       const isHTML = magic.startsWith("3C 21") || magic.startsWith("3C 68") || magic.startsWith("3C 3F"); // <! or <h or <?
+      const headBytes = new Uint8Array(buffer.slice(0, 2048));
+      let zeroCount = 0;
+      let lineBreakCount = 0;
+      let delimiterCount = 0;
+      for (let i = 0; i < headBytes.length; i++) {
+        const b = headBytes[i];
+        if (b === 0) zeroCount++;
+        if (b === 0x0A || b === 0x0D) lineBreakCount++;
+        if (b === 0x2C || b === 0x09 || b === 0x3B) delimiterCount++;
+      }
+      const zeroRatio = headBytes.length > 0 ? zeroCount / headBytes.length : 1;
+      const isLikelyText = !isXLSX && !isXLS && !isHTML && zeroRatio < 0.05 && lineBreakCount > 0 && delimiterCount > 2;
 
-      console.log(`[File Probe] Name: ${file.name}, Magic: ${magic}, isXLS: ${isXLS}, isCSV: ${isCSV}, isHTML: ${isHTML}`);
+      console.log(`[File Probe] Name: ${file.name}, Magic: ${magic}, isXLS: ${isXLS}, isCSV: ${isCSV}, isHTML: ${isHTML}, isLikelyText: ${isLikelyText}`);
 
       const getWorkbookScore = (workbook: any): { score: number, chineseCount: number, garbledCount: number } => {
         try {
@@ -1608,18 +1623,18 @@ async function handleExcelFile(file: File, target: UploadTarget) {
           }
         }
         console.log(`[Final Decision] Using ${bestEnc.name}`);
-        return { workbook: bestRes.workbook, encoding: bestEnc };
+        return { workbook: bestRes.workbook, encoding: bestEnc, score: bestRes.score };
       };
 
       try {
         if (isXLSX || isXLS) {
           console.log(isXLSX ? "Standard XLSX" : "Legacy XLS (97-2003)");
           wb = XLSX.read(buffer, { type: "array" });
-          if (isXLS) {
-            const scoreInfo = getWorkbookScore(wb);
-            if (scoreInfo.score < 0) {
-              const picked = selectWorkbookByEncoding(buffer);
-              if (picked.workbook) wb = picked.workbook;
+          const scoreInfo = getWorkbookScore(wb);
+          if (scoreInfo.score < 0 || scoreInfo.garbledCount >= 20) {
+            const picked = selectWorkbookByEncoding(buffer);
+            if (picked.workbook && picked.score > scoreInfo.score) {
+              wb = picked.workbook;
             }
           }
         } else if (isCSV) {
@@ -1646,6 +1661,9 @@ async function handleExcelFile(file: File, target: UploadTarget) {
         } else if (isHTML) {
           console.log("HTML/XML table detected");
           wb = XLSX.read(buffer, { type: "array" });
+        } else if (isLikelyText) {
+          const picked = selectWorkbookByEncoding(buffer);
+          wb = picked.workbook || XLSX.read(buffer, { type: "array" });
         } else {
           const picked = selectWorkbookByEncoding(buffer);
           wb = picked.workbook || XLSX.read(buffer, { type: "array" });
