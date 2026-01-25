@@ -14,12 +14,19 @@ async function ensureDist() {
   await fs.mkdir(distDir, { recursive: true });
 }
 
-function injectUiScript(uiHtml, uiJs, xlsxJs) {
+function injectUiScript(uiHtml, uiJs, xlsxJs, cptableJs) {
   const marker = '<script src="./ui.js"></script>';
-  // Use base64 encoding to completely avoid HTML parsing issues with the library content
   const xlsxBase64 = Buffer.from(xlsxJs).toString('base64');
+  const cptableBase64 = Buffer.from(cptableJs).toString('base64');
   
   const combinedScripts = `
+    <script>
+      (function() {
+        var script = document.createElement('script');
+        script.text = atob("${cptableBase64}");
+        document.head.appendChild(script);
+      })();
+    </script>
     <script>
       (function() {
         var script = document.createElement('script');
@@ -57,6 +64,13 @@ async function buildOnce() {
   }
   
   const xlsxJs = await fs.readFile(xlsxPath, "utf8");
+  let cptablePath = path.join(packageDir, "node_modules", "codepage", "cptable.js");
+  try {
+    await fs.access(cptablePath);
+  } catch {
+    cptablePath = path.join(packageDir, "..", "..", "node_modules", "codepage", "cptable.js");
+  }
+  const cptableJs = await fs.readFile(cptablePath, "utf8");
 
   const uiBuild = await esbuild.build({
     entryPoints: [path.join(srcDir, "ui.ts")],
@@ -70,7 +84,7 @@ async function buildOnce() {
     }
   });
   const uiJs = uiBuild.outputFiles?.[0]?.text ?? "";
-  const uiHtml = injectUiScript(uiHtmlTemplate, uiJs, xlsxJs);
+  const uiHtml = injectUiScript(uiHtmlTemplate, uiJs, xlsxJs, cptableJs);
   await fs.writeFile(path.join(distDir, "ui.html"), uiHtml, "utf8");
 
   await esbuild.build({

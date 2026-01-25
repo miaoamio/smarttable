@@ -35,8 +35,12 @@ const init = function() {
       console.warn("XLSX variable is undefined, checking if it is available via import...");
       // In bundled environment, XLSX is an object from import
     }
-    if (XLSX && typeof XLSX.set_cptable === "function" && XLSX.cptable) {
-      XLSX.set_cptable(XLSX.cptable);
+    const globalCptable = (globalThis as any).cptable;
+    const cptableRef = globalCptable ?? XLSX?.cptable;
+    if (XLSX && typeof XLSX.set_cptable === "function" && cptableRef) {
+      XLSX.set_cptable(cptableRef);
+    } else if (XLSX && cptableRef && !XLSX.cptable) {
+      XLSX.cptable = cptableRef;
     }
     console.log("XLSX check passed or warned.");
 
@@ -1506,10 +1510,10 @@ async function handleExcelFile(file: File, target: UploadTarget) {
 
   try {
       const buffer = await file.arrayBuffer();
+      const binary = new Uint8Array(buffer);
       
       // Log magic number for debugging
-      const uint8 = new Uint8Array(buffer.slice(0, 4));
-      const magic = Array.from(uint8).map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase();
+      const magic = Array.from(binary.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase();
       console.log(`File: ${file.name}, Size: ${file.size} bytes, Magic: ${magic}`);
 
       let wb;
@@ -1520,7 +1524,7 @@ async function handleExcelFile(file: File, target: UploadTarget) {
       const isUTF16BE = magic.startsWith("FE FF"); // UTF-16BE BOM
       const isUTF8BOM = magic.startsWith("EF BB BF"); // UTF-8 BOM
       const isHTML = magic.startsWith("3C 21") || magic.startsWith("3C 68") || magic.startsWith("3C 3F"); // <! or <h or <?
-      const headBytes = new Uint8Array(buffer.slice(0, 2048));
+      const headBytes = binary.slice(0, 2048);
       let zeroCount = 0;
       let lineBreakCount = 0;
       let delimiterCount = 0;
@@ -1568,7 +1572,7 @@ async function handleExcelFile(file: File, target: UploadTarget) {
         }
       };
 
-      const tryReadWithEncoding = (buf: ArrayBuffer, cp: number | string): { workbook: any, score: number, chineseCount: number, garbledCount: number } => {
+      const tryReadWithEncoding = (buf: Uint8Array, cp: number | string): { workbook: any, score: number, chineseCount: number, garbledCount: number } => {
         try {
           const readOptions: any = { type: "array" };
           if (cp !== "auto") {
@@ -1597,9 +1601,9 @@ async function handleExcelFile(file: File, target: UploadTarget) {
         { name: 'Shift-JIS', cp: 932 }
       ];
 
-      const selectWorkbookByEncoding = (buf: ArrayBuffer) => {
+      const selectWorkbookByEncoding = (buf: Uint8Array) => {
         const candidates = encodings.slice();
-        const uint8View = new Uint8Array(buf);
+        const uint8View = buf;
         let nullCount = 0;
         for (let i = 1; i < Math.min(uint8View.length, 1000); i += 2) {
           if (uint8View[i] === 0) nullCount++;
@@ -1629,11 +1633,11 @@ async function handleExcelFile(file: File, target: UploadTarget) {
       try {
         if (isXLSX || isXLS) {
           console.log(isXLSX ? "Standard XLSX" : "Legacy XLS (97-2003)");
-          wb = XLSX.read(buffer, { type: "array" });
+          wb = XLSX.read(binary, { type: "array" });
           const scoreInfo = getWorkbookScore(wb);
           console.log(`[Workbook Score] initial score ${scoreInfo.score}, chinese ${scoreInfo.chineseCount}, garbled ${scoreInfo.garbledCount}`);
           if (scoreInfo.score < 0 || scoreInfo.garbledCount >= 20) {
-            const picked = selectWorkbookByEncoding(buffer);
+            const picked = selectWorkbookByEncoding(binary);
             if (picked.workbook && picked.score > scoreInfo.score) {
               wb = picked.workbook;
               console.log(`[Workbook Retry] switched encoding to ${picked.encoding.name}`);
@@ -1642,37 +1646,37 @@ async function handleExcelFile(file: File, target: UploadTarget) {
         } else if (isCSV) {
           console.log("CSV detected, starting encoding detection...");
           if (isUTF8BOM) {
-            wb = XLSX.read(buffer, { type: "array", codepage: 65001 });
+            wb = XLSX.read(binary, { type: "array", codepage: 65001 });
           } else if (isUTF16LE) {
-            wb = XLSX.read(buffer, { type: "array", codepage: 1200 });
+            wb = XLSX.read(binary, { type: "array", codepage: 1200 });
           } else if (isUTF16BE) {
-            wb = XLSX.read(buffer, { type: "array", codepage: 1201 });
+            wb = XLSX.read(binary, { type: "array", codepage: 1201 });
           } else {
-            const picked = selectWorkbookByEncoding(buffer);
-            wb = picked.workbook || XLSX.read(buffer, { type: "array" });
+            const picked = selectWorkbookByEncoding(binary);
+            wb = picked.workbook || XLSX.read(binary, { type: "array" });
           }
         } else if (isUTF8BOM) {
           console.log("UTF-8 with BOM detected");
-          wb = XLSX.read(buffer, { type: "array", codepage: 65001 });
+          wb = XLSX.read(binary, { type: "array", codepage: 65001 });
         } else if (isUTF16LE) {
           console.log("UTF-16LE with BOM detected");
-          wb = XLSX.read(buffer, { type: "array", codepage: 1200 });
+          wb = XLSX.read(binary, { type: "array", codepage: 1200 });
         } else if (isUTF16BE) {
           console.log("UTF-16BE with BOM detected");
-          wb = XLSX.read(buffer, { type: "array", codepage: 1201 });
+          wb = XLSX.read(binary, { type: "array", codepage: 1201 });
         } else if (isHTML) {
           console.log("HTML/XML table detected");
-          wb = XLSX.read(buffer, { type: "array" });
+          wb = XLSX.read(binary, { type: "array" });
         } else if (isLikelyText) {
-          const picked = selectWorkbookByEncoding(buffer);
-          wb = picked.workbook || XLSX.read(buffer, { type: "array" });
+          const picked = selectWorkbookByEncoding(binary);
+          wb = picked.workbook || XLSX.read(binary, { type: "array" });
         } else {
-          const picked = selectWorkbookByEncoding(buffer);
-          wb = picked.workbook || XLSX.read(buffer, { type: "array" });
+          const picked = selectWorkbookByEncoding(binary);
+          wb = picked.workbook || XLSX.read(binary, { type: "array" });
         }
       } catch (e) {
         console.error("Parse failed:", e);
-        wb = XLSX.read(buffer, { type: "array" });
+        wb = XLSX.read(binary, { type: "array" });
       }
     const sheetName = wb.SheetNames[0];
       if (wb.SheetNames.length > 1) {
