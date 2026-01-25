@@ -14,6 +14,17 @@ import {
   initialComponents
 } from "../../mcp-gateway/src/component-config";
 
+const DEFAULT_CN_NAME = "宋明杰";
+const DEFAULT_EN_NAME = "Sally";
+
+function getDefaultAvatarName(text?: string): string {
+  if (!text || text.trim() === "") return DEFAULT_CN_NAME;
+  // If text contains any Chinese characters, use Chinese default
+  if (/[\u4e00-\u9fa5]/.test(text)) return DEFAULT_CN_NAME;
+  // Otherwise use English default
+  return DEFAULT_EN_NAME;
+}
+
 // Minimal Surname Map (Top 100+ Common Surnames)
 const SURNAME_MAP: Record<string, string> = {
   "赵": "Z", "钱": "Q", "孙": "S", "李": "L", "周": "Z", "吴": "W", "郑": "Z", "王": "W",
@@ -1480,7 +1491,7 @@ function extractTextFromNode(n: SceneNode, skipCache: boolean = false): string {
         
         // Fallback for ActionIcon if no text nodes found
         return n.getPluginData("cellValue") || (cellType === "ActionIcon" ? "编辑 删除 …" : "");
-      } else if (cellType === "Input" || cellType === "Select" || cellType === "Text") {
+      } else if (cellType === "Input" || cellType === "Select" || cellType === "Text" || cellType === "Header") {
         // Find all text nodes inside the instance or frame
         const textNodes = n.findAll(child => child.type === "TEXT") as TextNode[];
         if (textNodes.length > 0) {
@@ -1854,7 +1865,7 @@ async function renderHeaderCell(
 
   // 3. Create Text
   const textNode = figma.createText();
-  await loadTextNodeFonts(textNode, "Medium");
+  await loadTextNodeFonts(textNode, "Regular");
   textNode.characters = text || "Header";
   textNode.fontSize = TOKENS.fontSizes["body-2"];
   textNode.textAlignHorizontal = align === "right" ? "RIGHT" : "LEFT";
@@ -2141,10 +2152,10 @@ async function renderAvatarCell(
   }
 
   // Logic update based on user request:
-  // 1. If overrideDisplayValue is provided (manual type switch), use it (usually "宋明杰").
+  // 1. If overrideDisplayValue is provided (manual type switch), use it (usually "宋明杰" or "Sally").
   // 2. If it's AI generated/modified (isAI is true), use the provided text (from JSON/Coze).
-  // 3. Fallback to text or "宋明杰".
-  let finalName = "宋明杰";
+  // 3. Fallback to text or default name.
+  let finalName = getDefaultAvatarName(text);
   if (overrideDisplayValue) {
     finalName = overrideDisplayValue;
     console.log("[renderAvatarCell] Using overrideDisplayValue:", finalName);
@@ -2155,18 +2166,18 @@ async function renderAvatarCell(
   
   console.log("[renderAvatarCell] finalName determined:", finalName);
   
-  // Requirement 2: Switch to Avatar column uses default name "宋明杰" in UI, 
+  // Requirement 2: Switch to Avatar column uses default name in UI, 
   // but we don't modify cellValue. We keep whatever was there.
   if (overrideDisplayValue) {
     const existingValue = cellFrame.getPluginData("cellValue");
     // If switching from another type, text is the original content. 
     // We save it to cellValue if it's not already set to something meaningful.
-    if (text && (!existingValue || existingValue === "宋明杰")) {
-       if (text !== "宋明杰") {
+    if (text && (!existingValue || existingValue === finalName)) {
+       if (text !== finalName) {
          cellFrame.setPluginData("cellValue", text);
        }
     }
-    // Note: finalName is "宋明杰" (UI only), cellValue is preserved.
+    // Note: finalName is the default (UI only), cellValue is preserved.
   } else {
     // For AI generation or normal usage, we sync cellValue with finalName
     cellFrame.setPluginData("cellValue", finalName);
@@ -2397,9 +2408,14 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
         context = { tagComponent, counterComponent: counterComponent || tagComponent };
       } else if (type === "Avatar") {
         const { component: avatarComponent } = await resolveCellFactory(AVATAR_COMPONENT_KEY);
+        // Get first cell text to determine language for default name
+        let firstCellText = "";
+        if (col.children.length > offset) {
+          firstCellText = extractTextFromNode(col.children[offset]);
+        }
         context = { 
           avatarComponent,
-          overrideDisplayValue: "宋明杰" // Requirement 2: Manual switch uses default name
+          overrideDisplayValue: getDefaultAvatarName(firstCellText) // Requirement 2: Manual switch uses default name
         };
       } else if (type === "ActionText") {
         const { component: moreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
@@ -2484,6 +2500,16 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
 
           cellFrame.layoutSizingHorizontal = (type === "ActionText" || type === "ActionIcon") ? "HUG" : "FILL";
           cellFrame.layoutSizingVertical = "FIXED";
+          
+          let targetHeight = tableSwitchesState.rowHeight;
+          if (table) {
+              const savedHeight = table.getPluginData("tableRowHeight");
+              if (savedHeight) {
+                  targetHeight = parseInt(savedHeight, 10) || tableSwitchesState.rowHeight;
+              }
+          }
+          cellFrame.resize(cellFrame.width, targetHeight);
+
           cellFrame.layoutAlign = (type === "ActionText" || type === "ActionIcon") ? "INHERIT" : "STRETCH"; 
           
           // Force layout mode and sizing again after renderer to ensure it sticks
@@ -4022,6 +4048,7 @@ async function createTable(params: CreateTableOptions) {
     tableFrame.setPluginData("smart_table", "true"); 
     tableFrame.setPluginData("rowActionType", rowActionType || "none");
     tableFrame.setPluginData("rowCount", rows.toString());
+    tableFrame.setPluginData("tableRowHeight", tableSwitchesState.rowHeight.toString());
     tableFrame.setPluginData("hasTabs", (envelopeSchema?.config?.tabs !== undefined || tableSwitchesState.tabs) ? "true" : "false");
     tableFrame.setPluginData("hasFilter", (envelopeSchema?.config?.filters !== undefined || tableSwitchesState.filter) ? "true" : "false");
     tableFrame.setPluginData("hasActions", (envelopeSchema?.config?.buttons !== undefined || tableSwitchesState.actions) ? "true" : "false");
@@ -4392,7 +4419,7 @@ async function init() {
 
   figma.on("documentchange", async (event) => {
     const changes = event.documentChanges;
-    const cellsToSync = new Map<string, { table: FrameNode; index: number }>();
+    const cellsToSync = new Map<string, { table: FrameNode; index: number; sourceNodes: SceneNode[] }>();
     const tablesToSyncMetadata = new Set<FrameNode>();
 
     for (const change of changes) {
@@ -4449,7 +4476,9 @@ async function init() {
                 const table = column.parent;
                 if (table && table.type === "FRAME" && table.layoutMode === "HORIZONTAL" && isSmartTableFrame(table)) {
                     // If text changed, we MUST ensure it's HUG temporarily to get its new natural height
-                    if (isTextProp || sceneNode.getPluginData("textDisplayMode") === "lineBreak") {
+                    // BUT ONLY if it's actually in lineBreak mode. Ellipsis cells should NOT grow.
+                    const textDisplayMode = sceneNode.getPluginData("textDisplayMode");
+                    if (isTextProp && textDisplayMode === "lineBreak") {
                         if ("layoutSizingVertical" in sceneNode && sceneNode.layoutSizingVertical !== "HUG") {
                             sceneNode.layoutSizingVertical = "HUG";
                         }
@@ -4458,7 +4487,12 @@ async function init() {
                     const index = column.children.indexOf(sceneNode);
                     if (index !== -1) {
                         const key = `${table.id}-${index}`;
-                        cellsToSync.set(key, { table, index });
+                        const existing = cellsToSync.get(key);
+                        const sourceNodes = existing ? existing.sourceNodes : [];
+                        if (!sourceNodes.includes(sceneNode)) {
+                            sourceNodes.push(sceneNode);
+                        }
+                        cellsToSync.set(key, { table, index, sourceNodes });
                     }
                 }
             }
@@ -4474,19 +4508,44 @@ async function init() {
     }
     
     if (cellsToSync.size > 0) {
-        for (const { table, index } of cellsToSync.values()) {
+        for (const { table, index, sourceNodes } of cellsToSync.values()) {
             const cols = getColumnFrames(table);
-            let maxHeight = 0;
             
-            // First pass: find max height
+            // Get default row height for this table
+            let defaultRowHeight = tableSwitchesState.rowHeight;
+            const savedHeight = table.getPluginData("tableRowHeight");
+            if (savedHeight) {
+                defaultRowHeight = parseInt(savedHeight, 10) || tableSwitchesState.rowHeight;
+            }
+
+            let maxHeight = defaultRowHeight;
+            
+            // First pass: find max height among changed nodes and natural heights of other line-break nodes
             for (const col of cols) {
-               if (index < col.children.length) {
-                   const cell = col.children[index];
-                   if (cell.height > maxHeight) maxHeight = cell.height;
-               }
+                if (index < col.children.length) {
+                    const cell = col.children[index] as FrameNode | InstanceNode;
+                    
+                    // If this cell was specifically changed, respect its new height
+                    if (sourceNodes.includes(cell)) {
+                        if (cell.height > maxHeight) maxHeight = cell.height;
+                    } else {
+                        // If it's a line-break cell that wasn't changed, we should still respect its natural height
+                        const isLineBreak = cell.getPluginData("textDisplayMode") === "lineBreak";
+                        if (isLineBreak) {
+                            if ("layoutSizingVertical" in (cell as any)) {
+                                const oldSizing = (cell as any).layoutSizingVertical;
+                                (cell as any).layoutSizingVertical = "HUG";
+                                if (cell.height > maxHeight) maxHeight = cell.height;
+                                (cell as any).layoutSizingVertical = oldSizing;
+                            } else {
+                                if (cell.height > maxHeight) maxHeight = cell.height;
+                            }
+                        }
+                    }
+                }
             }
             
-            if (maxHeight <= 0) continue;
+            if (maxHeight <= 0) maxHeight = defaultRowHeight;
 
             // Second pass: apply max height
             for (const col of cols) {
@@ -4495,7 +4554,7 @@ async function init() {
                     const isLineBreak = cell.getPluginData("textDisplayMode") === "lineBreak";
                     
                     if (isLineBreak) {
-                        // If it's the tallest cell, keep it HUG so it can continue to grow
+                        // If it's the tallest cell (or close to it), keep it HUG so it can continue to grow
                         if (Math.abs(cell.height - maxHeight) <= 0.1) {
                             if ("layoutSizingVertical" in cell) cell.layoutSizingVertical = "HUG";
                         } else {
@@ -4780,7 +4839,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                 const { component: avatarComponent } = await resolveCellFactory(AVATAR_COMPONENT_KEY);
                 context = { 
                   avatarComponent,
-                  overrideDisplayValue: "宋明杰" // Requirement 2: Manual switch uses default name
+                  overrideDisplayValue: "" // We will set this per-cell in the loop below
                 };
                 console.log("[set_cell_type] Avatar context prepared", context);
             } else if (cellType === "ActionText") {
@@ -4880,10 +4939,29 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                              } else {
                                  cellFrame.counterAxisSizingMode = "FIXED";
                                  cellFrame.layoutSizingVertical = "FIXED";
-                                 cellFrame.resize(cellFrame.width, tableSwitchesState.rowHeight);
+                                 
+                                 let targetHeight = tableSwitchesState.rowHeight;
+                                 const table = findTableFrameFromNode(cellFrame);
+                                 if (table) {
+                                     const savedHeight = table.getPluginData("tableRowHeight");
+                                     if (savedHeight) {
+                                         targetHeight = parseInt(savedHeight, 10) || tableSwitchesState.rowHeight;
+                                     }
+                                 }
+                                 cellFrame.resize(cellFrame.width, targetHeight);
                              }
                          } else {
                              cellFrame.layoutSizingVertical = "FIXED";
+                             
+                             let targetHeight = tableSwitchesState.rowHeight;
+                             const table = findTableFrameFromNode(cellFrame);
+                             if (table) {
+                                 const savedHeight = table.getPluginData("tableRowHeight");
+                                 if (savedHeight) {
+                                     targetHeight = parseInt(savedHeight, 10) || tableSwitchesState.rowHeight;
+                                 }
+                             }
+                             cellFrame.resize(cellFrame.width, targetHeight);
                          }
                          
                          cellFrame.layoutAlign = (cellType === "ActionText" || cellType === "ActionIcon") ? "INHERIT" : "STRETCH"; 
@@ -4904,6 +4982,10 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                          cellFrame.setPluginData("cellType", cellType);
                          if (textToRender) {
                              cellFrame.setPluginData("cellValue", textToRender);
+                         }
+
+                         if (cellType === "Avatar") {
+                             context.overrideDisplayValue = getDefaultAvatarName(textToRender);
                          }
 
                          console.log("[set_cell_type] Calling customRenderer", { 
@@ -5014,7 +5096,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                        const t = inst.findOne(x => x.type === "TEXT") as TextNode;
                        if (t) {
                            await loadTextNodeFonts(t);
-                           t.characters = originalText || (currentCellType === "Avatar" ? "宋明杰" : "");
+                           t.characters = originalText || (currentCellType === "Avatar" ? getDefaultAvatarName(originalText) : "");
                        }
 
                        const parent = n.parent;
@@ -5100,7 +5182,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                 if (originalText) {
                     n.setPluginData("cellValue", originalText);
                 } else if (cellType === "Avatar") {
-                    n.setPluginData("cellValue", "宋明杰");
+                    n.setPluginData("cellValue", getDefaultAvatarName(extractTextFromNode(n)));
                 } else if (cellType === "ActionIcon" || cellType === "ActionText") {
                     n.setPluginData("cellValue", "编辑 删除 …");
                 }
