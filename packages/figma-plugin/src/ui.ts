@@ -1570,14 +1570,60 @@ async function handleExcelFile(file: File, target: UploadTarget) {
         }
       };
 
+      const encodings = [
+        { name: 'UTF-8', cp: 65001 },
+        { name: 'GB18030', cp: 54936 },
+        { name: 'UTF-16LE', cp: 1200 },
+        { name: 'UTF-16BE', cp: 1201 },
+        { name: 'Big5', cp: 950 },
+        { name: 'Shift-JIS', cp: 932 }
+      ];
+
+      const selectWorkbookByEncoding = (buf: ArrayBuffer) => {
+        const candidates = encodings.slice();
+        const uint8View = new Uint8Array(buf);
+        let nullCount = 0;
+        for (let i = 1; i < Math.min(uint8View.length, 1000); i += 2) {
+          if (uint8View[i] === 0) nullCount++;
+        }
+        if (nullCount > 50) {
+          const leIdx = candidates.findIndex(e => e.name === 'UTF-16LE');
+          if (leIdx > -1) {
+            const [le] = candidates.splice(leIdx, 1);
+            candidates.unshift(le);
+          }
+        }
+
+        let bestEnc = candidates[0];
+        let bestRes = tryReadWithEncoding(buf, bestEnc.cp);
+        for (let i = 1; i < candidates.length; i++) {
+          const res = tryReadWithEncoding(buf, candidates[i].cp);
+          console.log(`[Probe] ${candidates[i].name}: Score ${res.score}, Chinese ${res.chineseCount}, Garbled ${res.garbledCount}`);
+          if (res.score > bestRes.score) {
+            bestRes = res;
+            bestEnc = candidates[i];
+          }
+        }
+        console.log(`[Final Decision] Using ${bestEnc.name}`);
+        return { workbook: bestRes.workbook, encoding: bestEnc };
+      };
+
       try {
         if (isXLSX || isXLS) {
           console.log(isXLSX ? "Standard XLSX" : "Legacy XLS (97-2003)");
           wb = XLSX.read(buffer, { type: "array" });
         } else if (isCSV) {
           console.log("CSV detected, starting encoding detection...");
-          // Skip to the encoding detection logic below
-          throw new Error("CSV_ENCODING_DETECTION");
+          if (isUTF8BOM) {
+            wb = XLSX.read(buffer, { type: "array", codepage: 65001 });
+          } else if (isUTF16LE) {
+            wb = XLSX.read(buffer, { type: "array", codepage: 1200 });
+          } else if (isUTF16BE) {
+            wb = XLSX.read(buffer, { type: "array", codepage: 1201 });
+          } else {
+            const picked = selectWorkbookByEncoding(buffer);
+            wb = picked.workbook || XLSX.read(buffer, { type: "array" });
+          }
         } else if (isUTF8BOM) {
           console.log("UTF-8 with BOM detected");
           wb = XLSX.read(buffer, { type: "array", codepage: 65001 });
@@ -1591,52 +1637,12 @@ async function handleExcelFile(file: File, target: UploadTarget) {
           console.log("HTML/XML table detected");
           wb = XLSX.read(buffer, { type: "array" });
         } else {
-          const encodings = [
-            { name: 'UTF-8', cp: 65001 },
-            { name: 'GB18030', cp: 54936 }, 
-            { name: 'UTF-16LE', cp: 1200 },
-            { name: 'UTF-16BE', cp: 1201 },
-            { name: 'Big5', cp: 950 },
-            { name: 'Shift-JIS', cp: 932 }
-          ];
-
-          // If it looks like UTF-16LE (many nulls in even positions), prioritize it
-          const uint8View = new Uint8Array(buffer);
-          let nullCount = 0;
-          for (let i = 1; i < Math.min(uint8View.length, 1000); i += 2) {
-            if (uint8View[i] === 0) nullCount++;
-          }
-          if (nullCount > 50) {
-            console.log("File looks like UTF-16LE (null byte heuristic)");
-            const leIdx = encodings.findIndex(e => e.name === 'UTF-16LE');
-            if (leIdx > -1) {
-              const [le] = encodings.splice(leIdx, 1);
-              encodings.unshift(le);
-            }
-          }
-
-          let bestEnc = encodings[0];
-          let bestRes = tryReadWithEncoding(buffer, bestEnc.cp);
-
-          for (let i = 1; i < encodings.length; i++) {
-            const res = tryReadWithEncoding(buffer, encodings[i].cp);
-            console.log(`[Probe] ${encodings[i].name}: Score ${res.score}, Chinese ${res.chineseCount}, Garbled ${res.garbledCount}`);
-            if (res.score > bestRes.score) {
-              bestRes = res;
-              bestEnc = encodings[i];
-            }
-          }
-
-          console.log(`[Final Decision] Using ${bestEnc.name}`);
-          wb = bestRes.workbook || XLSX.read(buffer, { type: "array" });
+          const picked = selectWorkbookByEncoding(buffer);
+          wb = picked.workbook || XLSX.read(buffer, { type: "array" });
         }
       } catch (e) {
-        if (e instanceof Error && e.message === "CSV_ENCODING_DETECTION") {
-          // This is expected, already handled by the logic above
-        } else {
-          console.error("Parse failed:", e);
-          wb = XLSX.read(buffer, { type: "array" });
-        }
+        console.error("Parse failed:", e);
+        wb = XLSX.read(buffer, { type: "array" });
       }
     const sheetName = wb.SheetNames[0];
       if (wb.SheetNames.length > 1) {
