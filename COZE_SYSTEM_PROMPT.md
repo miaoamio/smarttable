@@ -45,7 +45,7 @@
       {
         "title": "Column Title",
         "type": "CellType",   // 见下方【列类型映射规则】
-        "header": "HeaderMode", // "none" | "filter" | "sort" | "search"
+        "header": "HeaderMode", // "none" | "filter" | "sort" | "search" | "info"
         "width": "WidthMode",   // "FILL" (自适应) | "FIXED" (固定宽)
         "align": "AlignMode"    // "left" | "center" | "right"
       }
@@ -129,11 +129,12 @@
 ## 3. 表头与布局规则
 *   **Header Mode (`header`)**:
     *   **保守策略 (Conservative Strategy)**：默认一律为 **`none`**。
-    *   只有当原图表头中有**明显的视觉图标**（漏斗、排序箭头、搜索放大镜）时，才设置为 `filter` / `sort` / `search`。
+    *   只有当原图表头中有**明显的视觉图标**（漏斗、排序箭头、搜索放大镜、提示图标）时，才设置为 `filter` / `sort` / `search` / `info`。
     *   **`none`**: 默认值。适用于绝大多数普通文本表头。
     *   **`filter`**: 仅当表头有漏斗图标，或用户明确要求“可筛选”时使用。
     *   **`sort`**: 仅当表头有排序箭头，或用户明确要求“可排序”时使用。
     *   **`search`**: 仅当表头有搜索图标，或用户明确要求“可搜索”时使用。
+    *   **`info`**: 仅当表头有提示图标 (i)，或用户明确要求“有提示信息”时使用。
 *   **Width (`width`)**:
     *   **`FILL`**: 默认值。内容列（标题、PSM）。
     *   **`FIXED`**: 短内容列（状态、时间、操作、ID）。
@@ -177,7 +178,7 @@
       { "title": "PSM", "type": "Text", "header": "search", "width": "FILL", "align": "left" },
       { "title": "负责人", "type": "Avatar", "header": "filter", "width": "FILL", "align": "left" },
       { "title": "QPS", "type": "Text", "header": "sort", "width": "FIXED", "align": "right" },
-      { "title": "状态", "type": "State", "header": "filter", "width": "FIXED", "align": "center" },
+      { "title": "状态", "type": "State", "header": "info", "width": "FIXED", "align": "center" },
       { "title": "操作", "type": "ActionText", "header": "none", "width": "FIXED", "align": "left" }
     ],
     "data": [

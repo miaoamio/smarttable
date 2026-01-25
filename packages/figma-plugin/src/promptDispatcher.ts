@@ -51,9 +51,17 @@ export function distributePrompt(
   // 1.5 组件样式指南 (Component Style Guide)
   const styleGuide = `
 ## Component Style Guide
+- **English Casing (英文大小写规范)**: 
+    - 默认遵循 **Sentence case** 格式：仅首字母大写，其余小写（例如："User name", "Created date"）。
+    - **特殊例外**：仅当字段为专有名词缩写、ID 或用户有明确全大写要求时，才使用 **UPPERCASE**（例如："ID", "URL", "SKU"）。
 - **Avatar (头像)**: 专门用于展示人物或实体的列。在 JSON 中 type 应为 "Avatar"。
 - **ActionText (操作列)**: 专门用于展示“查看、编辑、删除”等操作的列。在 JSON 中 type 应为 "ActionText"。
 - **Tag (标签)**: 用于展示状态信息。在 JSON 中 type 应为 "Tag"。
+- **Header (表头类型)**: 每一列的 "header" 字段支持以下四种带图标的模式：
+    - "filter": 漏斗图标，表示可筛选。
+    - "sort": 排序图标，表示可排序。
+    - "search": 放大镜图标，表示可搜索。
+    - "info": 提示图标 (i)，表示有提示信息。
 - **Filters (筛选器)**: 在 config.filters 中配置，支持 "input", "select", "search" 类型。
 - **Buttons (按钮组)**: 在 config.buttons 中配置，支持 "primary", "secondary", "text" 类型。
 `;

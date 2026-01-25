@@ -3,7 +3,8 @@ export const CELL_COMPONENT_KEY = "53fd7ebf6cd6ad47b84edc13d408902720712659";
 export const HEADER_PROP_KEYS = {
     filter: ["Select 选择"],
     sort: ["ActionIcon 操作图标"],
-    search: ["ActionText 操作文字"]
+    search: ["ActionText 操作文字"],
+    info: ["Info", "提示"]
 };
 export const initialComponents = [
     {

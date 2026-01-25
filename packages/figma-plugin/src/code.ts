@@ -196,7 +196,8 @@ let tableSwitchesState = {
   pagination: true,
   filter: true,
   actions: true,
-  tabs: false // Initial state off as requested
+  tabs: false, // Initial state off as requested
+  rowHeight: 40 // Default row height
 };
 
 function yieldToMain() {
@@ -293,11 +294,12 @@ function getCellVariantCriteria(type: ColumnType): { [key: string]: string | boo
   return criteria;
 }
 
-function toHeaderMode(props: { filter: boolean; sort: boolean; search: boolean } | null): HeaderMode | undefined {
+function toHeaderMode(props: { filter: boolean; sort: boolean; search: boolean; info: boolean } | null): HeaderMode | undefined {
   if (!props) return undefined;
   if (props.search) return "search";
   if (props.sort) return "sort";
   if (props.filter) return "filter";
+  if (props.info) return "info";
   return "none";
 }
 
@@ -736,11 +738,42 @@ function getCellAlignment(cell: SceneNode): "left" | "center" | "right" | undefi
   return undefined;
 }
 
+/**
+ * Syncs table-level metadata (rowCount, UI component visibility) to plugin data
+ */
+async function syncTableMetadata(table: FrameNode) {
+  const columns = getColumnFrames(table);
+  if (columns.length === 0) return;
+
+  // 1. Update row count
+  const offset = await getHeaderOffset(columns[0]);
+  const rowCount = Math.max(0, columns[0].children.length - offset);
+  table.setPluginData("rowCount", rowCount.toString());
+
+  // 2. Update UI components status
+  const container = table.parent;
+  if (container && container.type === "FRAME") {
+    const topBar = container.children.find(c => c.name === "Top Bar Container") as FrameNode | undefined;
+    if (topBar) {
+      const hasTabs = topBar.children.some(c => c.name === "Tabs" && c.visible);
+      const hasFilter = topBar.children.some(c => c.name === "Filter" && c.visible);
+      const hasActions = topBar.children.some(c => c.name === "Actions" && c.visible);
+      
+      table.setPluginData("hasTabs", hasTabs ? "true" : "false");
+      table.setPluginData("hasFilter", hasFilter ? "true" : "false");
+      table.setPluginData("hasActions", hasActions ? "true" : "false");
+    }
+
+    const hasPagination = container.children.some(c => (c.name.includes("Pagination") || c.name === "Pagination") && c.visible);
+    table.setPluginData("hasPagination", hasPagination ? "true" : "false");
+  }
+}
+
 async function postSelection() {
   if (typeof figma.ui === "undefined" || !figma.ui) return;
   const selection = figma.currentPage.selection;
   let componentKey: string | undefined;
-  let headerProps: { filter: boolean; sort: boolean; search: boolean } | null = null;
+  let headerProps: { filter: boolean; sort: boolean; search: boolean; info: boolean } | null = { filter: false, sort: false, search: false, info: false };
   let tableContext: TableContext | null = null;
   let selectionKind: "table" | "column" | "cell" | "filter" | "button_group" | "tabs" | "pagination" | undefined;
   let selectionLabel: string | undefined;
@@ -751,7 +784,11 @@ async function postSelection() {
     const node = selection[0];
     
     // Extract all plugin data keys we care about
-    const dataKeys = ["cellType", "cellValue", "columnId", "tableId", "role", "textDisplayMode"]; 
+    const dataKeys = [
+      "cellType", "cellValue", "columnId", "tableId", "role", "textDisplayMode",
+      "headerType", "headerValue", "textAlign", "rowCount", 
+      "hasTabs", "hasFilter", "hasActions", "hasPagination"
+    ]; 
     for (const key of dataKeys) {
       const val = node.getPluginData(key);
       if (val) pluginData[key] = val;
@@ -812,6 +849,15 @@ async function postSelection() {
     const tableFrame = findTableFrameFromNode(node as any);
     if (tableFrame) {
       activeTableFrame = tableFrame;
+      await syncTableMetadata(tableFrame); // Sync metadata on selection
+      
+      // Pull table-level metadata into pluginData
+      const tableKeys = ["rowCount", "hasTabs", "hasFilter", "hasActions", "hasPagination"];
+      for (const key of tableKeys) {
+        const val = tableFrame.getPluginData(key);
+        if (val) pluginData[key] = val;
+      }
+
       const columns = getColumnFrames(tableFrame);
       const ctx = await getTableContext(tableFrame);
       tableContext = ctx;
@@ -838,10 +884,38 @@ async function postSelection() {
         const colFrame = columns[pos.columnIndex];
         if (colFrame) {
           colFrame.name = colLabel;
-          colWidthMode = getColumnWidthMode(colFrame);
+          
+          // Prefer plugin data for colWidthMode, fallback to layout detection
+          const savedColWidthMode = colFrame.getPluginData("colWidthMode");
+          if (savedColWidthMode === "FIXED" || savedColWidthMode === "FILL" || savedColWidthMode === "HUG") {
+            colWidthMode = savedColWidthMode as any;
+          } else {
+            colWidthMode = getColumnWidthMode(colFrame);
+          }
+
+          // Collect column-level metadata
+          const colKeys = ["headerType", "headerValue", "textAlign", "cellType", "colWidthMode"];
+          for (const key of colKeys) {
+            const val = colFrame.getPluginData(key);
+            if (val) pluginData[key] = val;
+          }
+
+          // If headerType/headerValue missing on column, check the header cell
+          const offset = await getHeaderOffset(colFrame);
+          if (offset > 0) {
+            const headerCell = colFrame.children[0];
+            if (!pluginData["headerType"]) {
+              const hType = headerCell.getPluginData("headerType");
+              if (hType) pluginData["headerType"] = hType;
+            }
+            if (!pluginData["headerValue"]) {
+              const hValue = headerCell.getPluginData("headerValue");
+              if (hValue) pluginData["headerValue"] = hValue;
+            }
+          }
+
           // Get first cell to guess type/align? Or average?
           // Usually check first body cell
-          const offset = await getHeaderOffset(colFrame);
           if (colFrame.children.length > offset) {
               const cell = colFrame.children[offset];
               cellType = await getCellType(cell);
@@ -879,7 +953,28 @@ async function postSelection() {
         const colFrame = columns[pos.columnIndex];
         if (colFrame) {
           const offset = await getHeaderOffset(colFrame);
-          colWidthMode = getColumnWidthMode(colFrame);
+          
+          // Prefer plugin data for colWidthMode, fallback to layout detection
+          const savedColWidthMode = colFrame.getPluginData("colWidthMode");
+          if (savedColWidthMode === "FIXED" || savedColWidthMode === "FILL" || savedColWidthMode === "HUG") {
+            colWidthMode = savedColWidthMode as any;
+          } else {
+            colWidthMode = getColumnWidthMode(colFrame);
+          }
+
+          // Collect column-level metadata for context
+          const colKeys = ["headerType", "headerValue", "textAlign", "colWidthMode"];
+          for (const key of colKeys) {
+            const val = colFrame.getPluginData(key);
+            if (val && !pluginData[key]) pluginData[key] = val;
+          }
+          
+          if (offset > 0) {
+            const headerCell = colFrame.children[0];
+            if (!pluginData["headerType"]) pluginData["headerType"] = headerCell.getPluginData("headerType");
+            if (!pluginData["headerValue"]) pluginData["headerValue"] = headerCell.getPluginData("headerValue");
+          }
+
           const cellNode = colFrame.children[offset + pos.rowIndex];
           if (cellNode) {
             cellNode.name = `${colLabel}-${indexDisplay}`;
@@ -967,7 +1062,8 @@ async function postSelection() {
             headerProps = {
               filter: getBooleanPropValue(firstChild as InstanceNode, PROP_KEYS.filter),
               sort: getBooleanPropValue(firstChild as InstanceNode, PROP_KEYS.sort),
-              search: getBooleanPropValue(firstChild as InstanceNode, PROP_KEYS.search)
+              search: getBooleanPropValue(firstChild as InstanceNode, PROP_KEYS.search),
+              info: getBooleanPropValue(firstChild as InstanceNode, PROP_KEYS.info)
             };
           }
         }
@@ -1106,6 +1202,24 @@ async function applyHeaderModeToInstance(instance: InstanceNode, mode: HeaderMod
   
   // Requirement: Save header type in instance plugin data
   instance.setPluginData("headerType", mode);
+
+  // Requirement: Preserve headerValue text
+  let headerValue = instance.getPluginData("headerValue");
+  if (!headerValue) {
+    // If no headerValue in plugin data, extract from current text
+    headerValue = extractTextFromNode(instance);
+    if (headerValue) {
+      instance.setPluginData("headerValue", headerValue);
+    }
+  }
+
+  if (headerValue) {
+    const textNode = instance.findOne(c => c.type === "TEXT") as TextNode;
+    if (textNode) {
+      await loadTextNodeFonts(textNode);
+      textNode.characters = headerValue;
+    }
+  }
 }
 
 function getColumnFrames(table: FrameNode): FrameNode[] {
@@ -1174,11 +1288,16 @@ async function applyHeaderModeToColumn(table: FrameNode, colIndex: number, mode:
 
   if (first.type === "INSTANCE" && await isHeaderInstance(first as InstanceNode)) {
     await applyHeaderModeToInstance(first as InstanceNode, mode);
-    // Save header type in column plugin data
+    // Save header type and value in column plugin data
     col.setPluginData("headerType", mode);
+    const headerValue = (first as InstanceNode).getPluginData("headerValue");
+    if (headerValue) {
+      col.setPluginData("headerValue", headerValue);
+    }
   } else if (first.type === "FRAME" && first.getPluginData("cellType") === "Header") {
     const headerFrame = first as FrameNode;
-    const headerText = extractTextFromNode(headerFrame);
+    // Prefer headerValue from plugin data, fallback to extraction
+    const headerText = headerFrame.getPluginData("headerValue") || extractTextFromNode(headerFrame);
     const { component: iconComponent } = await resolveCellFactory(HEADER_ICON_COMPONENT_KEY);
     
     const { filter, sort, search, info } = headerPropsFromMode(mode);
@@ -1194,6 +1313,8 @@ async function applyHeaderModeToColumn(table: FrameNode, colIndex: number, mode:
     // Requirement: Save header type in cell and column plugin data
     headerFrame.setPluginData("headerType", mode);
     col.setPluginData("headerType", mode);
+    headerFrame.setPluginData("headerValue", headerText);
+    col.setPluginData("headerValue", headerText);
   }
 }
 
@@ -1370,8 +1491,8 @@ type CustomCellRenderer = (
 function applyCellCommonStyling(cellFrame: FrameNode) {
   cellFrame.layoutMode = "HORIZONTAL";
   cellFrame.counterAxisSizingMode = "FIXED";
-  // Standard cell height is 40px
-  cellFrame.resize(cellFrame.width, 40); 
+  // Standard cell height from state
+  cellFrame.resize(cellFrame.width, tableSwitchesState.rowHeight); 
   cellFrame.counterAxisAlignItems = "CENTER";
   cellFrame.primaryAxisAlignItems = "MIN";
   
@@ -1687,6 +1808,7 @@ async function renderHeaderCell(
   // Ensure align is saved to plugin data if not already there
   if (align) cellFrame.setPluginData("textAlign", align);
   if (iconType) cellFrame.setPluginData("headerType", iconType.toLowerCase());
+  if (text) cellFrame.setPluginData("headerValue", text);
 
   // Bottom border simulation
   cellFrame.strokeWeight = 0;
@@ -1722,7 +1844,7 @@ async function renderHeaderCell(
       const variantMap: Record<string, string> = {
         "Info": "info-circle 提示",
         "Search": "Search 搜索",
-        "Sort": "Sort 排序",
+        "Sort": "S\bort 排序",
         "Filter": "Filter 筛选"
       };
       
@@ -1823,13 +1945,13 @@ async function renderTextCell(
     }
     textNode.layoutSizingVertical = "FIXED";
     
-    // Restore saved table height if available, otherwise default to 40
-    let targetHeight = 40;
+    // Restore saved table height if available, otherwise default to state
+    let targetHeight = tableSwitchesState.rowHeight;
     const table = findTableFrameFromNode(cellFrame);
     if (table) {
       const savedHeight = table.getPluginData("tableRowHeight");
       if (savedHeight) {
-        targetHeight = parseInt(savedHeight, 10) || 40;
+        targetHeight = parseInt(savedHeight, 10) || tableSwitchesState.rowHeight;
       }
     }
     cellFrame.resize(cellFrame.width, targetHeight);
@@ -1875,6 +1997,35 @@ async function renderInputCell(
   
   cellFrame.appendChild(inst);
 
+  // Set properties for Input component
+  if ("setProperties" in inst) {
+    const props = inst.componentProperties;
+    const findKey = (name: string) => Object.keys(props).find(k => k.split("#")[0] === name || k.includes(name));
+    
+    const sizeKey = findKey("Size 尺寸") || findKey("Size") || findKey("尺寸");
+    const stateKey = findKey("State 状态") || findKey("State") || findKey("状态");
+    const filledKey = findKey("Filled 已填") || findKey("Filled") || findKey("已填");
+    const errorKey = findKey("Error 错误") || findKey("Error") || findKey("错误");
+    const disableKey = findKey("Disable 禁用") || findKey("Disable") || findKey("禁用");
+    const prefixKey = findKey("Prefix 前缀") || findKey("Prefix") || findKey("前缀");
+    const suffixKey = findKey("Suffix 后缀") || findKey("Suffix") || findKey("后缀");
+
+    const finalProps: any = {};
+    if (sizeKey) finalProps[sizeKey] = "Mini 24";
+    if (stateKey) finalProps[stateKey] = "Default 默认";
+    if (filledKey) finalProps[filledKey] = "False";
+    if (errorKey) finalProps[errorKey] = "False";
+    if (disableKey) finalProps[disableKey] = "False";
+    if (prefixKey) finalProps[prefixKey] = "False";
+    if (suffixKey) finalProps[suffixKey] = "False";
+
+    try {
+      inst.setProperties(finalProps);
+    } catch (e) {
+      console.warn("Failed to set Input properties", e);
+    }
+  }
+
   // Set to FILL width - MUST be done AFTER appendChild to ensure parent is an auto-layout frame
   if (cellFrame.layoutMode !== "NONE") {
     (inst as any).layoutSizingHorizontal = "FILL";
@@ -1907,6 +2058,37 @@ async function renderSelectCell(
   }
   
   cellFrame.appendChild(inst);
+
+  // Set properties for Select component
+  if ("setProperties" in inst) {
+    const props = inst.componentProperties;
+    const findKey = (name: string) => Object.keys(props).find(k => k.split("#")[0] === name || k.includes(name));
+    
+    const valueKey = findKey("Value") || findKey("数值");
+    const placeholderKey = findKey("Placeholder 占位符") || findKey("Placeholder") || findKey("占位符");
+    const typeKey = findKey("Type 类型") || findKey("Type") || findKey("类型");
+    const sizeKey = findKey("Size 尺寸") || findKey("Size") || findKey("尺寸");
+    const stateKey = findKey("State 状态") || findKey("State") || findKey("状态");
+    const filledKey = findKey("Filled 填写") || findKey("Filled") || findKey("填写");
+    const multipleKey = findKey("Multiple 多选") || findKey("Multiple") || findKey("多选");
+    const disabledKey = findKey("Disabled 禁用") || findKey("Disabled") || findKey("禁用");
+
+    const finalProps: any = {};
+    if (valueKey) finalProps[valueKey] = text || "北京";
+    if (placeholderKey) finalProps[placeholderKey] = "请选择";
+    if (typeKey) finalProps[typeKey] = "Default 默认";
+    if (sizeKey) finalProps[sizeKey] = "Mini 24";
+    if (stateKey) finalProps[stateKey] = "Default 默认";
+    if (filledKey) finalProps[filledKey] = "False";
+    if (multipleKey) finalProps[multipleKey] = "False";
+    if (disabledKey) finalProps[disabledKey] = "False";
+
+    try {
+      inst.setProperties(finalProps);
+    } catch (e) {
+      console.warn("Failed to set Select properties", e);
+    }
+  }
 
   // Set to FILL width - MUST be done AFTER appendChild to ensure parent is an auto-layout frame
   if (cellFrame.layoutMode !== "NONE") {
@@ -2455,6 +2637,9 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
         }
       }
     }
+    // Update row count metadata
+    const newRowCount = (Math.max(0, cols[0].children.length - (await getHeaderOffset(cols[0])))).toString();
+    table.setPluginData("rowCount", newRowCount);
     return;
   }
 
@@ -2469,6 +2654,9 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
         if (node) node.remove();
       }
     }
+    // Update row count metadata
+    const newRowCount = (Math.max(0, cols[0].children.length - (await getHeaderOffset(cols[0])))).toString();
+    table.setPluginData("rowCount", newRowCount);
     return;
   }
 
@@ -2599,6 +2787,7 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
     
     if (filterInst && filterInst.type === "INSTANCE") {
         filterInst.visible = true; // Ensure visible
+        table.setPluginData("hasFilter", "true");
         const items = op.items;
         const count = items.length;
 
@@ -2666,6 +2855,7 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
     let tabsInst = topBar.children.find(c => c.name === "Tabs") as InstanceNode;
     if (tabsInst && tabsInst.type === "INSTANCE") {
       tabsInst.visible = true;
+      table.setPluginData("hasTabs", "true");
       const items = op.items;
       // Tabs usually have child items or are a single instance with variant
       // For simplicity, find all text nodes and update them
@@ -2688,6 +2878,7 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
     let actionsInst = topBar.children.find(c => c.name === "Actions") as InstanceNode;
     if (actionsInst && actionsInst.type === "INSTANCE") {
       actionsInst.visible = true;
+      table.setPluginData("hasActions", "true");
       const items = op.items;
       
       // Update quantity if supported
@@ -3057,10 +3248,18 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
         const headerComp = await loadComponent(ACTION_HEADER_KEY, "Row Action Header");
         let headerInst: InstanceNode | null = null;
         if (headerComp.type === "COMPONENT_SET") {
+            const sizeVariantMap: Record<number, string> = {
+                32: "Mini 32",
+                40: "Default 40",
+                48: "Medium 48",
+                56: "Large 56"
+            };
+            const sizeVariant = sizeVariantMap[tableSwitchesState.rowHeight] || "Default 40";
+
             const criteria: Record<string, string> = {
                 "Check 多选": type === "Checkbox" ? "True" : "False",
                 "Expand 展开": type === "Expand" ? "True" : "False",
-                "Size 尺寸": "Default 40", // 统一使用 Default 40，这是高度属性
+                "Size 尺寸": sizeVariant,
                 "Fixdrow 固定表头": "False",
                 "Align 排列方式": "Left 左"
             };
@@ -3105,10 +3304,18 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
              
              // 再次强制应用变体属性，确保 Check/Expand 都是 False
              try {
+                const sizeVariantMap: Record<number, string> = {
+                    32: "Mini 32",
+                    40: "Default 40",
+                    48: "Medium 48",
+                    56: "Large 56"
+                };
+                const sizeVariant = sizeVariantMap[tableSwitchesState.rowHeight] || "Default 40";
+
                 const finalProps: any = {
                     "Check 多选": "False",
                     "Expand 展开": "False",
-                    "Size 尺寸": "Default 40",
+                    "Size 尺寸": sizeVariant,
                     "Fixdrow 固定表头": "False"
                 };
                 
@@ -3170,7 +3377,7 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
                 container.resize(actionWidth, container.height);
                 
                 // If we detected a different height, apply it
-                if (rowHeights[i] !== undefined && Math.abs(rowHeights[i] - 40) > 0.1) {
+                if (rowHeights[i] !== undefined && Math.abs(rowHeights[i] - tableSwitchesState.rowHeight) > 0.1) {
                     container.resize(container.width, rowHeights[i]);
                 }
                 
@@ -3353,6 +3560,11 @@ async function createTable(params: CreateTableOptions) {
   try { 
     tableFrame.setPluginData("smart_table", "true"); 
     tableFrame.setPluginData("rowActionType", rowActionType || "none");
+    tableFrame.setPluginData("rowCount", rows.toString());
+    tableFrame.setPluginData("hasTabs", (envelopeSchema?.config?.tabs !== undefined || tableSwitchesState.tabs) ? "true" : "false");
+    tableFrame.setPluginData("hasFilter", (envelopeSchema?.config?.filters !== undefined || tableSwitchesState.filter) ? "true" : "false");
+    tableFrame.setPluginData("hasActions", (envelopeSchema?.config?.buttons !== undefined || tableSwitchesState.actions) ? "true" : "false");
+    tableFrame.setPluginData("hasPagination", (envelopeSchema?.config?.pagination !== false && tableSwitchesState.pagination) ? "true" : "false");
   } catch {}
   container.appendChild(tableFrame);
   tableFrame.layoutSizingHorizontal = "FILL";
@@ -3415,6 +3627,8 @@ async function createTable(params: CreateTableOptions) {
       // Requirement: Save header type in cell and column plugin data
       headerFrame.setPluginData("headerType", headerMode);
       colFrame.setPluginData("headerType", headerMode);
+      headerFrame.setPluginData("headerValue", colTitle);
+      colFrame.setPluginData("headerValue", colTitle);
       
       const colAlign = colSpec?.align || "left";
       colFrame.setPluginData("textAlign", colAlign);
@@ -3504,6 +3718,13 @@ async function createTable(params: CreateTableOptions) {
           cell.layoutSizingHorizontal = "FILL";
         }
         cell.name = `${colTitle}-${r + 1}`;
+        
+        // Ensure row height follows configuration
+        if ("layoutSizingVertical" in cell) {
+           (cell as any).layoutSizingVertical = "FIXED";
+           cell.resize(cell.width, tableSwitchesState.rowHeight);
+        }
+
         if (cell.type === "INSTANCE") {
            // Ensure properties are applied for non-Text types
            if (colType !== "Text") {
@@ -3578,7 +3799,7 @@ async function createTable(params: CreateTableOptions) {
   // Use absolute dimensions or fallback to totalWidth
   // Reading width/height here forces a layout pass in some Figma versions
   const currentWidth = container.width > 10 ? container.width : totalWidth;
-  const currentHeight = container.height > 10 ? container.height : (rows * 40 + 200);
+  const currentHeight = container.height > 10 ? container.height : (rows * tableSwitchesState.rowHeight + 200);
   
   const targetX = Math.round(center.x - currentWidth / 2);
   const targetY = Math.round(center.y - currentHeight / 2);
@@ -3621,6 +3842,9 @@ function setColumnLayout(mode: "FIXED" | "FILL" | "HUG") {
       } else {
          columnFrame.layoutSizingHorizontal = "FIXED";
       }
+      
+      // Sync to plugin data for selection readout and persistence
+      columnFrame.setPluginData("colWidthMode", mode);
       
       // ALSO ensure cells are filling the column, UNLESS it's HUG mode
       for (const child of columnFrame.children) {
@@ -3708,6 +3932,7 @@ async function init() {
   figma.on("documentchange", async (event) => {
     const changes = event.documentChanges;
     const cellsToSync = new Map<string, { table: FrameNode; index: number }>();
+    const tablesToSyncMetadata = new Set<FrameNode>();
 
     for (const change of changes) {
       if (change.type !== "PROPERTY_CHANGE") continue;
@@ -3716,6 +3941,15 @@ async function init() {
       if (node.removed) continue;
       
       const props = (change.properties || []) as string[];
+      
+      // If children changed, it might be a row/column addition or deletion
+      if (props.includes("children")) {
+          const table = findTableFrameFromNode(node as any);
+          if (table) {
+              tablesToSyncMetadata.add(table);
+          }
+      }
+
       const isHeightProp = props.includes("height") || props.includes("resize");
       const isTextProp = props.includes("characters");
       
@@ -3728,8 +3962,17 @@ async function init() {
             while (cur && cur.type !== "PAGE") {
                 if (cur.type === "FRAME" || cur.type === "INSTANCE") {
                     const cellType = cur.getPluginData("cellType");
-                    if (cellType === "Text") {
+                    if (cellType === "Text" || cellType === "Header") {
                         sceneNode = cur as FrameNode | InstanceNode;
+                        if (cellType === "Header") {
+                            // Update headerValue metadata
+                            const headerText = (node as TextNode).characters;
+                            sceneNode.setPluginData("headerValue", headerText);
+                            // Also update parent column
+                            if (sceneNode.parent?.type === "FRAME") {
+                                sceneNode.parent.setPluginData("headerValue", headerText);
+                            }
+                        }
                         break;
                     }
                 }
@@ -3760,6 +4003,13 @@ async function init() {
             }
         }
       }
+    }
+
+    // Sync metadata for tables that had children changes
+    if (tablesToSyncMetadata.size > 0) {
+        for (const table of tablesToSyncMetadata) {
+            await syncTableMetadata(table);
+        }
     }
     
     if (cellsToSync.size > 0) {
@@ -3999,21 +4249,29 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
     let updateCount = 0;
     for (const node of selection) {
       const updateAlign = async (n: SceneNode) => {
-        if (n.type === "FRAME" && n.getPluginData("cellType") === "Text") {
-           // For Text custom cell, we just change primaryAxisAlignItems
+        if (n.type === "FRAME" && n.getPluginData("cellType")) {
            const frame = n as FrameNode;
+           const isHeader = isHeaderNode(frame);
+           
            if (message.align === "left") {
              frame.primaryAxisAlignItems = "MIN";
-             // Update text alignment
              const textNode = frame.findOne(c => c.type === "TEXT") as TextNode;
              if (textNode) textNode.textAlignHorizontal = "LEFT";
+             frame.setPluginData("textAlign", "left");
              updateCount++;
              return true;
            } else if (message.align === "right") {
              frame.primaryAxisAlignItems = "MAX";
-             // Update text alignment
              const textNode = frame.findOne(c => c.type === "TEXT") as TextNode;
              if (textNode) textNode.textAlignHorizontal = "RIGHT";
+             frame.setPluginData("textAlign", "right");
+             updateCount++;
+             return true;
+           } else if (message.align === "center" && !isHeader) {
+             frame.primaryAxisAlignItems = "CENTER";
+             const textNode = frame.findOne(c => c.type === "TEXT") as TextNode;
+             if (textNode) textNode.textAlignHorizontal = "CENTER";
+             frame.setPluginData("textAlign", "center");
              updateCount++;
              return true;
            }
@@ -4027,6 +4285,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       };
 
       if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
+        node.setPluginData("textAlign", message.align);
         for (let i = 0; i < node.children.length; i++) {
           await updateAlign(node.children[i]);
         }
@@ -4160,7 +4419,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                              } else {
                                  cellFrame.counterAxisSizingMode = "FIXED";
                                  cellFrame.layoutSizingVertical = "FIXED";
-                                 cellFrame.resize(cellFrame.width, 40);
+                                 cellFrame.resize(cellFrame.width, tableSwitchesState.rowHeight);
                              }
                          } else {
                              cellFrame.layoutSizingVertical = "FIXED";
@@ -4178,6 +4437,11 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                          let textToRender = originalText;
                          if (cellType === "ActionIcon" || cellType === "ActionText") {
                              textToRender = "编辑 删除 …";
+                         }
+                         
+                         // Sync metadata to cell frame
+                         cellFrame.setPluginData("cellType", cellType);
+                         if (textToRender) {
                              cellFrame.setPluginData("cellValue", textToRender);
                          }
 
@@ -4188,6 +4452,13 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                            override: context.overrideDisplayValue 
                          });
                          await customRenderer(cellFrame, textToRender, context);
+                         
+                         // Also update parent column if all cells in column are being updated
+                         const parentCol = findColumnFrame(cellFrame);
+                         if (parentCol) {
+                             parentCol.setPluginData("cellType", cellType);
+                             if (textToRender) parentCol.setPluginData("cellValue", textToRender);
+                         }
                          
                          updateCount++;
                     }
@@ -4361,8 +4632,24 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
                 if (targetVariant) {
                    n.swapComponent(targetVariant);
                    updateCount++;
-                } else {
-                   // Fallback or nothing
+                }
+
+                // Sync to plugin data for selection readout and persistence
+                n.setPluginData("cellType", cellType);
+                if (originalText) {
+                    n.setPluginData("cellValue", originalText);
+                } else if (cellType === "Avatar") {
+                    n.setPluginData("cellValue", "宋明杰");
+                } else if (cellType === "ActionIcon" || cellType === "ActionText") {
+                    n.setPluginData("cellValue", "编辑 删除 …");
+                }
+
+                // Also update parent column if all cells in column are being updated
+                const parentCol = findColumnFrame(n);
+                if (parentCol) {
+                    parentCol.setPluginData("cellType", cellType);
+                    const val = n.getPluginData("cellValue");
+                    if (val) parentCol.setPluginData("cellValue", val);
                 }
              }
              
@@ -4593,13 +4880,16 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
     };
     const h = sizeMap[message.size];
     
+    // Update global state for future creations
+    tableSwitchesState.rowHeight = h;
+    
     // Save current row height to table plugin data
     table.setPluginData("tableRowHeight", h.toString());
     
     const cols = getColumnFrames(table);
     for (const col of cols) {
-       const offset = await getHeaderOffset(col);
-       for (let i = offset; i < col.children.length; i++) {
+       // Header and body cells should all follow row height
+       for (let i = 0; i < col.children.length; i++) {
           const cell = col.children[i] as FrameNode;
           
           // Skip cells that are in "lineBreak" mode
@@ -4705,7 +4995,15 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
      if (!table) return;
 
      // 保存到 Plugin Data
-     table.setPluginData(`switch_${message.key}`, message.enabled ? "true" : "false");
+     const mapping: Record<string, string> = {
+         "tabs": "hasTabs",
+         "filter": "hasFilter",
+         "actions": "hasActions",
+         "pagination": "hasPagination"
+     };
+     const standardKey = mapping[message.key] || `switch_${message.key}`;
+     table.setPluginData(standardKey, message.enabled ? "true" : "false");
+     
      const container = table.parent;
      if (!container || container.type !== "FRAME") return;
 

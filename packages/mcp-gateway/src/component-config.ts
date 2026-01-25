@@ -2,6 +2,7 @@ export type HeaderPropKeys = {
   filter: string[];
   sort: string[];
   search: string[];
+  info: string[];
 };
 
 export const HEADER_COMPONENT_KEY = "3361bff9b5e21071cb4fb3b86caa40a6709674ac";
@@ -10,7 +11,8 @@ export const CELL_COMPONENT_KEY = "53fd7ebf6cd6ad47b84edc13d408902720712659";
 export const HEADER_PROP_KEYS: HeaderPropKeys = {
   filter: ["Select 选择"],
   sort: ["ActionIcon 操作图标"],
-  search: ["ActionText 操作文字"]
+  search: ["ActionText 操作文字"],
+  info: ["Info", "提示"]
 };
 
 export type SharedComponentConfig = {

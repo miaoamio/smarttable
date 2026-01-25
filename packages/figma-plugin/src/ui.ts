@@ -1512,12 +1512,13 @@ async function handleExcelFile(file: File, target: UploadTarget) {
       let wb;
       const isXLSX = magic.startsWith("50 4B"); // ZIP/XLSX
       const isXLS = magic.startsWith("D0 CF");  // Old XLS (97-2003)
+      const isCSV = file.name.toLowerCase().endsWith(".csv") || magic.startsWith("22") || magic.startsWith("49 44"); // " (quote) or ID (ID/IDN)
       const isUTF16LE = magic.startsWith("FF FE"); // UTF-16LE BOM
       const isUTF16BE = magic.startsWith("FE FF"); // UTF-16BE BOM
       const isUTF8BOM = magic.startsWith("EF BB BF"); // UTF-8 BOM
       const isHTML = magic.startsWith("3C 21") || magic.startsWith("3C 68") || magic.startsWith("3C 3F"); // <! or <h or <?
 
-      console.log(`[File Probe] Name: ${file.name}, Magic: ${magic}, isXLS: ${isXLS}, isHTML: ${isHTML}`);
+      console.log(`[File Probe] Name: ${file.name}, Magic: ${magic}, isXLS: ${isXLS}, isCSV: ${isCSV}, isHTML: ${isHTML}`);
 
       const tryReadWithEncoding = (buf: ArrayBuffer, cp: number | string): { workbook: any, score: number, chineseCount: number, garbledCount: number } => {
         try {
@@ -1573,6 +1574,10 @@ async function handleExcelFile(file: File, target: UploadTarget) {
         if (isXLSX || isXLS) {
           console.log(isXLSX ? "Standard XLSX" : "Legacy XLS (97-2003)");
           wb = XLSX.read(buffer, { type: "array" });
+        } else if (isCSV) {
+          console.log("CSV detected, starting encoding detection...");
+          // Skip to the encoding detection logic below
+          throw new Error("CSV_ENCODING_DETECTION");
         } else if (isUTF8BOM) {
           console.log("UTF-8 with BOM detected");
           wb = XLSX.read(buffer, { type: "array", codepage: 65001 });
@@ -1626,8 +1631,12 @@ async function handleExcelFile(file: File, target: UploadTarget) {
           wb = bestRes.workbook || XLSX.read(buffer, { type: "array" });
         }
       } catch (e) {
-        console.error("Parse failed:", e);
-        wb = XLSX.read(buffer, { type: "array" });
+        if (e instanceof Error && e.message === "CSV_ENCODING_DETECTION") {
+          // This is expected, already handled by the logic above
+        } else {
+          console.error("Parse failed:", e);
+          wb = XLSX.read(buffer, { type: "array" });
+        }
       }
     const sheetName = wb.SheetNames[0];
       if (wb.SheetNames.length > 1) {
@@ -1875,6 +1884,7 @@ window.onmessage = (event) => {
       if (msg.headerMode === "filter") headerTypeSelect.value = "Filter";
       else if (msg.headerMode === "sort") headerTypeSelect.value = "Sort";
       else if (msg.headerMode === "search") headerTypeSelect.value = "Search";
+      else if (msg.headerMode === "info") headerTypeSelect.value = "Info";
       else headerTypeSelect.value = "None";
     }
     if (msg.tableSwitches) {

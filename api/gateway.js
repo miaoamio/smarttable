@@ -20237,7 +20237,8 @@ var CELL_COMPONENT_KEY = "53fd7ebf6cd6ad47b84edc13d408902720712659";
 var HEADER_PROP_KEYS = {
   filter: ["Select \u9009\u62E9"],
   sort: ["ActionIcon \u64CD\u4F5C\u56FE\u6807"],
-  search: ["ActionText \u64CD\u4F5C\u6587\u5B57"]
+  search: ["ActionText \u64CD\u4F5C\u6587\u5B57"],
+  info: ["Info", "\u63D0\u793A"]
 };
 var initialComponents = [
   {
