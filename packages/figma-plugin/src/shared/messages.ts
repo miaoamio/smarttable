@@ -76,10 +76,33 @@ export type TableOperation =
   | { op: "set_column_width"; index: number; width: "FIXED" | "FILL" }
   | { op: "set_column_align"; index: number; align: "left" | "center" | "right" }
   | { op: "fill_column"; col: number; values: string[] }
-  | { op: "translate"; lang: string }
+  | { op: "move_column"; fromIndex: number; toIndex: number }
+  | { op: "replace_column_text"; col: number; find: string; replace: string }
+  | { 
+      op: "translate"; 
+      lang: string; 
+      items?: { 
+        col: number; 
+        headerTitle?: string; 
+        values?: string[] 
+      }[] 
+    }
   | { op: "update_filters"; items: { label: string; type: "select" | "input" | "search" }[] }
   | { op: "update_tabs"; items: { label: string }[] }
-  | { op: "update_buttons"; items: { label: string; type: "primary" | "secondary" | "outline" | "text" }[] };
+  | { op: "update_buttons"; items: { label: string; type: "primary" | "secondary" | "outline" | "text" }[] }
+  | { 
+      op: "set_table_config"; 
+      size?: "mini" | "default" | "medium" | "large";
+      rowAction?: "none" | "multiple" | "single" | "drag" | "expand" | "switch";
+      switches?: {
+        pagination?: boolean;
+        filter?: boolean;
+        actions?: boolean;
+        tabs?: boolean;
+      }
+    }
+  | { op: "move_row"; fromIndex: number; toIndex: number }
+  | { op: "sort_rows"; col: number; order: "asc" | "desc" };
 
 export interface TablePatch {
   operations: TableOperation[];
@@ -114,6 +137,7 @@ export interface TableContext {
   rows: number;
   cols: number;
   headers: string[];
+  data?: string[][];
   rowAction?: "Checkbox" | "Radio" | "Drag" | "Expand" | "Switch";
   config?: TableAuxConfig;
 }
@@ -135,6 +159,8 @@ export type PluginToUiMessage =
         | "tabs"
         | "pagination";
       selectionLabel?: string;
+      selectionCell?: { row: number; col: number };
+      selectionColumn?: number;
       tableSize?: string;
       rowAction?: string;
       tableSwitches?: {

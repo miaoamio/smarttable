@@ -417,7 +417,25 @@ async function getTableContext(table: FrameNode): Promise<TableContext | null> {
   const rowAction = await getRowAction(table) as any;
   const config = await getTableConfig(table);
 
-  return { rows, cols, headers, rowAction, config };
+  // Extract Data
+  const data: string[][] = [];
+  for (let r = 0; r < rows; r++) {
+    const rowData: string[] = [];
+    for (let c = 0; c < cols; c++) {
+      const col = columns[c];
+      const offset = hasHeader ? 1 : 0;
+      const cellNode = col.children[offset + r];
+      if (cellNode) {
+        const text = await getFirstTextValue(cellNode);
+        rowData.push(text ?? "");
+      } else {
+        rowData.push("");
+      }
+    }
+    data.push(rowData);
+  }
+
+  return { rows, cols, headers, data, rowAction, config };
 }
 
 async function getTableConfig(table: FrameNode): Promise<TableAuxConfig | undefined> {
@@ -777,6 +795,8 @@ async function postSelection() {
   let tableContext: TableContext | null = null;
   let selectionKind: "table" | "column" | "cell" | "filter" | "button_group" | "tabs" | "pagination" | undefined;
   let selectionLabel: string | undefined;
+  let selectionCell: { row: number; col: number } | undefined;
+  let selectionColumn: number | undefined;
   let activeTableFrame: FrameNode | null = null;
   let pluginData: Record<string, string> = {};
 
@@ -878,6 +898,7 @@ async function postSelection() {
       } else if (selectionKind === "table") {
         if (!selectionLabel) selectionLabel = "当前选中：表格";
       } else if (selectionKind === "column" && typeof pos.columnIndex === "number") {
+        selectionColumn = pos.columnIndex;
         const headerTitle = tableContext?.headers?.[pos.columnIndex] ?? "";
         const colLabel = headerTitle && headerTitle.trim().length > 0 ? headerTitle.trim() : `第 ${pos.columnIndex + 1} 列`;
         selectionLabel = `当前选中：列 - ${colLabel}`;
@@ -946,6 +967,7 @@ async function postSelection() {
         typeof pos.columnIndex === "number" &&
         typeof pos.rowIndex === "number"
       ) {
+        selectionCell = { row: pos.rowIndex, col: pos.columnIndex };
         const headerTitle = tableContext?.headers?.[pos.columnIndex] ?? "";
         const colLabel = headerTitle && headerTitle.trim().length > 0 ? headerTitle.trim() : `第 ${pos.columnIndex + 1} 列`;
         const indexDisplay = pos.rowIndex + 1;
@@ -1023,6 +1045,8 @@ async function postSelection() {
         isSmartTable: isSmartTableFrame(tableFrame),
         selectionKind,
         selectionLabel,
+        selectionCell,
+        selectionColumn,
         tableSize: activeTableFrame ? await getTableSize(activeTableFrame) : undefined,
         rowAction: activeTableFrame ? await getRowAction(activeTableFrame) : undefined,
         tableSwitches: activeTableFrame ? await getTableSwitches(activeTableFrame) : undefined,
@@ -1078,6 +1102,8 @@ async function postSelection() {
     tableContext: tableContext ?? undefined,
     selectionKind,
     selectionLabel,
+    selectionCell,
+    selectionColumn,
     tableSize: activeTableFrame ? await getTableSize(activeTableFrame) : undefined,
     rowAction: activeTableFrame ? await getRowAction(activeTableFrame) : undefined,
     tableSwitches: activeTableFrame ? await getTableSwitches(activeTableFrame) : undefined,
@@ -2609,6 +2635,264 @@ async function applyColumnAlignToColumn(table: FrameNode, colIndex: number, alig
   }
 }
 
+async function applyTableSize(table: FrameNode, size: "mini" | "default" | "medium" | "large") {
+  const sizeMap = {
+    mini: 32,
+    default: 40,
+    medium: 48,
+    large: 56
+  };
+  const h = sizeMap[size];
+  
+  // Update global state for future creations
+  tableSwitchesState.rowHeight = h;
+  
+  // Save current row height to table plugin data
+  table.setPluginData("tableRowHeight", h.toString());
+  
+  const cols = getColumnFrames(table);
+  for (const col of cols) {
+     for (let i = 0; i < col.children.length; i++) {
+        const cell = col.children[i] as FrameNode;
+        if (cell.type === "FRAME" && cell.getPluginData("cellType") === "Text") {
+           const displayMode = cell.getPluginData("textDisplayMode") || "ellipsis";
+           if (displayMode === "lineBreak") {
+              cell.counterAxisSizingMode = "AUTO";
+              cell.layoutSizingVertical = "HUG";
+              continue;
+           }
+        }
+
+        if ("layoutSizingVertical" in cell) {
+           cell.layoutSizingVertical = "FIXED";
+           cell.resize(cell.width, h);
+        }
+     }
+  }
+}
+
+async function applyRowAction(table: FrameNode, action: "none" | "multiple" | "single" | "drag" | "expand" | "switch") {
+   table.setPluginData("rowActionType", action);
+   const cols = getColumnFrames(table);
+   if (cols.length === 0) return;
+
+   const firstCol = cols[0];
+   const isActionCol = firstCol.getPluginData("isRowActionColumn") === "true";
+
+   if (action === "none") {
+       if (isActionCol) {
+           firstCol.remove();
+       }
+       return;
+   }
+
+   let type: "Checkbox" | "Radio" | "Drag" | "Expand" | "Switch" = "Checkbox";
+   if (action === "multiple") type = "Checkbox";
+   else if (action === "single") type = "Radio";
+   else if (action === "drag") type = "Drag";
+   else if (action === "expand") type = "Expand";
+   else if (action === "switch") type = "Switch";
+
+   if (isActionCol && firstCol.getPluginData("rowActionType") === type) {
+       return;
+   }
+
+  if (isActionCol) {
+      const index = table.children.indexOf(firstCol);
+      firstCol.remove();
+      const otherCol = getColumnFrames(table)[0];
+      if (otherCol) {
+          const offset = await getHeaderOffset(otherCol);
+          const rowCount = otherCol.children.length - offset;
+          const newCol = await createRowActionColumn(table, rowCount, type);
+          table.insertChild(index, newCol);
+      }
+  } else {
+      const otherCol = getColumnFrames(table)[0];
+      if (otherCol) {
+          const offset = await getHeaderOffset(otherCol);
+          const rowCount = otherCol.children.length - offset;
+          await createRowActionColumn(table, rowCount, type);
+      }
+  }
+}
+
+async function applyTableSwitch(table: FrameNode, key: "pagination" | "filter" | "actions" | "tabs", enabled: boolean) {
+   if (key in tableSwitchesState) {
+     (tableSwitchesState as any)[key] = enabled;
+   }
+
+   const mapping: Record<string, string> = {
+       "tabs": "hasTabs",
+       "filter": "hasFilter",
+       "actions": "hasActions",
+       "pagination": "hasPagination"
+   };
+   const standardKey = mapping[key] || `switch_${key}`;
+   table.setPluginData(standardKey, enabled ? "true" : "false");
+   
+   const container = table.parent;
+   if (!container || container.type !== "FRAME") return;
+
+   if (key === "pagination") {
+       let pager: SceneNode | undefined;
+       for (const c of container.children) {
+           if (c.name.includes("Pagination")) {
+               pager = c;
+               break;
+           }
+           if (c.type === "INSTANCE") {
+               const main = await (c as InstanceNode).getMainComponentAsync();
+               if (main?.key === PAGINATION_COMPONENT_KEY || (main?.parent?.type === "COMPONENT_SET" && (main.parent as ComponentSetNode).key === PAGINATION_COMPONENT_KEY)) {
+                   pager = c;
+                   break;
+               }
+           }
+       }
+       
+       if (!pager && enabled) {
+              try {
+                  const comp = await loadComponent(PAGINATION_COMPONENT_KEY, "Pagination");
+                  let inst: SceneNode | null = null;
+                  if (comp.type === "COMPONENT_SET") {
+                   const defaultVar = comp.defaultVariant as ComponentNode | undefined;
+                   const target = defaultVar ?? (comp.children.find((c) => c.type === "COMPONENT") as ComponentNode | undefined);
+                   if (target) inst = target.createInstance();
+               } else {
+                   inst = (comp as ComponentNode).createInstance();
+               }
+               if (inst) {
+                   inst.name = "Pagination";
+                   container.appendChild(inst);
+                   if ("layoutSizingHorizontal" in inst) {
+                       (inst as any).layoutSizingHorizontal = "FILL";
+                   }
+                   pager = inst;
+               }
+           } catch (e) {
+               console.warn("Failed to load Pagination", e);
+           }
+       }
+       
+       if (pager) {
+           pager.visible = enabled;
+       }
+   } else {
+       let topBar = container.children.find(c => c.name === "Top Bar Container") as FrameNode | undefined;
+       if (!topBar && enabled) {
+           topBar = figma.createFrame();
+           topBar.name = "Top Bar Container";
+           topBar.layoutMode = "HORIZONTAL";
+           topBar.counterAxisSizingMode = "AUTO";
+           topBar.primaryAxisSizingMode = "FIXED";
+           topBar.itemSpacing = 20;
+           topBar.paddingBottom = 20;
+           topBar.fills = [];
+           topBar.clipsContent = false;
+           container.insertChild(0, topBar); 
+           topBar.layoutSizingHorizontal = "FILL";
+       }
+
+       if (topBar && topBar.type === "FRAME") {
+           const nameMap: Record<string, string> = {
+               filter: "Filter",
+               actions: "Actions",
+               tabs: "Tabs",
+               pagination: "" 
+           };
+           const keyMap: Record<string, string> = {
+               filter: FILTER_COMPONENT_KEY,
+               actions: BUTTON_GROUP_COMPONENT_KEY,
+               tabs: TABS_COMPONENT_KEY
+           };
+           const layoutMap: Record<string, "FILL" | "HUG"> = {
+               filter: "FILL",
+               actions: "HUG",
+               tabs: "HUG"
+           };
+
+           const targetName = nameMap[key];
+           const targetKey = keyMap[key];
+           
+           if (targetName && targetKey) {
+               let target = topBar.children.find(c => c.name === targetName);
+               
+               if (!target && enabled) {
+                  try {
+                      const comp = await loadComponent(targetKey, targetName);
+                      let inst: SceneNode | null = null;
+                      if (comp.type === "COMPONENT_SET") {
+                           const defaultVar = comp.defaultVariant as ComponentNode | undefined;
+                           const targetNode = defaultVar ?? (comp.children.find((c) => c.type === "COMPONENT") as ComponentNode | undefined);
+                           if (targetNode) inst = targetNode.createInstance();
+                       } else {
+                           inst = (comp as ComponentNode).createInstance();
+                       }
+                       
+                       if (inst) {
+                           inst.name = targetName;
+                           const order = ["Tabs", "Filter", "Actions"];
+                           const idx = order.indexOf(targetName);
+                           
+                           let insertIndex = topBar.children.length;
+                           for(let i=0; i<topBar.children.length; i++) {
+                               const cName = topBar.children[i].name;
+                               const cIdx = order.indexOf(cName);
+                               if (cIdx > idx) {
+                                   insertIndex = i;
+                                   break;
+                               }
+                           }
+                           topBar.insertChild(insertIndex, inst);
+
+                           if ("layoutSizingHorizontal" in inst) {
+                               (inst as any).layoutSizingHorizontal = layoutMap[key] === "FILL" ? "FILL" : "HUG";
+                           }
+                           target = inst;
+                       }
+                   } catch (e) {
+                       console.warn(`Failed to load ${targetName}`, e);
+                   }
+               }
+
+               if (target) {
+                   if (key === "filter" && target.type === "INSTANCE") {
+                       target.visible = true;
+                       const props = target.componentProperties;
+                       const qtyKey = Object.keys(props).find(k => k.includes("数量"));
+                       if (qtyKey) {
+                           const val = enabled ? "3" : "0";
+                           try {
+                               target.setProperties({ [qtyKey]: val });
+                           } catch (e) {}
+                       } else {
+                           target.visible = enabled;
+                       }
+                   } else {
+                       target.visible = enabled;
+                   }
+               }
+               
+               const tabs = topBar.children.find(c => c.name === "Tabs");
+               const filter = topBar.children.find(c => c.name === "Filter");
+               const actions = topBar.children.find(c => c.name === "Actions");
+               
+               const isFilterActive = () => {
+                   if (!filter || !filter.visible) return false;
+                   if (filter.type === "INSTANCE") {
+                       const props = filter.componentProperties;
+                       const k = Object.keys(props).find(key => key.includes("数量"));
+                       if (k && props[k].value === "0") return false;
+                   }
+                   return true;
+               };
+
+               topBar.visible = (tabs && tabs.visible) || isFilterActive() || (actions && actions.visible) || false;
+           }
+       }
+   }
+}
+
 async function applyOperationToTable(table: FrameNode, op: TableOperation) {
   const cols = getColumnFrames(table);
 
@@ -2643,8 +2927,9 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
     return;
   }
 
-  if (op.op === "remove_rows") {
-    const sorted = Array.from(op.indexes).sort((a, b) => b - a);
+  if (op.op === "remove_rows" || op.op === "delete_row") {
+    const indexes = op.op === "delete_row" ? [op.index] : op.indexes;
+    const sorted = Array.from(indexes).sort((a, b) => b - a);
     for (const col of cols) {
       const offset = await getHeaderOffset(col);
       const currentRows = Math.max(0, col.children.length - offset);
@@ -2655,8 +2940,11 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
       }
     }
     // Update row count metadata
-    const newRowCount = (Math.max(0, cols[0].children.length - (await getHeaderOffset(cols[0])))).toString();
-    table.setPluginData("rowCount", newRowCount);
+    const firstCol = cols[0];
+    if (firstCol) {
+      const newRowCount = (Math.max(0, firstCol.children.length - (await getHeaderOffset(firstCol)))).toString();
+      table.setPluginData("rowCount", newRowCount);
+    }
     return;
   }
 
@@ -2716,8 +3004,9 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
     return;
   }
 
-  if (op.op === "remove_cols") {
-    const sorted = Array.from(op.indexes).sort((a, b) => b - a);
+  if (op.op === "remove_cols" || op.op === "delete_col") {
+    const indexes = op.op === "delete_col" ? [op.index] : op.indexes;
+    const sorted = Array.from(indexes).sort((a, b) => b - a);
     for (const idx of sorted) {
       const col = cols[idx];
       if (col) col.remove();
@@ -2857,9 +3146,26 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
       tabsInst.visible = true;
       table.setPluginData("hasTabs", "true");
       const items = op.items;
+
+      // Update Quantity variant if exists
+      const props = tabsInst.componentProperties;
+      const qtyKey = Object.keys(props).find(k => k === "Quantity" || k === "数量" || k === "Number");
+      if (qtyKey) {
+        try {
+          tabsInst.setProperties({ [qtyKey]: String(items.length) });
+        } catch {}
+      }
+
       // Tabs usually have child items or are a single instance with variant
       // For simplicity, find all text nodes and update them
       const textNodes = tabsInst.findAll(n => n.type === "TEXT") as TextNode[];
+      // Sort text nodes by x position to match logical order
+      textNodes.sort((a, b) => {
+          const ax = a.absoluteBoundingBox ? a.absoluteBoundingBox.x : 0;
+          const bx = b.absoluteBoundingBox ? b.absoluteBoundingBox.x : 0;
+          return ax - bx;
+      });
+
       for (let i = 0; i < Math.min(items.length, textNodes.length); i++) {
         await loadTextNodeFonts(textNodes[i]);
         textNodes[i].characters = items[i].label;
@@ -2937,12 +3243,20 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
     const cell = col.children[offset + op.row];
     if (!cell) return;
     
-    // AI Update: If cell is Avatar, it needs full re-render to update the initials/etc.
-    const cellType = cell.getPluginData("cellType");
+    // AI Update: Use render functions for complex cell types
+    const cellType = col.getPluginData("cellType") || (cell.type === "FRAME" ? cell.getPluginData("cellType") : undefined);
+    
     if (cellType === "Avatar") {
        const { component: avatarComponent } = await resolveCellFactory(AVATAR_COMPONENT_KEY);
        if (avatarComponent && cell.type === "FRAME") {
           await renderAvatarCell(cell as FrameNode, op.value, { avatarComponent, isAI: true });
+          return;
+       }
+    } else if (cellType === "Tag") {
+       const { component: tagComponent } = await resolveCellFactory(TAG_COMPONENT_KEY);
+       const { component: counterComponent } = await resolveCellFactory(TAG_COUNTER_COMPONENT_KEY);
+       if (tagComponent && cell.type === "FRAME") {
+          await renderTagCell(cell as FrameNode, op.value, { tagComponent, counterComponent: counterComponent || tagComponent });
           return;
        }
     }
@@ -2984,7 +3298,154 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
   }
 
   if (op.op === "translate") {
-    figma.notify("translate 操作需要由网关转成 update_cell 才能执行");
+    figma.notify("正在应用翻译...");
+    const { items } = op;
+    if (!items || items.length === 0) return;
+
+    for (const item of items) {
+      const col = cols[item.col];
+      if (!col) continue;
+      const offset = await getHeaderOffset(col);
+      
+      // Translate Header
+      if (item.headerTitle !== undefined && offset > 0) {
+        const headerNode = col.children[0];
+        if (headerNode) {
+          await setFirstText(headerNode as any, item.headerTitle);
+          col.name = item.headerTitle;
+        }
+      }
+
+      // Translate Body Cells
+      if (item.values && item.values.length > 0) {
+        const cellType = col.getPluginData("cellType");
+        
+        let avatarComponent: ComponentNode | ComponentSetNode | undefined;
+        let tagComponent: ComponentNode | ComponentSetNode | undefined;
+        let counterComponent: ComponentNode | ComponentSetNode | undefined;
+
+        if (cellType === "Avatar") {
+          const res = await resolveCellFactory(AVATAR_COMPONENT_KEY);
+          avatarComponent = res.component;
+        } else if (cellType === "Tag") {
+          const resTag = await resolveCellFactory(TAG_COMPONENT_KEY);
+          const resCounter = await resolveCellFactory(TAG_COUNTER_COMPONENT_KEY);
+          tagComponent = resTag.component;
+          counterComponent = resCounter.component || tagComponent;
+        }
+
+        for (let r = 0; r < item.values.length; r++) {
+          const cell = col.children[offset + r];
+          if (!cell) break;
+          const val = String(item.values[r]);
+
+          if (cellType === "Avatar" && avatarComponent && cell.type === "FRAME") {
+            await renderAvatarCell(cell as FrameNode, val, { avatarComponent, isAI: true });
+          } else if (cellType === "Tag" && tagComponent && cell.type === "FRAME") {
+            await renderTagCell(cell as FrameNode, val, { tagComponent, counterComponent });
+          } else {
+            await setFirstText(cell as any, val);
+            if (cell.type === "FRAME") {
+              cell.setPluginData("cellValue", val);
+            }
+          }
+        }
+      }
+    }
+    return;
+  }
+
+  if (op.op === "move_column") {
+    const { fromIndex, toIndex } = op;
+    const col = cols[fromIndex];
+    if (col && toIndex >= 0 && toIndex < cols.length) {
+      table.insertChild(toIndex, col);
+    }
+    return;
+  }
+
+  if (op.op === "replace_column_text") {
+    const { col: colIndex, find, replace } = op;
+    const col = cols[colIndex];
+    if (!col) return;
+    const offset = await getHeaderOffset(col);
+    for (let i = offset; i < col.children.length; i++) {
+      const cell = col.children[i];
+      const textNode = cell.type === "INSTANCE" || cell.type === "FRAME" ? cell.findOne(n => n.type === "TEXT") as TextNode : null;
+      if (textNode) {
+        await loadTextNodeFonts(textNode);
+        if (find === "*" || textNode.characters.includes(find)) {
+          textNode.characters = find === "*" ? replace : textNode.characters.replace(new RegExp(find, 'g'), replace);
+          if (cell.type === "FRAME") {
+            cell.setPluginData("cellValue", textNode.characters);
+          }
+        }
+      }
+    }
+    return;
+  }
+
+  if (op.op === "set_table_config") {
+    if (op.size) {
+      await applyTableSize(table, op.size);
+    }
+    if (op.rowAction) {
+      await applyRowAction(table, op.rowAction);
+    }
+    if (op.switches) {
+      for (const [key, enabled] of Object.entries(op.switches)) {
+        await applyTableSwitch(table, key as any, !!enabled);
+      }
+    }
+    return;
+  }
+
+  if (op.op === "move_row") {
+    const { fromIndex, toIndex } = op;
+    for (const col of cols) {
+      const offset = await getHeaderOffset(col);
+      const rowCount = col.children.length - offset;
+      if (fromIndex >= 0 && fromIndex < rowCount && toIndex >= 0 && toIndex < rowCount) {
+        const rowNode = col.children[offset + fromIndex];
+        col.insertChild(offset + toIndex, rowNode);
+      }
+    }
+    return;
+  }
+
+  if (op.op === "sort_rows") {
+    const { col: colIndex, order } = op;
+    const sortCol = cols[colIndex];
+    if (!sortCol) return;
+    
+    const offset = await getHeaderOffset(sortCol);
+    const rowCount = sortCol.children.length - offset;
+    if (rowCount <= 1) return;
+
+    // 1. Collect values and original indices
+    const rowData: { index: number; value: string }[] = [];
+    for (let i = 0; i < rowCount; i++) {
+      const cell = sortCol.children[offset + i];
+      const val = await getFirstTextValue(cell) || "";
+      rowData.push({ index: i, value: val });
+    }
+
+    // 2. Sort
+    rowData.sort((a, b) => {
+      const res = a.value.localeCompare(b.value, undefined, { numeric: true, sensitivity: 'base' });
+      return order === "asc" ? res : -res;
+    });
+
+    // 3. Reorder all columns
+    for (const col of cols) {
+      const colOffset = await getHeaderOffset(col);
+      // We need to move nodes one by one to their new sorted positions
+      // A simple way is to re-append them in the new order
+      const nodes = rowData.map(d => col.children[colOffset + d.index]);
+      for (let i = 0; i < nodes.length; i++) {
+        col.insertChild(colOffset + i, nodes[i]);
+      }
+    }
     return;
   }
 }

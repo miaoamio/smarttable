@@ -135,6 +135,8 @@ let alertTimer: number | null = null;
 let latestTableContext: TableContext | null = null;
 let latestSelectionKind: "table" | "column" | "cell" | "filter" | "button_group" | "tabs" | "pagination" | null = null;
 let latestSelectionLabel: string | null = null;
+let latestSelectionCell: { row: number; col: number } | null = null;
+let latestSelectionColumn: number | null = null;
 let hasSelection = false;
 let currentRequestSeq = 0;
 let currentLoadingButton: HTMLButtonElement | null = null;
@@ -224,9 +226,16 @@ function updatePanels() {
   }
 }
 
-function updateSelectionLabel(kind?: "table" | "column" | "cell" | "filter" | "button_group" | "tabs" | "pagination", label?: string) {
+function updateSelectionLabel(
+  kind?: "table" | "column" | "cell" | "filter" | "button_group" | "tabs" | "pagination",
+  label?: string,
+  cell?: { row: number; col: number },
+  column?: number
+) {
   latestSelectionKind = kind ?? null;
   latestSelectionLabel = label ?? null;
+  latestSelectionCell = cell ?? null;
+  latestSelectionColumn = column ?? null;
   if (selectionLabelEl) {
     if (!kind || !label) {
       selectionLabelEl.textContent = "";
@@ -1171,7 +1180,9 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
       latestSelectionLabel || "未选中",
       latestTableContext,
       selectedRowCount,
-      latestSelectionKind || undefined
+      latestSelectionKind || undefined,
+      latestSelectionCell || undefined,
+      latestSelectionColumn ?? undefined
     );
 
     // 调试日志：确认发送给 LLM 的 prompt
@@ -1902,7 +1913,7 @@ window.onmessage = (event) => {
       componentKeyInput.value = msg.componentKey;
     }
     updatePanels();
-    updateSelectionLabel(msg.selectionKind, msg.selectionLabel);
+    updateSelectionLabel(msg.selectionKind, msg.selectionLabel, msg.selectionCell, msg.selectionColumn);
     updateManualSubPanel(msg.selectionKind);
     const currentTab = document.querySelector(".tab.active")?.getAttribute("data-tab");
     if ((msg.tableContext || msg.isSmartTable) && currentTab !== "debug") {

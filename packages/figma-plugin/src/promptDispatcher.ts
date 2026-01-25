@@ -22,7 +22,9 @@ export function distributePrompt(
   selectionLabel: string,
   tableContext: any,
   rowCount: number = 5,
-  selectionKind?: "table" | "column" | "cell" | "filter" | "button_group" | "tabs" | "pagination"
+  selectionKind?: "table" | "column" | "cell" | "filter" | "button_group" | "tabs" | "pagination",
+  selectionCell?: { row: number; col: number },
+  selectionColumn?: number
 ): string {
   const imageAttachments = attachments.filter((a) => a.type === "image");
   const tableAttachments = attachments.filter((a) => a.type === "table");
@@ -80,15 +82,30 @@ export function distributePrompt(
     } else if (selectionKind === "tabs") {
       selectionContext += `\n- 重点调整 [update_tabs] 操作。关注页签的名称和数量。`;
     } else if (selectionKind === "column") {
-      selectionContext += `\n- 重点调整列的属性 (title, type, header, width, align)。`;
+      selectionContext += `\n- 重点调整列的属性 (title, type, header, width, align)。当前选中列索引为 ${selectionColumn}。`;
+      selectionContext += `\n- 如果用户要求修改该列内容，请使用 {"op": "replace_column_text", "col": ${selectionColumn}, "find": "*", "replace": "..."}。`;
     } else if (selectionKind === "cell") {
-      selectionContext += `\n- 重点调整表格内容数据或行操作 (add_rows, update_cell)。`;
+      selectionContext += `\n- 重点调整表格内容数据或行操作 (add_rows, update_cell)。当前选中单元格为: 行 ${selectionCell?.row}, 列 ${selectionCell?.col}。`;
+      selectionContext += `\n- 如果用户要求修改该单元格内容，请使用 {"op": "update_cell", "row": ${selectionCell?.row}, "col": ${selectionCell?.col}, "value": "..."}。`;
     } else if (selectionKind === "pagination") {
       selectionContext += `\n- 重点调整分页器相关的表格配置。`;
     } else {
       selectionContext += `\n- 对表格进行全局性调整或内容更新。`;
     }
   }
+
+  // 2.5 表格内容上下文 (Table Content Context)
+  let tableContentContext = "";
+  if (isEdit && tableContext) {
+    tableContentContext = `\n## Current Table Context
+- Rows: ${tableContext.rows}
+- Columns: ${tableContext.cols}
+- Headers: ${JSON.stringify(tableContext.headers)}
+`;
+    if (tableContext.data) {
+       tableContentContext += `- Current Data (Preview): ${JSON.stringify(tableContext.data)}\n`;
+     }
+   }
 
   // 3. 参考数据注入 (Data Reference)
   let dataReference = "";
@@ -156,6 +173,8 @@ ${styleGuide}
 
 ${selectionContext}
 
+${tableContentContext}
+
 ${dataReference}
 
 ${currentState}
@@ -166,6 +185,7 @@ ${prompt || "请根据以上参考资料生成/优化表格"}
 ---
 请严格遵守 SYSTEM_PROMPT 中定义的协议规范。
 只能输出一个有效的 JSON 对象，严禁任何解释性文字、Markdown 标记或重复嵌套结构。
+**注意：生成的 JSON 不要使用 Markdown 代码块（即不要使用 \`\`\`json ... \`\`\`）包裹。**
 `.trim();
 
   return finalPrompt;

@@ -78,10 +78,47 @@
       },
       // 其他操作 (如 add_rows, update_cell 等)
       // { "op": "add_rows", "count": 2 }
+      // { "op": "remove_rows", "indexes": [0, 1, 2] }
+      // { "op": "move_column", "fromIndex": 2, "toIndex": 0 }
+      // { "op": "replace_column_text", "col": 1, "find": "*", "replace": "New Text" }
+      // { "op": "update_cell", "row": 0, "col": 1, "value": "New Value" }
     ]
   }
 }
 ```
+
+### 增量修改指令集 (Edit Operations)
+
+*   **`add_rows`**: `{"op": "add_rows", "count": number, "position": "start" | "end" | number}`
+*   **`remove_rows`**: `{"op": "remove_rows", "indexes": number[]}` (indexes 是从 0 开始的行索引)
+*   **`add_cols`**: `{"op": "add_cols", "count": number, "position": "start" | "end" | number, "columns": [{"title": string, "type": string}]}`
+*   **`remove_cols`**: `{"op": "remove_cols", "indexes": number[]}`
+*   **`rename_column`**: `{"op": "rename_column", "index": number, "title": string}`
+*   **`move_column`**: `{"op": "move_column", "fromIndex": number, "toIndex": number}` (将列从 fromIndex 移动到 toIndex)
+*   **`move_row`**: `{"op": "move_row", "fromIndex": number, "toIndex": number}` (将行从 fromIndex 移动到 toIndex)
+*   **`sort_rows`**: `{"op": "sort_rows", "col": number, "order": "asc" | "desc"}` (按指定列排序)
+*   **`update_cell`**: `{"op": "update_cell", "row": number, "col": number, "value": string}`
+*   **`translate`**: `{"op": "translate", "lang": "en" | "zh", "items": [{"col": number, "headerTitle": string, "values": string[]}]}` (一次性翻译整表)
+*   **`replace_column_text`**: `{"op": "replace_column_text", "col": number, "find": string, "replace": string}` (如果 find 为 "*"，则替换该列所有单元格内容)
+*   **`set_table_config`**: `{"op": "set_table_config", "size": "mini"|"default"|"medium"|"large", "rowAction": "none"|"multiple"|"single"|"drag"|"expand"|"switch", "switches": {"pagination": boolean, "filter": boolean, "actions": boolean, "tabs": boolean}}` (修改表格全局配置)
+*   **`update_filters` / `update_tabs` / `update_buttons`**: 更新辅助组件。
+
+### 常见场景处理逻辑
+
+1.  **全量翻译 (Translation)**:
+    *   使用 `translate` 操作，传入目标语言 `lang` 和翻译后的 `items` 数组。
+    *   如果存在筛选器、按钮或页签，使用 `update_filters` / `update_buttons` / `update_tabs` 翻译其标签。
+2.  **移动列/行**:
+    *   移动列：使用 `move_column`，将目标列从 `fromIndex` 移动到 `toIndex`。
+    *   移动行：使用 `move_row`，将目标行从 `fromIndex` 移动到 `toIndex`。
+3.  **批量替换**:
+    *   使用 `replace_column_text`，设置 `find: "*"` 和 `replace: "目标文字"`。
+4.  **修改特定单元格**:
+    *   使用 `update_cell`，指定精准的 `row` 和 `col`。
+5.  **排序**:
+    *   使用 `sort_rows`，指定列索引 `col` 和顺序 `order` ("asc" 或 "desc")。
+6.  **切换配置 (Size/RowAction/Switches)**:
+    *   使用 `set_table_config`。例如：设置紧凑尺寸 (`"size": "mini"`)，开启分页 (`"switches": {"pagination": true}`)。
 
 ### 辅助组件更新规则 (Auxiliary Components)
 *   **tabs**: 当用户提到“页签”、“选项卡”时。
@@ -205,6 +242,24 @@
           { "label": "节点名称", "type": "input" }
         ]
       }
+    ]
+  }
+}
+
+## Example 3: 综合修改（配置 + 排序 + 内容）
+**User Input**: "把表格调成紧凑模式，开启分页和筛选，然后按第二列降序排列，把第一行移动到最后"
+**Output**:
+{
+  "intent": "edit",
+  "patch": {
+    "operations": [
+      {
+        "op": "set_table_config",
+        "size": "mini",
+        "switches": { "pagination": true, "filter": true }
+      },
+      { "op": "sort_rows", "col": 1, "order": "desc" },
+      { "op": "move_row", "fromIndex": 0, "toIndex": 4 } // 假设当前有 5 行数据
     ]
   }
 }
