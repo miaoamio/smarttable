@@ -1520,6 +1520,39 @@ async function handleExcelFile(file: File, target: UploadTarget) {
 
       console.log(`[File Probe] Name: ${file.name}, Magic: ${magic}, isXLS: ${isXLS}, isCSV: ${isCSV}, isHTML: ${isHTML}`);
 
+      const getWorkbookScore = (workbook: any): { score: number, chineseCount: number, garbledCount: number } => {
+        try {
+          const firstSheetName = workbook.SheetNames[0];
+          if (!firstSheetName) return { score: -100, chineseCount: 0, garbledCount: 0 };
+          const firstSheet = workbook.Sheets[firstSheetName];
+          let garbledCount = 0;
+          let chineseCount = 0;
+          let rareChineseCount = 0;
+          const range = XLSX.utils.decode_range(firstSheet['!ref'] || 'A1:E10');
+          for (let r = range.s.r; r <= Math.min(range.e.r, 10); r++) {
+            for (let c = range.s.c; c <= Math.min(range.e.c, 10); c++) {
+              const cell = firstSheet[XLSX.utils.encode_cell({r, c})];
+              if (cell && typeof cell.v === 'string' && cell.v.trim().length > 0) {
+                const val = cell.v;
+                if (val.includes('\uFFFD')) garbledCount += 10;
+                if (val.includes('\u0000')) garbledCount += 20;
+                const commonChineseMatch = val.match(/[\u4e00-\u9fa5]/g);
+                if (commonChineseMatch) chineseCount += commonChineseMatch.length;
+                const rareChineseMatch = val.match(/[\u3400-\u4DBF\u20000-\u2A6DF\u9FA6-\u9FFF]/g);
+                if (rareChineseMatch) rareChineseCount += rareChineseMatch.length;
+              }
+            }
+          }
+          let score = chineseCount * 10 - rareChineseCount * 15 - garbledCount * 20;
+          if (garbledCount === 0 && chineseCount > 0) {
+            score += 500;
+          }
+          return { score, chineseCount, garbledCount };
+        } catch (e) {
+          return { score: -999, chineseCount: 0, garbledCount: 999 };
+        }
+      };
+
       const tryReadWithEncoding = (buf: ArrayBuffer, cp: number | string): { workbook: any, score: number, chineseCount: number, garbledCount: number } => {
         try {
           const readOptions: any = { type: "array" };
@@ -1528,43 +1561,12 @@ async function handleExcelFile(file: File, target: UploadTarget) {
           }
           
           const workbook = XLSX.read(buf, readOptions);
-          const firstSheetName = workbook.SheetNames[0];
-          if (!firstSheetName) return { workbook, score: -100, chineseCount: 0, garbledCount: 0 };
-          
-          const firstSheet = workbook.Sheets[firstSheetName];
-          let garbledCount = 0;
-          let chineseCount = 0;
-          let rareChineseCount = 0;
-          
-          const range = XLSX.utils.decode_range(firstSheet['!ref'] || 'A1:E10');
-          for (let r = range.s.r; r <= Math.min(range.e.r, 10); r++) {
-            for (let c = range.s.c; c <= Math.min(range.e.c, 10); c++) {
-              const cell = firstSheet[XLSX.utils.encode_cell({r, c})];
-              if (cell && typeof cell.v === 'string' && cell.v.trim().length > 0) {
-                const val = cell.v;
-                if (val.includes('\uFFFD')) garbledCount += 10; 
-                if (val.includes('\u0000')) garbledCount += 20; 
-                
-                // Detection of common Chinese characters
-                const commonChineseMatch = val.match(/[\u4e00-\u9fa5]/g);
-                if (commonChineseMatch) chineseCount += commonChineseMatch.length;
-
-                // Detection of rare/Mojibake-prone Chinese characters
-                // These are often seen when GBK is misread as UTF-8 or vice versa
-                const rareChineseMatch = val.match(/[\u3400-\u4DBF\u20000-\u2A6DF\u9FA6-\u9FFF]/g);
-                if (rareChineseMatch) rareChineseCount += rareChineseMatch.length;
-              }
-            }
+          const scoreInfo = getWorkbookScore(workbook);
+          let score = scoreInfo.score;
+          if ((cp === "auto" || cp === 65001) && scoreInfo.garbledCount === 0 && scoreInfo.chineseCount > 0) {
+            score += 500;
           }
-
-          // Penalty for rare characters as they are often signs of Mojibake
-          // Bonus for UTF-8 if it has any valid Chinese and no garbled characters
-          let score = chineseCount * 10 - rareChineseCount * 15 - garbledCount * 20;
-          if ((cp === "auto" || cp === 65001) && garbledCount === 0 && chineseCount > 0) {
-            score += 500; // Strong preference for valid UTF-8
-          }
-          
-          return { workbook, score, chineseCount, garbledCount };
+          return { workbook, score, chineseCount: scoreInfo.chineseCount, garbledCount: scoreInfo.garbledCount };
         } catch (e) {
           return { workbook: null, score: -999, chineseCount: 0, garbledCount: 999 };
         }
@@ -1572,6 +1574,7 @@ async function handleExcelFile(file: File, target: UploadTarget) {
 
       const encodings = [
         { name: 'UTF-8', cp: 65001 },
+        { name: 'GBK', cp: 936 },
         { name: 'GB18030', cp: 54936 },
         { name: 'UTF-16LE', cp: 1200 },
         { name: 'UTF-16BE', cp: 1201 },
@@ -1612,6 +1615,13 @@ async function handleExcelFile(file: File, target: UploadTarget) {
         if (isXLSX || isXLS) {
           console.log(isXLSX ? "Standard XLSX" : "Legacy XLS (97-2003)");
           wb = XLSX.read(buffer, { type: "array" });
+          if (isXLS) {
+            const scoreInfo = getWorkbookScore(wb);
+            if (scoreInfo.score < 0) {
+              const picked = selectWorkbookByEncoding(buffer);
+              if (picked.workbook) wb = picked.workbook;
+            }
+          }
         } else if (isCSV) {
           console.log("CSV detected, starting encoding detection...");
           if (isUTF8BOM) {
