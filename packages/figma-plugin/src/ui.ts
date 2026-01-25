@@ -1533,7 +1533,7 @@ async function handleExcelFile(file: File, target: UploadTarget) {
       const zeroRatio = headBytes.length > 0 ? zeroCount / headBytes.length : 1;
       const isLikelyText = !isXLSX && !isXLS && !isHTML && zeroRatio < 0.05 && lineBreakCount > 0 && delimiterCount > 2;
 
-      console.log(`[File Probe] Name: ${file.name}, Magic: ${magic}, isXLS: ${isXLS}, isCSV: ${isCSV}, isHTML: ${isHTML}, isLikelyText: ${isLikelyText}`);
+      console.log(`[File Probe] Name: ${file.name}, Magic: ${magic}, isXLS: ${isXLS}, isCSV: ${isCSV}, isHTML: ${isHTML}, isLikelyText: ${isLikelyText}, size: ${file.size}`);
 
       const getWorkbookScore = (workbook: any): { score: number, chineseCount: number, garbledCount: number } => {
         try {
@@ -1622,7 +1622,7 @@ async function handleExcelFile(file: File, target: UploadTarget) {
             bestEnc = candidates[i];
           }
         }
-        console.log(`[Final Decision] Using ${bestEnc.name}`);
+        console.log(`[Final Decision] Using ${bestEnc.name}, score ${bestRes.score}, chinese ${bestRes.chineseCount}, garbled ${bestRes.garbledCount}`);
         return { workbook: bestRes.workbook, encoding: bestEnc, score: bestRes.score };
       };
 
@@ -1631,10 +1631,12 @@ async function handleExcelFile(file: File, target: UploadTarget) {
           console.log(isXLSX ? "Standard XLSX" : "Legacy XLS (97-2003)");
           wb = XLSX.read(buffer, { type: "array" });
           const scoreInfo = getWorkbookScore(wb);
+          console.log(`[Workbook Score] initial score ${scoreInfo.score}, chinese ${scoreInfo.chineseCount}, garbled ${scoreInfo.garbledCount}`);
           if (scoreInfo.score < 0 || scoreInfo.garbledCount >= 20) {
             const picked = selectWorkbookByEncoding(buffer);
             if (picked.workbook && picked.score > scoreInfo.score) {
               wb = picked.workbook;
+              console.log(`[Workbook Retry] switched encoding to ${picked.encoding.name}`);
             }
           }
         } else if (isCSV) {
@@ -1679,8 +1681,11 @@ async function handleExcelFile(file: File, target: UploadTarget) {
       }
       const sheet = wb.Sheets[sheetName];
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as string[][];
-      
-      console.log(`Parsed ${file.name}:`, data.slice(0, 5));
+      const headerRow = data[0] || [];
+      const sampleRows = data.slice(1, 4);
+      const preview = { headers: headerRow, sample: sampleRows };
+      console.log(`Parsed ${file.name}: rows ${data.length}, cols ${headerRow.length}`);
+      console.log(`[Parsed Preview]`, preview);
       if (data && data.length > 0) {
       // Clean data: remove completely empty rows
       const cleanData = data
