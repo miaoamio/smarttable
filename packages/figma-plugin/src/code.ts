@@ -2783,14 +2783,53 @@ async function cloneOrCreateBodyCell(col: FrameNode, rowIndex?: number): Promise
 }
 
 async function applyColumnWidthToColumn(table: FrameNode, colIndex: number, mode: "FIXED" | "FILL" | "HUG") {
+  console.log(`[applyColumnWidthToColumn] colIndex: ${colIndex}, mode: ${mode}`);
   const cols = getColumnFrames(table);
   const col = cols[colIndex];
-  if (!col) return;
+  if (!col) {
+    console.error(`[applyColumnWidthToColumn] Column at index ${colIndex} not found`);
+    return;
+  }
 
   if (mode === "FILL") {
     col.layoutSizingHorizontal = "FILL";
   } else if (mode === "HUG") {
+    // 特殊处理 HUG 模式，特别是针对操作列
+    console.log(`[applyColumnWidthToColumn] Starting HUG measurement for column ${colIndex}`);
+    
+    // 1. 测量阶段：将列和所有子元素设为 HUG
     col.layoutSizingHorizontal = "HUG";
+    for (const child of col.children) {
+      if ("layoutSizingHorizontal" in child) {
+        (child as any).layoutSizingHorizontal = "HUG";
+        if (child.type === "FRAME") {
+          (child as FrameNode).primaryAxisSizingMode = "AUTO";
+        }
+      }
+    }
+    
+    // 获取自然宽度
+    const naturalWidth = col.width;
+    console.log(`[applyColumnWidthToColumn] Natural width measured: ${naturalWidth}`);
+    
+    // 2. 冻结阶段：转为固定宽度，防止后续填充失效
+    col.layoutSizingHorizontal = "FIXED";
+    col.resize(naturalWidth, col.height);
+    
+    // 3. 填充阶段：让所有子元素填充这个固定宽度
+    for (const child of col.children) {
+      if ("layoutSizingHorizontal" in child) {
+        (child as any).layoutSizingHorizontal = "FILL";
+        if ("layoutAlign" in child) (child as any).layoutAlign = "STRETCH";
+        
+        // 如果是框架，确保它内部不再 HUG 而是固定，以便 FILL 生效
+        if (child.type === "FRAME") {
+          (child as FrameNode).primaryAxisSizingMode = "FIXED";
+        }
+      }
+    }
+    console.log(`[applyColumnWidthToColumn] HUG measurement and adjustment completed`);
+    return; // HUG 模式处理完毕，提前返回
   } else {
     col.layoutSizingHorizontal = "FIXED";
   }
@@ -2806,42 +2845,20 @@ async function applyColumnWidthToColumn(table: FrameNode, colIndex: number, mode
         const cellType = child.getPluginData("cellType");
         const isAction = cellType === "ActionText" || cellType === "ActionIcon";
         
-        // If it's an action cell, we want special handling:
-        // 1. If column is FIXED/FILL, cell should be FILL to stretch background
-        // 2. But internal content should be FIXED/AUTO based on needs
-        
         if (isAction) {
            (child as any).layoutSizingHorizontal = "FILL";
            if ("layoutAlign" in child) {
                (child as any).layoutAlign = "STRETCH";
            }
-           // Ensure internal layout is correct
            if (child.type === "FRAME") {
                const frame = child as FrameNode;
                frame.layoutMode = "HORIZONTAL";
-               // If column is HUG, cell must be HUG to shrink-wrap content
-               // If column is FIXED/FILL, cell must be FILL (handled above) but primaryAxisSizingMode depends...
-               // Actually, for action cells:
-               // - HUG column: cell is HUG
-               // - FIXED/FILL column: cell is FILL, but internal items stay left-aligned (GAP handles spacing)
-               
-               if (mode === "HUG") {
-                   (child as any).layoutSizingHorizontal = "HUG";
-                   frame.primaryAxisSizingMode = "AUTO"; 
-                   frame.counterAxisSizingMode = "FIXED";
-                   if ("layoutAlign" in child) (child as any).layoutAlign = "INHERIT";
-               } else {
-                   // FIXED or FILL column
-                   frame.primaryAxisSizingMode = "FIXED"; // Don't shrink-wrap, respect FILL width
-                   frame.counterAxisSizingMode = "FIXED";
-               }
+               frame.primaryAxisSizingMode = "FIXED";
+               frame.counterAxisSizingMode = "FIXED";
            }
         } else {
-            // Normal cells
-            (child as any).layoutSizingHorizontal = mode === "HUG" ? "HUG" : "FILL";
-            if (mode === "HUG" && "layoutAlign" in child) {
-              (child as any).layoutAlign = "INHERIT";
-            } else if (mode !== "HUG" && "layoutAlign" in child) {
+            (child as any).layoutSizingHorizontal = "FILL";
+            if ("layoutAlign" in child) {
               (child as any).layoutAlign = "STRETCH";
             }
         }
