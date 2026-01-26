@@ -174,11 +174,202 @@ function hexToRgb(hex: string): { r: number, g: number, b: number } {
   return { r, g, b };
 }
 
+/**
+ * Fetch local Figma variables and styles
+ */
+async function getFigmaTokens() {
+  const tokens: any = {
+    variables: [],
+    paintStyles: [],
+    textStyles: [],
+    selection: []
+  };
+
+  try {
+    console.log("getFigmaTokens started");
+    const selection = figma.currentPage.selection;
+    console.log("Current selection length:", selection.length);
+    
+    // 1. Fetch Variables (if available)
+    if (typeof figma.variables !== 'undefined') {
+      const localVariables = await figma.variables.getLocalVariablesAsync();
+      console.log("Local variables found:", localVariables.length);
+      tokens.variables = localVariables.map(v => ({
+        id: v.id,
+        name: v.name,
+        resolvedType: v.resolvedType,
+        description: v.description
+      }));
+    }
+
+    // 2. Fetch Paint Styles
+    try {
+      const paintStyles = figma.getLocalPaintStyles();
+      console.log("Local paint styles found:", paintStyles.length);
+      tokens.paintStyles = paintStyles.map(s => ({
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        paints: s.paints
+      }));
+    } catch (e) {
+      console.log("figma.getLocalPaintStyles failed, trying Async version...");
+      if (typeof (figma as any).getLocalPaintStylesAsync === 'function') {
+        const paintStyles = await (figma as any).getLocalPaintStylesAsync();
+        console.log("Local paint styles found (Async):", paintStyles.length);
+        tokens.paintStyles = paintStyles.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          description: s.description,
+          paints: s.paints
+        }));
+      } else {
+        console.warn("getLocalPaintStylesAsync is not available");
+      }
+    }
+
+    // 3. Fetch Text Styles
+    try {
+      const textStyles = figma.getLocalTextStyles();
+      console.log("Local text styles found:", textStyles.length);
+      tokens.textStyles = textStyles.map(s => ({
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        fontName: s.fontName,
+        fontSize: s.fontSize,
+        lineHeight: s.lineHeight,
+        letterSpacing: s.letterSpacing
+      }));
+    } catch (e) {
+      console.log("figma.getLocalTextStyles failed, trying Async version...");
+      if (typeof (figma as any).getLocalTextStylesAsync === 'function') {
+        const textStyles = await (figma as any).getLocalTextStylesAsync();
+        console.log("Local text styles found (Async):", textStyles.length);
+        tokens.textStyles = textStyles.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          description: s.description,
+          fontName: s.fontName,
+          fontSize: s.fontSize,
+          lineHeight: s.lineHeight,
+          letterSpacing: s.letterSpacing
+        }));
+      } else {
+        console.warn("getLocalTextStylesAsync is not available");
+      }
+    }
+
+    // 4. Inspect Selection (for Library Tokens)
+    for (const node of selection) {
+      console.log("Inspecting node:", node.name, node.type);
+      const nodeTokens: any = {
+        nodeName: node.name,
+        nodeType: node.type,
+        appliedTokens: []
+      };
+
+      try {
+        // Check for Fill Style
+        if ('fillStyleId' in node && node.fillStyleId) {
+          console.log("Node has fillStyleId:", node.fillStyleId);
+          let styleName = 'Unknown Style (Remote/Library)';
+          try {
+            const style = figma.getStyleById(node.fillStyleId as string);
+            if (style) styleName = style.name;
+          } catch (e) {
+            console.log("figma.getStyleById failed for fillStyleId, this is normal for some remote styles");
+          }
+          
+          nodeTokens.appliedTokens.push({
+            type: 'PaintStyle',
+            id: node.fillStyleId,
+            name: styleName
+          });
+        }
+
+        // Check for Text Style
+        if ('textStyleId' in node && node.textStyleId && node.textStyleId !== figma.mixed) {
+          console.log("Node has textStyleId:", node.textStyleId);
+          let styleName = 'Unknown Style (Remote/Library)';
+          try {
+            const style = figma.getStyleById(node.textStyleId as string);
+            if (style) styleName = style.name;
+          } catch (e) {
+            console.log("figma.getStyleById failed for textStyleId");
+          }
+          
+          nodeTokens.appliedTokens.push({
+            type: 'TextStyle',
+            id: node.textStyleId,
+            name: styleName
+          });
+        }
+
+        // Check for Bound Variables
+        if ('boundVariables' in node && node.boundVariables) {
+          const bv = node.boundVariables;
+          console.log("Node has boundVariables:", Object.keys(bv));
+          for (const [key, variable] of Object.entries(bv)) {
+            if (variable) {
+              const vars = Array.isArray(variable) ? variable : [variable];
+              for (const v of vars) {
+                let variableId: string | null = null;
+                if (typeof v === 'string') {
+                  variableId = v;
+                } else if (v && typeof v === 'object' && 'id' in v) {
+                  variableId = (v as any).id;
+                }
+
+                if (variableId) {
+                  console.log("Found bound variable ID:", variableId, "for key:", key);
+                  let varName = 'Unknown Variable (Remote/Library)';
+                  try {
+                    const varObj = await figma.variables.getVariableByIdAsync(variableId);
+                    if (varObj) varName = varObj.name;
+                  } catch (e) {
+                    console.log("figma.variables.getVariableByIdAsync failed for", variableId);
+                  }
+
+                  nodeTokens.appliedTokens.push({
+                    type: 'Variable',
+                    property: key,
+                    id: variableId,
+                    name: varName
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (nodeErr) {
+        console.warn("Error inspecting node", node.name, ":", nodeErr);
+      }
+
+      if (nodeTokens.appliedTokens.length > 0) {
+        tokens.selection.push(nodeTokens);
+      }
+    }
+    console.log("getFigmaTokens completed, tokens.selection length:", tokens.selection.length);
+  } catch (e) {
+    console.warn("Failed to fetch Figma tokens:", e);
+  }
+
+  return tokens;
+}
+
 const TABS_COMPONENT_KEY = "4c762a63f502f3c4596e4cdb0647514cf00a2ec7";
 const FILTER_COMPONENT_KEY = "cadcfc99d9dc7ac32eac6eda4664ad68a712d19d"; // Updated Key
 const FILTER_ITEM_COMPONENT_KEY = "7eaa61f7dda9a4e8271e2dbfcafcb5c2730ac2ab"; // Filter Item Key
 const BUTTON_GROUP_COMPONENT_KEY = "180fb77e98e458d377212d51f6698085a4bf2f9f";
 const PAGINATION_COMPONENT_KEY = "4a052d113919473bb3079dd723e05ccd343042c5";
+
+let isProcessing = false;
+
+function setProcessing(processing: boolean) {
+  isProcessing = processing;
+  figma.ui.postMessage({ type: processing ? "processing_start" : "processing_end" });
+}
 const ROW_ACTION_COMPONENT_KEY = "de6d6250b7566cb97aaff74d5e3383e9a5316db9";
 
 // Row Action Components (New)
@@ -370,8 +561,9 @@ function findColumnFrame(node: SceneNode): FrameNode | null {
 }
 
 function findTableFrameFromNode(node: SceneNode | null): FrameNode | null {
+  if (!node || node.removed) return null;
   let cur: BaseNode | null = node;
-  while (cur) {
+  while (cur && !cur.removed) {
     if (cur.type === "FRAME") {
       const f = cur as FrameNode;
       // 1. Is this the table itself?
@@ -381,6 +573,7 @@ function findTableFrameFromNode(node: SceneNode | null): FrameNode | null {
       if (f.layoutMode === "VERTICAL") {
         const childTable = f.children.find(
           (n) =>
+            !n.removed &&
             n.type === "FRAME" &&
             (n as FrameNode).layoutMode === "HORIZONTAL" &&
             isSmartTableFrame(n as FrameNode)
@@ -1260,12 +1453,14 @@ async function applyHeaderModeToInstance(instance: InstanceNode, mode: HeaderMod
 }
 
 function getColumnFrames(table: FrameNode): FrameNode[] {
-  return table.children.filter((n) => n.type === "FRAME") as FrameNode[];
+  if (table.removed) return [];
+  return table.children.filter((n) => !n.removed && n.type === "FRAME") as FrameNode[];
 }
 
 async function getHeaderOffset(col: FrameNode): Promise<number> {
+  if (col.removed) return 0;
   const first = col.children[0];
-  if (first && (first.type === "INSTANCE" || first.type === "FRAME") && isHeaderNode(first)) return 1;
+  if (first && !first.removed && (first.type === "INSTANCE" || first.type === "FRAME") && isHeaderNode(first)) return 1;
   return 0;
 }
 
@@ -2498,7 +2693,7 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
 
           applyCellCommonStyling(cellFrame);
 
-          cellFrame.layoutSizingHorizontal = (type === "ActionText" || type === "ActionIcon") ? "HUG" : "FILL";
+          cellFrame.layoutSizingHorizontal = "FILL";
           cellFrame.layoutSizingVertical = "FIXED";
           
           let targetHeight = tableSwitchesState.rowHeight;
@@ -2510,12 +2705,12 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
           }
           cellFrame.resize(cellFrame.width, targetHeight);
 
-          cellFrame.layoutAlign = (type === "ActionText" || type === "ActionIcon") ? "INHERIT" : "STRETCH"; 
+          cellFrame.layoutAlign = "STRETCH"; 
           
           // Force layout mode and sizing again after renderer to ensure it sticks
           if (type === "ActionText" || type === "ActionIcon") {
             cellFrame.layoutMode = "HORIZONTAL";
-            cellFrame.primaryAxisSizingMode = "AUTO"; // HUG in Figma API
+            cellFrame.primaryAxisSizingMode = "FIXED"; 
             cellFrame.counterAxisSizingMode = "FIXED";
           }
           
@@ -2788,13 +2983,13 @@ async function applyTableSwitch(table: FrameNode, key: "pagination" | "filter" |
                    inst = (comp as ComponentNode).createInstance();
                }
                if (inst) {
-                   inst.name = "Pagination";
-                   container.appendChild(inst);
-                   if ("layoutSizingHorizontal" in inst) {
-                       (inst as any).layoutSizingHorizontal = "FILL";
-                   }
-                   pager = inst;
-               }
+                          inst.name = "Pagination";
+                          container.insertChild(container.children.length, inst);
+                          if ("layoutSizingHorizontal" in inst) {
+                              (inst as any).layoutSizingHorizontal = "FILL";
+                          }
+                          pager = inst;
+                      }
            } catch (e) {
                console.warn("Failed to load Pagination", e);
            }
@@ -3996,6 +4191,9 @@ async function createTable(params: CreateTableOptions) {
   container.resize(totalWidth, 100);
   container.fills = [];
   container.clipsContent = false;
+  
+  // Lock container during creation to prevent user interference
+  container.locked = true;
 
   // Top Bar Container
   const topBarContainer = figma.createFrame();
@@ -4179,7 +4377,8 @@ async function createTable(params: CreateTableOptions) {
       if (customRenderer) {
         const cellFrame = createCustomCellFrame(`${colType} Cell ${c + 1}-${r + 1}`, colType);
         colFrame.appendChild(cellFrame);
-        cellFrame.layoutSizingHorizontal = (colType === "ActionText" || colType === "ActionIcon") ? "HUG" : "FILL";
+        // Operation columns should also be FILL horizontally to ensure background/borders cover the column width
+        cellFrame.layoutSizingHorizontal = "FILL";
         cellFrame.layoutSizingVertical = "FIXED";
         
         const context = {
@@ -4200,11 +4399,8 @@ async function createTable(params: CreateTableOptions) {
       } else if (cFactory) {
         const cell = cFactory();
         colFrame.appendChild(cell);
-        if (colType === "ActionText" || colTitle.includes("操作")) {
-          cell.layoutSizingHorizontal = "HUG";
-        } else {
-          cell.layoutSizingHorizontal = "FILL";
-        }
+        // Always FILL to ensure consistency in column width
+        cell.layoutSizingHorizontal = "FILL";
         cell.name = `${colTitle}-${r + 1}`;
         
         // Ensure row height follows configuration
@@ -4264,7 +4460,7 @@ async function createTable(params: CreateTableOptions) {
       pagerInst = (pagerComp as ComponentNode).createInstance();
     }
     if (pagerInst) {
-      container.appendChild(pagerInst);
+      container.insertChild(container.children.length, pagerInst);
       if ("layoutSizingHorizontal" in pagerInst) {
         (pagerInst as any).layoutSizingHorizontal = "FILL";
       }
@@ -4300,6 +4496,9 @@ async function createTable(params: CreateTableOptions) {
     container.x = targetX;
     container.y = targetY;
   }
+  
+  // Unlock container after creation is finished
+  container.locked = false;
   
   // Also scroll to it to be sure
   figma.viewport.scrollAndZoomIntoView([container]);
@@ -4433,7 +4632,7 @@ async function init() {
       // If children changed, it might be a row/column addition or deletion
       if (props.includes("children")) {
           const table = findTableFrameFromNode(node as any);
-          if (table) {
+          if (table && !table.removed) {
               tablesToSyncMetadata.add(table);
           }
       }
@@ -4447,7 +4646,7 @@ async function init() {
         if (isTextProp && node.type === "TEXT") {
             // Find the parent cell frame
             let cur = node.parent;
-            while (cur && cur.type !== "PAGE") {
+            while (cur && cur.type !== "PAGE" && !cur.removed) {
                 if (cur.type === "FRAME" || cur.type === "INSTANCE") {
                     const cellType = cur.getPluginData("cellType");
                     if (cellType === "Text" || cellType === "Header") {
@@ -4457,7 +4656,7 @@ async function init() {
                             const headerText = (node as TextNode).characters;
                             sceneNode.setPluginData("headerValue", headerText);
                             // Also update parent column
-                            if (sceneNode.parent?.type === "FRAME") {
+                            if (sceneNode.parent?.type === "FRAME" && !sceneNode.parent.removed) {
                                 sceneNode.parent.setPluginData("headerValue", headerText);
                             }
                         }
@@ -4470,11 +4669,11 @@ async function init() {
             sceneNode = node as FrameNode | InstanceNode;
         }
 
-        if (sceneNode) {
+        if (sceneNode && !sceneNode.removed) {
             const column = sceneNode.parent;
-            if (column && column.type === "FRAME" && column.layoutMode === "VERTICAL") {
+            if (column && !column.removed && column.type === "FRAME" && column.layoutMode === "VERTICAL") {
                 const table = column.parent;
-                if (table && table.type === "FRAME" && table.layoutMode === "HORIZONTAL" && isSmartTableFrame(table)) {
+                if (table && !table.removed && table.type === "FRAME" && table.layoutMode === "HORIZONTAL" && isSmartTableFrame(table)) {
                     // If text changed, we MUST ensure it's HUG temporarily to get its new natural height
                     // BUT ONLY if it's actually in lineBreak mode. Ellipsis cells should NOT grow.
                     const textDisplayMode = sceneNode.getPluginData("textDisplayMode");
@@ -4503,27 +4702,37 @@ async function init() {
     // Sync metadata for tables that had children changes
     if (tablesToSyncMetadata.size > 0) {
         for (const table of tablesToSyncMetadata) {
-            await syncTableMetadata(table);
+            if (!table.removed) {
+                await syncTableMetadata(table);
+            }
         }
     }
     
     if (cellsToSync.size > 0) {
         for (const { table, index, sourceNodes } of cellsToSync.values()) {
+            if (table.removed) continue;
             const cols = getColumnFrames(table);
             
             // Get default row height for this table
             let defaultRowHeight = tableSwitchesState.rowHeight;
-            const savedHeight = table.getPluginData("tableRowHeight");
-            if (savedHeight) {
-                defaultRowHeight = parseInt(savedHeight, 10) || tableSwitchesState.rowHeight;
+            try {
+                const savedHeight = table.getPluginData("tableRowHeight");
+                if (savedHeight) {
+                    defaultRowHeight = parseInt(savedHeight, 10) || tableSwitchesState.rowHeight;
+                }
+            } catch (e) {
+                // Ignore if table is removed or plugin data access fails
+                continue;
             }
 
             let maxHeight = defaultRowHeight;
             
             // First pass: find max height among changed nodes and natural heights of other line-break nodes
             for (const col of cols) {
+                if (col.removed) continue;
                 if (index < col.children.length) {
                     const cell = col.children[index] as FrameNode | InstanceNode;
+                    if (!cell || cell.removed) continue;
                     
                     // If this cell was specifically changed, respect its new height
                     if (sourceNodes.includes(cell)) {
@@ -4549,8 +4758,10 @@ async function init() {
 
             // Second pass: apply max height
             for (const col of cols) {
+                if (col.removed) continue;
                 if (index < col.children.length) {
                     const cell = col.children[index] as FrameNode | InstanceNode;
+                    if (!cell || cell.removed) continue;
                     const isLineBreak = cell.getPluginData("textDisplayMode") === "lineBreak";
                     
                     if (isLineBreak) {
@@ -4581,7 +4792,13 @@ init();
 
 
 figma.ui.onmessage = async (message: UiToPluginMessage) => {
+  if (isProcessing) {
+    console.warn("Plugin is busy, ignoring message:", message.type);
+    return;
+  }
+
   if (message.type === "ai_apply_envelope") {
+    setProcessing(true);
     const env = message.envelope;
     try {
       if (env.intent === "create") {
@@ -4632,1088 +4849,1217 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       figma.notify("Envelope 应用失败: " + msg);
       postError(msg);
       figma.ui.postMessage({ type: "ai_apply_envelope_done" }); // Also reset on error
+    } finally {
+      setProcessing(false);
     }
     return;
   }
   if (message.type === "update_component_key") {
-    // 允许动态更新组件 Key
+    setProcessing(true);
     try {
       await loadComponent(message.key);
       figma.notify("组件 Key 已更新");
     } catch (e: any) {
       figma.notify("更新组件 Key 失败: " + (e?.message ?? String(e)));
+    } finally {
+      setProcessing(false);
     }
   } else if (message.type === "set_col_width") {
-    if (figma.currentPage.selection.length === 0) {
-      figma.notify("请先选中单元格或列");
-      return;
-    }
-    const mode = message.mode === "Fixed" ? "FIXED" : message.mode === "Hug" ? "HUG" : "FILL";
+    setProcessing(true);
     try {
-      setColumnLayout(mode);
-      figma.notify(`列宽已设置为：${mode === "FIXED" ? "固定" : mode === "HUG" ? "适应" : "充满"}`);
+      if (figma.currentPage.selection.length === 0) {
+        figma.notify("请先选中单元格或列");
+        return;
+      }
+      const mode = message.mode === "Fixed" ? "FIXED" : message.mode === "Hug" ? "HUG" : "FILL";
+      
+      // Lock container during operation
+      const selection = figma.currentPage.selection;
+      const table = findTableFrameFromNode(selection[0] as any);
+      const container = table?.parent as FrameNode;
+      const originalLocked = container?.locked ?? false;
+      if (container) container.locked = true;
+      
+      try {
+        setColumnLayout(mode);
+        figma.notify(`列宽已设置为：${mode === "FIXED" ? "固定" : mode === "HUG" ? "适应" : "充满"}`);
+      } finally {
+        if (container) container.locked = originalLocked;
+      }
     } catch (e: any) {
       figma.notify("设置列宽失败: " + e.message);
+    } finally {
+      setProcessing(false);
     }
   } else if (message.type === "set_table_rows") {
-    const selection = figma.currentPage.selection;
-    let table: FrameNode | null = null;
-    if (selection.length > 0) {
-      table = findTableFrameFromNode(selection[0] as any);
-    }
-    if (!table) {
-      table = figma.root.findOne(
-        (n) =>
-          n.type === "FRAME" &&
-          (n as FrameNode).layoutMode === "HORIZONTAL" &&
-          (n as FrameNode).name.startsWith("Smart Table") &&
-          n.getPluginData("smart_table") === "true"
-      ) as FrameNode | null;
-    }
-    if (!table) {
-      figma.notify("未找到需要调整的表格。请选中表格或其任一子元素。");
-      return;
-    }
-
-    // 保存到 Plugin Data
-    table.setPluginData("rowCount", message.rows.toString());
-
+    setProcessing(true);
     try {
-      const currentContext = await getTableContext(table);
-      if (!currentContext) throw new Error("无法获取表格上下文");
-      
-      const currentRows = currentContext.rows;
-      const newRows = message.rows;
-      
-      if (newRows > currentRows) {
-        await applyOperationToTable(table, { 
-          op: "add_rows", 
-          count: newRows - currentRows, 
-          position: "end" 
-        });
-        figma.notify(`表格已增加 ${newRows - currentRows} 行`);
-      } else if (newRows < currentRows) {
-        const countToRemove = currentRows - newRows;
-        // Remove from the end
-        const indexes = Array.from({ length: countToRemove }, (_, i) => currentRows - 1 - i);
-        await applyOperationToTable(table, { 
-          op: "remove_rows", 
-          indexes 
-        });
-        figma.notify(`表格已删除 ${countToRemove} 行`);
-      } else {
-        figma.notify("行数未发生变化");
+      const selection = figma.currentPage.selection;
+      let table: FrameNode | null = null;
+      if (selection.length > 0) {
+        table = findTableFrameFromNode(selection[0] as any);
+      }
+      if (!table) {
+        table = figma.root.findOne(
+          (n) =>
+            n.type === "FRAME" &&
+            (n as FrameNode).layoutMode === "HORIZONTAL" &&
+            (n as FrameNode).name.startsWith("Smart Table") &&
+            n.getPluginData("smart_table") === "true"
+        ) as FrameNode | null;
+      }
+      if (!table) {
+        figma.notify("未找到需要调整的表格。请选中表格或其任一子元素。");
+        return;
+      }
+
+      const container = table.parent as FrameNode;
+      const originalLocked = container?.locked ?? false;
+      if (container) container.locked = true;
+
+      try {
+        // 保存到 Plugin Data
+        table.setPluginData("rowCount", message.rows.toString());
+
+        const currentContext = await getTableContext(table);
+        if (!currentContext) throw new Error("无法获取表格上下文");
+        
+        const currentRows = currentContext.rows;
+        const newRows = message.rows;
+        
+        if (newRows > currentRows) {
+          await applyOperationToTable(table, { 
+            op: "add_rows", 
+            count: newRows - currentRows, 
+            position: "end" 
+          });
+          figma.notify(`表格已增加 ${newRows - currentRows} 行`);
+        } else if (newRows < currentRows) {
+          const countToRemove = currentRows - newRows;
+          // Remove from the end
+          const indexes = Array.from({ length: countToRemove }, (_, i) => currentRows - 1 - i);
+          await applyOperationToTable(table, { 
+            op: "remove_rows", 
+            indexes 
+          });
+          figma.notify(`表格已删除 ${countToRemove} 行`);
+        } else {
+          figma.notify("行数未发生变化");
+        }
+      } finally {
+        if (container) container.locked = originalLocked;
       }
     } catch (e: any) {
       figma.notify("调整行数失败: " + e.message);
+    } finally {
+      setProcessing(false);
     }
   }
 
   if (message.type === "set_header_props") {
-    const { filter, sort, search, info } = message.props;
-    const selection = figma.currentPage.selection;
-    if (selection.length === 0) {
-      figma.notify("请先选中单元格");
-      return;
-    }
+    setProcessing(true);
+    try {
+      const { filter, sort, search, info } = message.props;
+      const selection = figma.currentPage.selection;
+      if (selection.length === 0) {
+        figma.notify("请先选中单元格");
+        return;
+      }
 
-    // Determine mode from props
-    let mode: HeaderMode = "none";
-    if (filter) mode = "filter";
-    else if (sort) mode = "sort";
-    else if (search) mode = "search";
-    else if (info) mode = "info";
+      // Determine mode from props
+      let mode: HeaderMode = "none";
+      if (filter) mode = "filter";
+      else if (sort) mode = "sort";
+      else if (search) mode = "search";
+      else if (info) mode = "info";
 
-    for (const node of selection) {
-      const col = findColumnFrame(node);
-      if (col) {
-        const table = col.parent as FrameNode;
-        const cols = getColumnFrames(table);
-        const colIndex = cols.indexOf(col);
-        if (colIndex !== -1) {
-          await applyHeaderModeToColumn(table, colIndex, mode);
+      for (const node of selection) {
+        const col = findColumnFrame(node);
+        if (col) {
+          const table = col.parent as FrameNode;
+          const cols = getColumnFrames(table);
+          const colIndex = cols.indexOf(col);
+          if (colIndex !== -1) {
+            await applyHeaderModeToColumn(table, colIndex, mode);
+          }
         }
       }
+      figma.notify("已更新表头设置");
+    } finally {
+      setProcessing(false);
     }
-    figma.notify("已更新表头设置");
   }
 
   if (message.type === "set_header_mode") {
-    const { mode } = message;
-    const selection = figma.currentPage.selection;
-    if (selection.length === 0) {
-      figma.notify("请先选中单元格");
-      return;
-    }
+    setProcessing(true);
+    try {
+      const { mode } = message;
+      const selection = figma.currentPage.selection;
+      if (selection.length === 0) {
+        figma.notify("请先选中单元格");
+        return;
+      }
 
-    for (const node of selection) {
-      const col = findColumnFrame(node);
-      if (col) {
-        const table = col.parent as FrameNode;
-        const cols = getColumnFrames(table);
-        const colIndex = cols.indexOf(col);
-        if (colIndex !== -1) {
-          await applyHeaderModeToColumn(table, colIndex, mode);
+      for (const node of selection) {
+        const col = findColumnFrame(node);
+        if (col) {
+          const table = col.parent as FrameNode;
+          const cols = getColumnFrames(table);
+          const colIndex = cols.indexOf(col);
+          if (colIndex !== -1) {
+            await applyHeaderModeToColumn(table, colIndex, mode);
+          }
         }
       }
+      figma.notify("已更新表头设置");
+    } finally {
+      setProcessing(false);
     }
-    figma.notify("已更新表头设置");
   }
 
   if (message.type === "set_cell_align") {
-    const selection = figma.currentPage.selection;
-    if (selection.length === 0) {
-      figma.notify("请先选中单元格或列");
-      return;
-    }
-    let updateCount = 0;
-    for (const node of selection) {
-      const updateAlign = async (n: SceneNode) => {
-        if (n.type === "FRAME" && n.getPluginData("cellType")) {
-           const frame = n as FrameNode;
-           const isHeader = isHeaderNode(frame);
-           
-           if (message.align === "left") {
-             frame.primaryAxisAlignItems = "MIN";
-             const textNode = frame.findOne(c => c.type === "TEXT") as TextNode;
-             if (textNode) textNode.textAlignHorizontal = "LEFT";
-             frame.setPluginData("textAlign", "left");
-             updateCount++;
-             return true;
-           } else if (message.align === "right") {
-             frame.primaryAxisAlignItems = "MAX";
-             const textNode = frame.findOne(c => c.type === "TEXT") as TextNode;
-             if (textNode) textNode.textAlignHorizontal = "RIGHT";
-             frame.setPluginData("textAlign", "right");
-             updateCount++;
-             return true;
-           } else if (message.align === "center" && !isHeader) {
-             frame.primaryAxisAlignItems = "CENTER";
-             const textNode = frame.findOne(c => c.type === "TEXT") as TextNode;
-             if (textNode) textNode.textAlignHorizontal = "CENTER";
-             frame.setPluginData("textAlign", "center");
-             updateCount++;
-             return true;
-           }
-        } else if (n.type === "INSTANCE") {
-            if (await setInstanceAlign(n as InstanceNode, message.align)) {
+    setProcessing(true);
+    try {
+      const selection = figma.currentPage.selection;
+      if (selection.length === 0) {
+        figma.notify("请先选中单元格或列");
+        return;
+      }
+      let updateCount = 0;
+      for (const node of selection) {
+        const updateAlign = async (n: SceneNode) => {
+          if (n.type === "FRAME" && n.getPluginData("cellType")) {
+            const frame = n as FrameNode;
+            const isHeader = isHeaderNode(frame);
+            
+            if (message.align === "left") {
+              frame.primaryAxisAlignItems = "MIN";
+              const textNode = frame.findOne(c => c.type === "TEXT") as TextNode;
+              if (textNode) textNode.textAlignHorizontal = "LEFT";
+              frame.setPluginData("textAlign", "left");
+              updateCount++;
+              return true;
+            } else if (message.align === "right") {
+              frame.primaryAxisAlignItems = "MAX";
+              const textNode = frame.findOne(c => c.type === "TEXT") as TextNode;
+              if (textNode) textNode.textAlignHorizontal = "RIGHT";
+              frame.setPluginData("textAlign", "right");
+              updateCount++;
+              return true;
+            } else if (message.align === "center" && !isHeader) {
+              frame.primaryAxisAlignItems = "CENTER";
+              const textNode = frame.findOne(c => c.type === "TEXT") as TextNode;
+              if (textNode) textNode.textAlignHorizontal = "CENTER";
+              frame.setPluginData("textAlign", "center");
               updateCount++;
               return true;
             }
-        }
-        return false;
-      };
+          } else if (n.type === "INSTANCE") {
+              if (await setInstanceAlign(n as InstanceNode, message.align)) {
+                updateCount++;
+                return true;
+              }
+          }
+          return false;
+        };
 
-      if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
-        node.setPluginData("textAlign", message.align);
-        for (let i = 0; i < node.children.length; i++) {
-          await updateAlign(node.children[i]);
+        if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
+          node.setPluginData("textAlign", message.align);
+          for (let i = 0; i < node.children.length; i++) {
+            await updateAlign(node.children[i]);
+          }
+        } else {
+          await updateAlign(node);
         }
-      } else {
-        await updateAlign(node);
       }
-    }
-    if (updateCount > 0) {
-      figma.notify(`已更新 ${updateCount} 个单元格对齐方式`);
-    } else {
-      figma.notify("未找到可更新对齐方式的单元格");
+      if (updateCount > 0) {
+        figma.notify(`已更新 ${updateCount} 个单元格对齐方式`);
+      } else {
+        figma.notify("未找到可更新对齐方式的单元格");
+      }
+    } finally {
+      setProcessing(false);
     }
   }
 
   if (message.type === "set_cell_type") {
-     const { cellType } = message;
-     const selection = figma.currentPage.selection;
-     let updateCount = 0;
+    setProcessing(true);
+    try {
+      const { cellType } = message;
+      const selection = figma.currentPage.selection;
+      let updateCount = 0;
 
-     // Special handling for Custom Cells (Tag, Avatar, etc.)
-     const customRenderer = CUSTOM_CELL_REGISTRY[cellType as ColumnType];
-     const hasCustomRenderer = !!customRenderer;
-     if (hasCustomRenderer) {
+      // Special handling for Custom Cells (Tag, Avatar, etc.)
+      const customRenderer = CUSTOM_CELL_REGISTRY[cellType as ColumnType];
+      const hasCustomRenderer = !!customRenderer;
+      if (hasCustomRenderer) {
         try {
-            let context: any = {};
-            if (cellType === "Tag") {
-                const { component: tagComponent } = await resolveCellFactory(TAG_COMPONENT_KEY);
-                const { component: counterComponent } = await resolveCellFactory(TAG_COUNTER_COMPONENT_KEY);
-                context = { tagComponent, counterComponent: counterComponent || tagComponent };
-            } else if (cellType === "Avatar") {
-                const { component: avatarComponent } = await resolveCellFactory(AVATAR_COMPONENT_KEY);
-                context = { 
-                  avatarComponent,
-                  overrideDisplayValue: "" // We will set this per-cell in the loop below
-                };
-                console.log("[set_cell_type] Avatar context prepared", context);
-            } else if (cellType === "ActionText") {
-                const { component: moreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
-                context = { moreIconComponent };
-            } else if (cellType === "ActionIcon") {
-                const { component: editIconComponent } = await resolveCellFactory(EDIT_ICON_COMPONENT_KEY);
-                const { component: deleteIconComponent } = await resolveCellFactory(DELETE_ICON_COMPONENT_KEY);
-                const { component: actionMoreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
-                context = { editIconComponent, deleteIconComponent, actionMoreIconComponent };
-            } else if (cellType === "Input") {
-                const { component: inputComponent } = await resolveCellFactory(INPUT_COMPONENT_KEY);
-                context = { inputComponent };
-            } else if (cellType === "Select") {
-                const { component: selectComponent } = await resolveCellFactory(SELECT_COMPONENT_KEY);
-                context = { selectComponent };
-            } else if (cellType === "State") {
-                const { component: stateComponent } = await resolveCellFactory(STATE_COMPONENT_KEY);
-                context = { stateComponent };
-            }
+          let context: any = {};
+          if (cellType === "Tag") {
+            const { component: tagComponent } = await resolveCellFactory(TAG_COMPONENT_KEY);
+            const { component: counterComponent } = await resolveCellFactory(TAG_COUNTER_COMPONENT_KEY);
+            context = { tagComponent, counterComponent: counterComponent || tagComponent };
+          } else if (cellType === "Avatar") {
+            const { component: avatarComponent } = await resolveCellFactory(AVATAR_COMPONENT_KEY);
+            context = { 
+              avatarComponent,
+              overrideDisplayValue: "" // We will set this per-cell in the loop below
+            };
+            console.log("[set_cell_type] Avatar context prepared", context);
+          } else if (cellType === "ActionText") {
+            const { component: moreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
+            context = { moreIconComponent };
+          } else if (cellType === "ActionIcon") {
+            const { component: editIconComponent } = await resolveCellFactory(EDIT_ICON_COMPONENT_KEY);
+            const { component: deleteIconComponent } = await resolveCellFactory(DELETE_ICON_COMPONENT_KEY);
+            const { component: actionMoreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
+            context = { editIconComponent, deleteIconComponent, actionMoreIconComponent };
+          } else if (cellType === "Input") {
+            const { component: inputComponent } = await resolveCellFactory(INPUT_COMPONENT_KEY);
+            context = { inputComponent };
+          } else if (cellType === "Select") {
+            const { component: selectComponent } = await resolveCellFactory(SELECT_COMPONENT_KEY);
+            context = { selectComponent };
+          } else if (cellType === "State") {
+            const { component: stateComponent } = await resolveCellFactory(STATE_COMPONENT_KEY);
+            context = { stateComponent };
+          }
 
-            if (hasCustomRenderer) {
-                for (const node of selection) {
-                    let nodesToUpdate: SceneNode[] = [];
-                    if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
-                        nodesToUpdate = node.children.slice(await getHeaderOffset(node as FrameNode));
-                        const isHug = (cellType === "ActionText" || cellType === "ActionIcon");
-                        node.layoutSizingHorizontal = isHug ? "HUG" : "FILL";
-                        if (!isHug) {
-                            node.counterAxisSizingMode = "FIXED";
-                        }
-                        node.setPluginData("cellType", cellType);
-                        
-                        // Also update width of children cells
-                        for (const child of node.children) {
-                            if (child.type === "FRAME" || child.type === "INSTANCE") {
-                                if (isHeaderNode(child)) {
-                                    (child as any).layoutSizingHorizontal = "FILL";
-                                    if ("layoutAlign" in child) {
-                                        (child as any).layoutAlign = "STRETCH";
-                                    }
-                                } else {
-                                    (child as any).layoutSizingHorizontal = isHug ? "HUG" : "FILL";
-                                    if (isHug && "layoutAlign" in child) {
-                                        (child as any).layoutAlign = "INHERIT";
-                                    } else if (!isHug && "layoutAlign" in child) {
-                                        (child as any).layoutAlign = "STRETCH";
-                                    }
-                                }
-                            }
-                        }
-                        if (cellType === "ActionIcon" || cellType === "ActionText") {
-                            node.setPluginData("cellValue", "编辑 删除 …");
-                        }
-                    } else if (node.type === "INSTANCE" || (node.type === "FRAME" && node.getPluginData("cellType"))) {
-                        nodesToUpdate = [node];
-                        // If we are updating individual cells, we should also check if the parent column needs a layout update
-                        const parentCol = findColumnFrame(node as SceneNode);
-                        if (parentCol) {
-                            const isHug = (cellType === "ActionText" || cellType === "ActionIcon");
-                            parentCol.layoutSizingHorizontal = isHug ? "HUG" : "FILL";
-                            if (!isHug) {
-                                parentCol.counterAxisSizingMode = "FIXED";
-                            }
-                            parentCol.setPluginData("cellType", cellType);
-                        }
-                    }
-
-                    for (const n of nodesToUpdate) {
-                         const originalText = extractTextFromNode(n);
-                         
-                         let cellFrame: FrameNode;
-                         let parent = n.parent;
-                         let index = parent ? parent.children.indexOf(n) : -1;
-
-                         if (n.type === "FRAME" && n.getPluginData("cellType") === cellType) {
-                             cellFrame = n as FrameNode;
-                             for (const child of cellFrame.children) {
-                                 child.remove();
-                             }
-                         } else {
-                             cellFrame = createCustomCellFrame(n.name, cellType);
-                             if (parent) {
-                                 parent.insertChild(index, cellFrame);
-                                 n.remove();
-                             }
-                         }
-
-                         applyCellCommonStyling(cellFrame);
-                         cellFrame.layoutSizingHorizontal = (cellType === "ActionText" || cellType === "ActionIcon") ? "HUG" : "FILL"; 
-                         
-                         if (cellType === "Text") {
-                             const displayMode = cellFrame.getPluginData("textDisplayMode") || "ellipsis";
-                             if (displayMode === "lineBreak") {
-                                 cellFrame.counterAxisSizingMode = "AUTO";
-                                 cellFrame.layoutSizingVertical = "HUG";
-                             } else {
-                                 cellFrame.counterAxisSizingMode = "FIXED";
-                                 cellFrame.layoutSizingVertical = "FIXED";
-                                 
-                                 let targetHeight = tableSwitchesState.rowHeight;
-                                 const table = findTableFrameFromNode(cellFrame);
-                                 if (table) {
-                                     const savedHeight = table.getPluginData("tableRowHeight");
-                                     if (savedHeight) {
-                                         targetHeight = parseInt(savedHeight, 10) || tableSwitchesState.rowHeight;
-                                     }
-                                 }
-                                 cellFrame.resize(cellFrame.width, targetHeight);
-                             }
-                         } else {
-                             cellFrame.layoutSizingVertical = "FIXED";
-                             
-                             let targetHeight = tableSwitchesState.rowHeight;
-                             const table = findTableFrameFromNode(cellFrame);
-                             if (table) {
-                                 const savedHeight = table.getPluginData("tableRowHeight");
-                                 if (savedHeight) {
-                                     targetHeight = parseInt(savedHeight, 10) || tableSwitchesState.rowHeight;
-                                 }
-                             }
-                             cellFrame.resize(cellFrame.width, targetHeight);
-                         }
-                         
-                         cellFrame.layoutAlign = (cellType === "ActionText" || cellType === "ActionIcon") ? "INHERIT" : "STRETCH"; 
-                         
-                         // Force layout mode and sizing again after renderer to ensure it sticks
-                         if (cellType === "ActionText" || cellType === "ActionIcon") {
-                             cellFrame.layoutMode = "HORIZONTAL";
-                             cellFrame.primaryAxisSizingMode = "AUTO"; // HUG in Figma API
-                             cellFrame.counterAxisSizingMode = "FIXED";
-                         }
-                         
-                         let textToRender = originalText;
-                         if (cellType === "ActionIcon" || cellType === "ActionText") {
-                             textToRender = "编辑 删除 …";
-                         }
-                         
-                         // Sync metadata to cell frame
-                         cellFrame.setPluginData("cellType", cellType);
-                         if (textToRender) {
-                             cellFrame.setPluginData("cellValue", textToRender);
-                         }
-
-                         if (cellType === "Avatar") {
-                             context.overrideDisplayValue = getDefaultAvatarName(textToRender);
-                         }
-
-                         console.log("[set_cell_type] Calling customRenderer", { 
-                           cellType, 
-                           textToRender, 
-                           hasOverride: !!context.overrideDisplayValue,
-                           override: context.overrideDisplayValue 
-                         });
-                         await customRenderer(cellFrame, textToRender, context);
-                         
-                         // Also update parent column if all cells in column are being updated
-                         const parentCol = findColumnFrame(cellFrame);
-                         if (parentCol) {
-                             parentCol.setPluginData("cellType", cellType);
-                             if (textToRender) parentCol.setPluginData("cellValue", textToRender);
-                         }
-                         
-                         updateCount++;
-                    }
+          if (hasCustomRenderer) {
+            for (const node of selection) {
+              let nodesToUpdate: SceneNode[] = [];
+              if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
+                nodesToUpdate = node.children.slice(await getHeaderOffset(node as FrameNode));
+                const isHug = (cellType === "ActionText" || cellType === "ActionIcon");
+                node.layoutSizingHorizontal = isHug ? "HUG" : "FILL";
+                if (!isHug) {
+                  node.counterAxisSizingMode = "FIXED";
                 }
+                node.setPluginData("cellType", cellType);
                 
-                if (updateCount > 0) {
-                    let label = "文字";
-                    if (cellType === "Tag") label = "标签";
-                    else if (cellType === "Avatar") label = "头像";
-                    else if (cellType === "ActionText") label = "操作";
-                    else if (cellType === "Input") label = "输入";
-                    else if (cellType === "Select") label = "选择";
-                    else if (cellType === "Text") label = "文本";
-                    figma.notify(`已更新 ${updateCount} 个单元格为${label}类型`);
-                } else {
-                    figma.notify("未找到可更新的单元格");
-                }
-                postSelection();
-                return;
-            }
-        } catch (e) {
-            console.warn(`Failed to apply ${cellType} component`, e);
-            figma.notify(`应用${cellType}组件失败: ` + e);
-            return;
-        }
-     }
-
-     // Standard Cell Types (Text, Icon, etc.) handled by Instance Swapping
-     const criteria = getCellVariantCriteria(cellType as ColumnType);
-
-     for (const node of selection) {
-       // If column selected, iterate children
-       let nodesToUpdate: SceneNode[] = [];
-       if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
-                        nodesToUpdate = node.children.slice(await getHeaderOffset(node as FrameNode));
-                        
-                        // Ensure layout settings
-                        const isHug = (cellType === "ActionText" || cellType === "ActionIcon");
-                        node.layoutSizingHorizontal = isHug ? "HUG" : "FILL";
-                        if (!isHug) {
-                            node.counterAxisSizingMode = "FIXED";
-                        }
-                    } else if (node.type === "INSTANCE" || (node.type === "FRAME" && node.getPluginData("cellType"))) {
-                        nodesToUpdate = [node];
-                        // Also update parent column if needed
-                        const parentCol = findColumnFrame(node as SceneNode);
-                        if (parentCol) {
-                            const isHug = (cellType === "ActionText" || cellType === "ActionIcon");
-                            parentCol.layoutSizingHorizontal = isHug ? "HUG" : "FILL";
-                            if (!isHug) {
-                                parentCol.counterAxisSizingMode = "FIXED";
-                            }
-                        }
-                    }
-
-                    // Update cells width
-                    const isHug = (cellType === "ActionText" || cellType === "ActionIcon");
-                    for (const n of nodesToUpdate) {
-                        if ("layoutSizingHorizontal" in n) {
-                            (n as any).layoutSizingHorizontal = isHug ? "HUG" : "FILL";
-                            if (isHug && "layoutAlign" in n) {
-                                (n as any).layoutAlign = "INHERIT";
-                            }
-                        }
-                    }
-
-       // Prepare target component for swap if needed
-       // Default to CELL_COMPONENT_KEY for standard types
-       let targetComponentKey = CELL_COMPONENT_KEY;
-
-       let targetComponentSet: ComponentNode | ComponentSetNode | undefined;
-       
-       for (const nodeItem of nodesToUpdate) {
-           let n = nodeItem as SceneNode;
-
-           // Handle Custom Frame -> Instance conversion (for standard types)
-           const currentCellType = n.type === "FRAME" ? n.getPluginData("cellType") : "";
-           if (n.type === "FRAME" && ["Text", "Tag", "Avatar", "ActionText", "Input", "Select"].includes(currentCellType)) {
-               const originalText = extractTextFromNode(n);
-
-               try {
-                   const { component } = await resolveCellFactory(CELL_COMPONENT_KEY);
-                   if (component) {
-                       let inst: InstanceNode;
-                       if (component.type === "COMPONENT_SET") {
-                           const def = component.defaultVariant as ComponentNode;
-                           inst = (def ?? component.children[0]).createInstance();
-                       } else {
-                           inst = (component as ComponentNode).createInstance();
-                       }
-                       
-                       const t = inst.findOne(x => x.type === "TEXT") as TextNode;
-                       if (t) {
-                           await loadTextNodeFonts(t);
-                           t.characters = originalText || (currentCellType === "Avatar" ? getDefaultAvatarName(originalText) : "");
-                       }
-
-                       const parent = n.parent;
-                       if (parent) {
-                           const index = parent.children.indexOf(n);
-                           
-                           // Insert FIRST, then set sizing props to avoid "not child of auto-layout" error
-                           parent.insertChild(index, inst);
-                           
-                           inst.layoutSizingHorizontal = "FILL";
-                           inst.layoutSizingVertical = "FIXED";
-                           inst.resize(n.width, n.height);
-                           
-                           n.remove();
-                           n = inst;
-                       }
-                   }
-               } catch (e) {
-                   console.warn("Failed to convert Custom Frame to Instance", e);
-                   continue;
-               }
-           }
-
-           if (n.type === "INSTANCE") {
-             // 1. Extract text before swap
-             let originalText = "";
-             try {
-                 const textNodes = n.findAll(child => child.type === "TEXT") as TextNode[];
-                 if (textNodes.length > 0) {
-                     originalText = textNodes.map(t => t.characters).join(" ");
-                 }
-             } catch (e) {}
-
-             const main = await n.getMainComponentAsync();
-             const currentKey = main?.key;
-             const parentKey = (main?.parent as ComponentSetNode)?.key;
-             
-             // Check if current instance matches target component key
-             const isTargetComponent = currentKey === targetComponentKey || parentKey === targetComponentKey;
-             
-             if (!isTargetComponent) {
-                 // Load target component if not loaded
-                 if (!targetComponentSet) {
-                     try {
-                         const { component } = await resolveCellFactory(targetComponentKey);
-                         targetComponentSet = component;
-                     } catch (e) {
-                         console.warn("Failed to resolve target component", e);
-                     }
-                 }
-
-                 if (targetComponentSet) {
-                     try {
-                         if (targetComponentSet.type === "COMPONENT_SET") {
-                             const def = targetComponentSet.defaultVariant as ComponentNode;
-                             const target = def ?? targetComponentSet.children[0] as ComponentNode;
-                             if (target) n.swapComponent(target);
-                         } else {
-                             n.swapComponent(targetComponentSet as ComponentNode);
-                         }
-                     } catch (e) {
-                         console.warn("Swap to target component failed", e);
-                     }
-                 }
-             }
-
-             // Re-fetch main after potential swap
-             const newMain = await n.getMainComponentAsync();
-             if (newMain && newMain.parent && newMain.parent.type === "COMPONENT_SET") {
-                const componentSet = newMain.parent;
-                
-                // Use robust criteria creation
-                const criteria = createVariantCriteria(componentSet, cellType);
-                
-                const targetVariant = findVariant(componentSet, criteria);
-                if (targetVariant) {
-                   n.swapComponent(targetVariant);
-                   updateCount++;
-                }
-
-                // Sync to plugin data for selection readout and persistence
-                n.setPluginData("cellType", cellType);
-                if (originalText) {
-                    n.setPluginData("cellValue", originalText);
-                } else if (cellType === "Avatar") {
-                    n.setPluginData("cellValue", getDefaultAvatarName(extractTextFromNode(n)));
-                } else if (cellType === "ActionIcon" || cellType === "ActionText") {
-                    n.setPluginData("cellValue", "编辑 删除 …");
-                }
-
-                // Also update parent column if all cells in column are being updated
-                const parentCol = findColumnFrame(n);
-                if (parentCol) {
-                    parentCol.setPluginData("cellType", cellType);
-                    const val = n.getPluginData("cellValue");
-                    if (val) parentCol.setPluginData("cellValue", val);
-                }
-             }
-             
-             // 2. Restore text if converting to Text type
-             if (cellType === "Text" && originalText) {
-                 try {
-                      const newTextNodes = n.findAll(child => child.type === "TEXT") as TextNode[];
-                      if (newTextNodes.length > 0) {
-                          const t = newTextNodes[0];
-                          await loadTextNodeFonts(t);
-                          t.characters = originalText;
+                // Also update width of children cells
+                for (const child of node.children) {
+                  if (child.type === "FRAME" || child.type === "INSTANCE") {
+                    if (isHeaderNode(child)) {
+                      (child as any).layoutSizingHorizontal = "FILL";
+                      if ("layoutAlign" in child) {
+                        (child as any).layoutAlign = "STRETCH";
                       }
-                 } catch (e) {}
-             }
-           }
-       }
-     }
-     if (updateCount > 0) {
+                    } else {
+                      (child as any).layoutSizingHorizontal = isHug ? "HUG" : "FILL";
+                      if (isHug && "layoutAlign" in child) {
+                        (child as any).layoutAlign = "INHERIT";
+                      } else if (!isHug && "layoutAlign" in child) {
+                        (child as any).layoutAlign = "STRETCH";
+                      }
+                    }
+                  }
+                }
+                if (cellType === "ActionIcon" || cellType === "ActionText") {
+                  node.setPluginData("cellValue", "编辑 删除 …");
+                }
+              } else if (node.type === "INSTANCE" || (node.type === "FRAME" && node.getPluginData("cellType"))) {
+                nodesToUpdate = [node];
+                // If we are updating individual cells, we should also check if the parent column needs a layout update
+                const parentCol = findColumnFrame(node as SceneNode);
+                if (parentCol) {
+                  const isHug = (cellType === "ActionText" || cellType === "ActionIcon");
+                  parentCol.layoutSizingHorizontal = isHug ? "HUG" : "FILL";
+                  if (!isHug) {
+                    parentCol.counterAxisSizingMode = "FIXED";
+                  }
+                  parentCol.setPluginData("cellType", cellType);
+                }
+              }
+
+              for (const n of nodesToUpdate) {
+                const originalText = extractTextFromNode(n);
+                
+                let cellFrame: FrameNode;
+                let parent = n.parent;
+                let index = parent ? parent.children.indexOf(n) : -1;
+
+                if (n.type === "FRAME" && n.getPluginData("cellType") === cellType) {
+                  cellFrame = n as FrameNode;
+                  for (const child of cellFrame.children) {
+                    child.remove();
+                  }
+                } else {
+                  cellFrame = createCustomCellFrame(n.name, cellType);
+                  if (parent) {
+                    parent.insertChild(index, cellFrame);
+                    n.remove();
+                  }
+                }
+
+                applyCellCommonStyling(cellFrame);
+                cellFrame.layoutSizingHorizontal = "FILL"; 
+                
+                if (cellType === "Text") {
+                  const displayMode = cellFrame.getPluginData("textDisplayMode") || "ellipsis";
+                  if (displayMode === "lineBreak") {
+                    cellFrame.counterAxisSizingMode = "AUTO";
+                    cellFrame.layoutSizingVertical = "HUG";
+                  } else {
+                    cellFrame.counterAxisSizingMode = "FIXED";
+                    cellFrame.layoutSizingVertical = "FIXED";
+                    
+                    let targetHeight = tableSwitchesState.rowHeight;
+                    const table = findTableFrameFromNode(cellFrame);
+                    if (table) {
+                      const savedHeight = table.getPluginData("tableRowHeight");
+                      if (savedHeight) {
+                        targetHeight = parseInt(savedHeight, 10) || tableSwitchesState.rowHeight;
+                      }
+                    }
+                    cellFrame.resize(cellFrame.width, targetHeight);
+                  }
+                } else {
+                  cellFrame.layoutSizingVertical = "FIXED";
+                  
+                  let targetHeight = tableSwitchesState.rowHeight;
+                  const table = findTableFrameFromNode(cellFrame);
+                  if (table) {
+                    const savedHeight = table.getPluginData("tableRowHeight");
+                    if (savedHeight) {
+                      targetHeight = parseInt(savedHeight, 10) || tableSwitchesState.rowHeight;
+                    }
+                  }
+                  cellFrame.resize(cellFrame.width, targetHeight);
+                }
+                
+                cellFrame.layoutAlign = "STRETCH"; 
+                
+                // Force layout mode and sizing again after renderer to ensure it sticks
+                if (cellType === "ActionText" || cellType === "ActionIcon") {
+                  cellFrame.layoutMode = "HORIZONTAL";
+                  cellFrame.primaryAxisSizingMode = "FIXED"; 
+                  cellFrame.counterAxisSizingMode = "FIXED";
+                }
+                
+                let textToRender = originalText;
+                if (cellType === "ActionIcon" || cellType === "ActionText") {
+                  textToRender = "编辑 删除 …";
+                }
+                
+                // Sync metadata to cell frame
+                cellFrame.setPluginData("cellType", cellType);
+                if (textToRender) {
+                  cellFrame.setPluginData("cellValue", textToRender);
+                }
+
+                if (cellType === "Avatar") {
+                  context.overrideDisplayValue = getDefaultAvatarName(textToRender);
+                }
+
+                console.log("[set_cell_type] Calling customRenderer", { 
+                  cellType, 
+                  textToRender, 
+                  hasOverride: !!context.overrideDisplayValue,
+                  override: context.overrideDisplayValue 
+                });
+                await customRenderer(cellFrame, textToRender, context);
+                
+                // Also update parent column if all cells in column are being updated
+                const parentCol = findColumnFrame(cellFrame);
+                if (parentCol) {
+                  parentCol.setPluginData("cellType", cellType);
+                  if (textToRender) parentCol.setPluginData("cellValue", textToRender);
+                }
+                
+                updateCount++;
+              }
+            }
+            
+            if (updateCount > 0) {
+              let label = "文字";
+              if (cellType === "Tag") label = "标签";
+              else if (cellType === "Avatar") label = "头像";
+              else if (cellType === "ActionText") label = "操作";
+              else if (cellType === "Input") label = "输入";
+              else if (cellType === "Select") label = "选择";
+              else if (cellType === "Text") label = "文本";
+              figma.notify(`已更新 ${updateCount} 个单元格为${label}类型`);
+            } else {
+              figma.notify("未找到可更新的单元格");
+            }
+            postSelection();
+            return;
+          }
+        } catch (e) {
+          console.warn(`Failed to apply ${cellType} component`, e);
+          figma.notify(`应用${cellType}组件失败: ` + e);
+          return;
+        }
+      }
+
+      // Standard Cell Types (Text, Icon, etc.) handled by Instance Swapping
+      const criteria = getCellVariantCriteria(cellType as ColumnType);
+
+      for (const node of selection) {
+        // If column selected, iterate children
+        let nodesToUpdate: SceneNode[] = [];
+        if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
+          nodesToUpdate = node.children.slice(await getHeaderOffset(node as FrameNode));
+          
+          // Ensure layout settings
+          const isHug = (cellType === "ActionText" || cellType === "ActionIcon");
+          node.layoutSizingHorizontal = isHug ? "HUG" : "FILL";
+          if (!isHug) {
+            node.counterAxisSizingMode = "FIXED";
+          }
+        } else if (node.type === "INSTANCE" || (node.type === "FRAME" && node.getPluginData("cellType"))) {
+          nodesToUpdate = [node];
+          // Also update parent column if needed
+          const parentCol = findColumnFrame(node as SceneNode);
+          if (parentCol) {
+            const isHug = (cellType === "ActionText" || cellType === "ActionIcon");
+            parentCol.layoutSizingHorizontal = isHug ? "HUG" : "FILL";
+            if (!isHug) {
+              parentCol.counterAxisSizingMode = "FIXED";
+            }
+          }
+        }
+
+        // Update cells width
+        const isHug = (cellType === "ActionText" || cellType === "ActionIcon");
+        for (const n of nodesToUpdate) {
+          if ("layoutSizingHorizontal" in n) {
+            (n as any).layoutSizingHorizontal = isHug ? "HUG" : "FILL";
+            if (isHug && "layoutAlign" in n) {
+              (n as any).layoutAlign = "INHERIT";
+            }
+          }
+        }
+
+        // Prepare target component for swap if needed
+        // Default to CELL_COMPONENT_KEY for standard types
+        let targetComponentKey = CELL_COMPONENT_KEY;
+
+        let targetComponentSet: ComponentNode | ComponentSetNode | undefined;
+        
+        for (const nodeItem of nodesToUpdate) {
+          let n = nodeItem as SceneNode;
+
+          // Handle Custom Frame -> Instance conversion (for standard types)
+          const currentCellType = n.type === "FRAME" ? n.getPluginData("cellType") : "";
+          if (n.type === "FRAME" && ["Text", "Tag", "Avatar", "ActionText", "Input", "Select"].includes(currentCellType)) {
+            const originalText = extractTextFromNode(n);
+
+            try {
+              const { component } = await resolveCellFactory(CELL_COMPONENT_KEY);
+              if (component) {
+                let inst: InstanceNode;
+                if (component.type === "COMPONENT_SET") {
+                  const def = component.defaultVariant as ComponentNode;
+                  inst = (def ?? component.children[0]).createInstance();
+                } else {
+                  inst = (component as ComponentNode).createInstance();
+                }
+                
+                const t = inst.findOne(x => x.type === "TEXT") as TextNode;
+                if (t) {
+                  await loadTextNodeFonts(t);
+                  t.characters = originalText || (currentCellType === "Avatar" ? getDefaultAvatarName(originalText) : "");
+                }
+
+                const parent = n.parent;
+                if (parent) {
+                  const index = parent.children.indexOf(n);
+                  
+                  // Insert FIRST, then set sizing props to avoid "not child of auto-layout" error
+                  parent.insertChild(index, inst);
+                  
+                  inst.layoutSizingHorizontal = "FILL";
+                  inst.layoutSizingVertical = "FIXED";
+                  inst.resize(n.width, n.height);
+                  
+                  n.remove();
+                  n = inst;
+                }
+              }
+            } catch (e) {
+              console.warn("Failed to convert Custom Frame to Instance", e);
+              continue;
+            }
+          }
+
+          if (n.type === "INSTANCE") {
+            // 1. Extract text before swap
+            let originalText = "";
+            try {
+              const textNodes = n.findAll(child => child.type === "TEXT") as TextNode[];
+              if (textNodes.length > 0) {
+                originalText = textNodes.map(t => t.characters).join(" ");
+              }
+            } catch (e) {}
+
+            const main = await n.getMainComponentAsync();
+            const currentKey = main?.key;
+            const parentKey = (main?.parent as ComponentSetNode)?.key;
+            
+            // Check if current instance matches target component key
+            const isTargetComponent = currentKey === targetComponentKey || parentKey === targetComponentKey;
+            
+            if (!isTargetComponent) {
+              // Load target component if not loaded
+              if (!targetComponentSet) {
+                try {
+                  const { component } = await resolveCellFactory(targetComponentKey);
+                  targetComponentSet = component;
+                } catch (e) {
+                  console.warn("Failed to resolve target component", e);
+                }
+              }
+
+              if (targetComponentSet) {
+                try {
+                  if (targetComponentSet.type === "COMPONENT_SET") {
+                    const def = targetComponentSet.defaultVariant as ComponentNode;
+                    const target = def ?? targetComponentSet.children[0] as ComponentNode;
+                    if (target) n.swapComponent(target);
+                  } else {
+                    n.swapComponent(targetComponentSet as ComponentNode);
+                  }
+                } catch (e) {
+                  console.warn("Swap to target component failed", e);
+                }
+              }
+            }
+
+            // Re-fetch main after potential swap
+            const newMain = await n.getMainComponentAsync();
+            if (newMain && newMain.parent && newMain.parent.type === "COMPONENT_SET") {
+              const componentSet = newMain.parent;
+              
+              // Use robust criteria creation
+              const criteria = createVariantCriteria(componentSet, cellType);
+              
+              const targetVariant = findVariant(componentSet, criteria);
+              if (targetVariant) {
+                n.swapComponent(targetVariant);
+                updateCount++;
+              }
+
+              // Sync to plugin data for selection readout and persistence
+              n.setPluginData("cellType", cellType);
+              if (originalText) {
+                n.setPluginData("cellValue", originalText);
+              } else if (cellType === "Avatar") {
+                n.setPluginData("cellValue", getDefaultAvatarName(extractTextFromNode(n)));
+              } else if (cellType === "ActionIcon" || cellType === "ActionText") {
+                n.setPluginData("cellValue", "编辑 删除 …");
+              }
+
+              // Also update parent column if all cells in column are being updated
+              const parentCol = findColumnFrame(n);
+              if (parentCol) {
+                parentCol.setPluginData("cellType", cellType);
+                const val = n.getPluginData("cellValue");
+                if (val) parentCol.setPluginData("cellValue", val);
+              }
+            }
+            
+            // 2. Restore text if converting to Text type
+            if (cellType === "Text" && originalText) {
+              try {
+                const newTextNodes = n.findAll(child => child.type === "TEXT") as TextNode[];
+                if (newTextNodes.length > 0) {
+                  const t = newTextNodes[0];
+                  await loadTextNodeFonts(t);
+                  t.characters = originalText;
+                }
+              } catch (e) {}
+            }
+          }
+        }
+      }
+      if (updateCount > 0) {
         figma.notify(`已更新 ${updateCount} 个单元格类型`);
-     } else {
+      } else {
         figma.notify("未找到可更新的单元格");
-     }
+      }
+    } finally {
+      setProcessing(false);
+    }
   }
 
   if (message.type === "set_text_display_mode") {
-    const selection = figma.currentPage.selection;
-    if (selection.length === 0) {
-      figma.notify("请先选中单元格");
-      return;
-    }
-    let updateCount = 0;
-    for (const node of selection) {
-      const updateNode = async (n: SceneNode) => {
-        if (n.type === "FRAME" && n.getPluginData("cellType") === "Text") {
-          n.setPluginData("textDisplayMode", message.mode);
-          const cellValue = n.getPluginData("cellValue") || extractTextFromNode(n);
-          await renderTextCell(n as FrameNode, cellValue, {});
-          updateCount++;
-        }
-      };
-
-      if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
-        const children = node.children.slice(await getHeaderOffset(node as FrameNode));
-        for (const child of children) {
-          await updateNode(child as SceneNode);
-        }
-      } else {
-        await updateNode(node as SceneNode);
+    setProcessing(true);
+    try {
+      const selection = figma.currentPage.selection;
+      if (selection.length === 0) {
+        figma.notify("请先选中单元格");
+        return;
       }
-    }
-    if (updateCount > 0) {
-      figma.notify(`已更新 ${updateCount} 个单元格显示模式`);
-      postSelection();
-    } else {
-      figma.notify("未选中文字类型单元格");
+      let updateCount = 0;
+      for (const node of selection) {
+        const updateNode = async (n: SceneNode) => {
+          if (n.type === "FRAME" && n.getPluginData("cellType") === "Text") {
+            n.setPluginData("textDisplayMode", message.mode);
+            const cellValue = n.getPluginData("cellValue") || extractTextFromNode(n);
+            await renderTextCell(n as FrameNode, cellValue, {});
+            updateCount++;
+          }
+        };
+
+        if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
+          const children = node.children.slice(await getHeaderOffset(node as FrameNode));
+          for (const child of children) {
+            await updateNode(child as SceneNode);
+          }
+        } else {
+          await updateNode(node as SceneNode);
+        }
+      }
+      if (updateCount > 0) {
+        figma.notify(`已更新 ${updateCount} 个单元格显示模式`);
+        postSelection();
+      } else {
+        figma.notify("未选中文字类型单元格");
+      }
+    } finally {
+      setProcessing(false);
     }
   }
 
   if (message.type === "apply_to_column") {
-    if (figma.currentPage.selection.length !== 1) {
-      figma.notify("请选中一个作为模板的单元格");
-      return;
-    }
-    const sourceCell = figma.currentPage.selection[0];
-    
-    // Support both Instances and our custom Frame-based cells
-    const cellTypeData = sourceCell.getPluginData("cellType");
-    const cellType = cellTypeData as ColumnType;
-    const isCustomCell = sourceCell.type === "FRAME" && cellTypeData !== "";
-    if (sourceCell.type !== "INSTANCE" && !isCustomCell) {
-      figma.notify("选中的不是有效的单元格");
-      return;
-    }
-
-    const columnFrame = findColumnFrame(sourceCell);
-    if (!columnFrame) {
-      figma.notify("未找到列容器");
-      return;
-    }
-
-    const table = findTableFrameFromNode(columnFrame);
-    if (!table) {
-      figma.notify("未找到表格容器");
-      return;
-    }
-
-    const cols = getColumnFrames(table);
-    const colIndex = cols.indexOf(columnFrame);
-    if (colIndex === -1) {
-      figma.notify("未找到列索引");
-      return;
-    }
-
-    // If it's a custom cell type, we prefer using applyColumnTypeToColumn 
-    // to ensure data preservation (it extracts text and renders new UI)
-    if (isCustomCell && cellType) {
-      await applyColumnTypeToColumn(table, colIndex, cellType);
-      figma.notify(`已将 ${cellType} 类型应用到整列`);
-    } else {
-      // For standard instances, we still use the clone strategy
-      const children = columnFrame.children;
-      const header = children.length > 0 ? children[0] : null;
-      let updateCount = 0;
-
-      for (let i = 0; i < children.length; i++) {
-        const target = children[i];
-        if (target === header || target === sourceCell) continue;
-
-        if (target.type === "INSTANCE" || target.type === "FRAME") {
-          try {
-            const newCell = sourceCell.clone();
-            columnFrame.insertChild(i, newCell);
-            target.remove();
-            if ("layoutSizingHorizontal" in newCell) {
-              (newCell as any).layoutSizingHorizontal = "FILL";
-            }
-            updateCount++;
-          } catch (e) {
-            console.error("Failed to clone/replace cell", e);
-          }
-        }
+    setProcessing(true);
+    try {
+      if (figma.currentPage.selection.length !== 1) {
+        figma.notify("请选中一个作为模板的单元格");
+        return;
       }
-      figma.notify(`已将样式应用到 ${updateCount} 个单元格`);
+      const sourceCell = figma.currentPage.selection[0];
+      
+      // Support both Instances and our custom Frame-based cells
+      const cellTypeData = sourceCell.getPluginData("cellType");
+      const cellType = cellTypeData as ColumnType;
+      const isCustomCell = sourceCell.type === "FRAME" && cellTypeData !== "";
+      if (sourceCell.type !== "INSTANCE" && !isCustomCell) {
+        figma.notify("选中的不是有效的单元格");
+        return;
+      }
+
+      const columnFrame = findColumnFrame(sourceCell);
+      if (!columnFrame) {
+        figma.notify("未找到列容器");
+        return;
+      }
+
+      const table = findTableFrameFromNode(columnFrame);
+      if (!table) {
+        figma.notify("未找到表格容器");
+        return;
+      }
+
+      const container = table.parent as FrameNode;
+      const originalLocked = container?.locked ?? false;
+      if (container) container.locked = true;
+
+      try {
+        const cols = getColumnFrames(table);
+        const colIndex = cols.indexOf(columnFrame);
+        if (colIndex === -1) {
+          figma.notify("未找到列索引");
+          return;
+        }
+
+        // If it's a custom cell type, we prefer using applyColumnTypeToColumn 
+        // to ensure data preservation (it extracts text and renders new UI)
+        if (isCustomCell && cellType) {
+          await applyColumnTypeToColumn(table, colIndex, cellType);
+          figma.notify(`已将 ${cellType} 类型应用到整列`);
+        } else {
+          // For standard instances, we still use the clone strategy
+          const children = columnFrame.children;
+          const header = children.length > 0 ? children[0] : null;
+          let updateCount = 0;
+
+          for (let i = 0; i < children.length; i++) {
+            const target = children[i];
+            if (target === header || target === sourceCell) continue;
+
+            if (target.type === "INSTANCE" || target.type === "FRAME") {
+              try {
+                const newCell = sourceCell.clone();
+                columnFrame.insertChild(i, newCell);
+                target.remove();
+                if ("layoutSizingHorizontal" in newCell) {
+                  (newCell as any).layoutSizingHorizontal = "FILL";
+                }
+                updateCount++;
+              } catch (e) {
+                console.error("Failed to clone/replace cell", e);
+              }
+            }
+          }
+          figma.notify(`已将样式应用到 ${updateCount} 个单元格`);
+        }
+      } finally {
+        if (container) container.locked = originalLocked;
+      }
+    } finally {
+      setProcessing(false);
     }
   }
 
   if (message.type === "add_column") {
-    const selection = figma.currentPage.selection;
-    let table: FrameNode | null = null;
-    if (selection.length > 0) {
-      table = findTableFrameFromNode(selection[0] as any);
-    }
-    
-    if (!table) {
-      figma.notify("请先选中表格或表格内的元素");
-      return;
-    }
-
+    setProcessing(true);
     try {
-      await applyOperationToTable(table, {
-        op: "add_cols",
-        count: 1,
-        position: "end"
-      });
-      figma.notify("已在最右侧添加一列");
-    } catch (e: any) {
-      figma.notify("添加列失败: " + e.message);
+      const selection = figma.currentPage.selection;
+      let table: FrameNode | null = null;
+      if (selection.length > 0) {
+        table = findTableFrameFromNode(selection[0] as any);
+      }
+      
+      if (!table) {
+        figma.notify("请先选中表格或表格内的元素");
+        return;
+      }
+
+      const container = table.parent as FrameNode;
+      const originalLocked = container?.locked ?? false;
+      if (container) container.locked = true;
+
+      try {
+        await applyOperationToTable(table, {
+          op: "add_cols",
+          count: 1,
+          position: "end"
+        });
+        figma.notify("已在最右侧添加一列");
+      } catch (e: any) {
+        figma.notify("添加列失败: " + e.message);
+      } finally {
+        if (container) container.locked = originalLocked;
+      }
+    } finally {
+      setProcessing(false);
     }
     return;
   }
 
   if (message.type === "get_component_props") {
-    // Priority: 1. Key from message (if we add it to message) 2. Selection
-    // The UI currently sends { type: "get_component_props" } but we can change UI or just check selection.
-    // However, the user wants to read a specific component by key because they can't select it (maybe).
-    // Let's check if the user entered a key in the UI input, but the message structure needs to support it?
-    // Actually, let's just use the logic: if selection is empty, check if we can inspect by key provided in a new field? 
-    // Wait, the UI has `componentKeyInput`. We should update UI to send it.
-    
-    // For now, let's fix the "Reading..." stuck issue and support key.
-    
-    let targetNode: ComponentNode | ComponentSetNode | InstanceNode | null = null;
-    
-    // Try to use the key from the message if provided (we need to update interface)
-    // Or just rely on selection for now, but fix the stuck issue.
-    
-    if (figma.currentPage.selection.length === 1) {
-        const node = figma.currentPage.selection[0];
-        if (node.type === "INSTANCE" || node.type === "COMPONENT" || node.type === "COMPONENT_SET") {
-            targetNode = node;
+    setProcessing(true);
+    try {
+      // Priority: 1. Key from message (if we add it to message) 2. Selection
+      // The UI currently sends { type: "get_component_props" } but we can change UI or just check selection.
+      // However, the user wants to read a specific component by key because they can't select it (maybe).
+      // Let's check if the user entered a key in the UI input, but the message structure needs to support it?
+      // Actually, let's just use the logic: if selection is empty, check if we can inspect by key provided in a new field? 
+      // Wait, the UI has `componentKeyInput`. We should update UI to send it.
+      
+      // For now, let's fix the "Reading..." stuck issue and support key.
+      
+      let targetNode: ComponentNode | ComponentSetNode | InstanceNode | null = null;
+      
+      // Try to use the key from the message if provided (we need to update interface)
+      // Or just rely on selection for now, but fix the stuck issue.
+      
+      if (figma.currentPage.selection.length === 1) {
+          const node = figma.currentPage.selection[0];
+          if (node.type === "INSTANCE" || node.type === "COMPONENT" || node.type === "COMPONENT_SET") {
+              targetNode = node;
+          }
+      }
+      
+      if (!targetNode) {
+        // Try to load by key if provided in message (need to update UI to send it)
+        // Let's assume we will update UI to send `key`
+        if ((message as any).key) {
+            try {
+                targetNode = await loadComponent((message as any).key);
+            } catch (e) {
+                figma.notify("无法加载该 Key 的组件: " + e);
+                postError("无法加载该 Key 的组件");
+                return;
+            }
         }
-    }
-    
-    if (!targetNode) {
-       // Try to load by key if provided in message (need to update UI to send it)
-       // Let's assume we will update UI to send `key`
-       if ((message as any).key) {
-           try {
-               targetNode = await loadComponent((message as any).key);
-           } catch (e) {
-               figma.notify("无法加载该 Key 的组件: " + e);
-               postError("无法加载该 Key 的组件");
-               return;
-           }
-       }
-    }
+      }
 
-    if (!targetNode) {
-      figma.notify("请选中一个组件/实例，或在输入框填写 Key");
-      postError("未选中组件或 Key 无效");
-      return;
-    }
+      if (!targetNode) {
+        figma.notify("请选中一个组件/实例，或在输入框填写 Key");
+        postError("未选中组件或 Key 无效");
+        return;
+      }
 
-    let props: any[] = [];
-    if (targetNode.type === "INSTANCE") {
-      props = Object.entries(targetNode.componentProperties).map(([key, val]) => ({
-        name: key,
-        type: val.type,
-        defaultValue: val.value
-      }));
-    } else if (targetNode.type === "COMPONENT" || targetNode.type === "COMPONENT_SET") {
-       // If it's a Component Set, we might want to list variants?
-       // componentPropertyDefinitions gives the properties of the set.
-       const definitions = targetNode.componentPropertyDefinitions;
-       props = Object.entries(definitions).map(([key, def]) => ({
-         name: key,
-         type: def.type,
-         defaultValue: def.defaultValue,
-         variantOptions: def.variantOptions
-       }));
-    }
+      let props: any[] = [];
+      if (targetNode.type === "INSTANCE") {
+        props = Object.entries(targetNode.componentProperties).map(([key, val]) => ({
+          name: key,
+          type: val.type,
+          defaultValue: val.value
+        }));
+      } else if (targetNode.type === "COMPONENT" || targetNode.type === "COMPONENT_SET") {
+        // If it's a Component Set, we might want to list variants?
+        // componentPropertyDefinitions gives the properties of the set.
+        const definitions = targetNode.componentPropertyDefinitions;
+        props = Object.entries(definitions).map(([key, def]) => ({
+          name: key,
+          type: def.type,
+          defaultValue: def.defaultValue,
+          variantOptions: def.variantOptions
+        }));
+      }
 
-    figma.ui.postMessage({ type: "component_props", props });
-    figma.notify("已读取属性");
+      figma.ui.postMessage({ type: "component_props", props });
+      figma.notify("已读取属性");
+    } finally {
+      setProcessing(false);
+    }
   }
 
   if (message.type === "set_table_size") {
-    const selection = figma.currentPage.selection;
-    if (selection.length === 0) return;
-    const table = findTableFrameFromNode(selection[0] as any);
-    if (!table) return;
+    setProcessing(true);
+    try {
+      const selection = figma.currentPage.selection;
+      if (selection.length === 0) return;
+      const table = findTableFrameFromNode(selection[0] as any);
+      if (!table) return;
 
-    const sizeMap = {
-      mini: 32,
-      default: 40,
-      medium: 48,
-      large: 56
-    };
-    const h = sizeMap[message.size];
-    
-    // Update global state for future creations
-    tableSwitchesState.rowHeight = h;
-    
-    // Save current row height to table plugin data
-    table.setPluginData("tableRowHeight", h.toString());
-    
-    const cols = getColumnFrames(table);
-    for (const col of cols) {
-       // Header and body cells should all follow row height
-       for (let i = 0; i < col.children.length; i++) {
-          const cell = col.children[i] as FrameNode;
-          
-          // Skip cells that are in "lineBreak" mode
-          if (cell.type === "FRAME" && cell.getPluginData("cellType") === "Text") {
-             const displayMode = cell.getPluginData("textDisplayMode") || "ellipsis";
-             if (displayMode === "lineBreak") {
-                // Keep it auto-height
-                cell.counterAxisSizingMode = "AUTO";
-                cell.layoutSizingVertical = "HUG";
-                continue;
-             }
-          }
+      const container = table.parent as FrameNode;
+      const originalLocked = container?.locked ?? false;
+      if (container) container.locked = true;
 
-          if ("layoutSizingVertical" in cell) {
-             cell.layoutSizingVertical = "FIXED";
-             cell.resize(cell.width, h);
-          }
-       }
+      try {
+        const sizeMap = {
+          mini: 32,
+          default: 40,
+          medium: 48,
+          large: 56
+        };
+        const h = sizeMap[message.size];
+        
+        // Update global state for future creations
+        tableSwitchesState.rowHeight = h;
+        
+        // Save current row height to table plugin data
+        table.setPluginData("tableRowHeight", h.toString());
+        
+        const cols = getColumnFrames(table);
+        for (const col of cols) {
+           // Header and body cells should all follow row height
+           for (let i = 0; i < col.children.length; i++) {
+              const cell = col.children[i] as FrameNode;
+              
+              // Skip cells that are in "lineBreak" mode
+              if (cell.type === "FRAME" && cell.getPluginData("cellType") === "Text") {
+                 const displayMode = cell.getPluginData("textDisplayMode") || "ellipsis";
+                 if (displayMode === "lineBreak") {
+                    // Keep it auto-height
+                    cell.counterAxisSizingMode = "AUTO";
+                    cell.layoutSizingVertical = "HUG";
+                    continue;
+                 }
+              }
+
+              if ("layoutSizingVertical" in cell) {
+                 cell.layoutSizingVertical = "FIXED";
+                 cell.resize(cell.width, h);
+              }
+           }
+        }
+        postSelection();
+      } finally {
+        if (container) container.locked = originalLocked;
+      }
+    } finally {
+      setProcessing(false);
     }
-    postSelection();
   }
 
   if (message.type === "set_row_action") {
-     const selection = figma.currentPage.selection;
-     if (selection.length === 0) return;
-     const table = findTableFrameFromNode(selection[0] as any);
-     if (!table) return;
-     
-     // Store it on the table frame
-     table.setPluginData("rowActionType", message.action);
+     setProcessing(true);
+     try {
+       const selection = figma.currentPage.selection;
+       if (selection.length === 0) return;
+       const table = findTableFrameFromNode(selection[0] as any);
+       if (!table) return;
+       
+       const container = table.parent as FrameNode;
+       const originalLocked = container?.locked ?? false;
+       if (container) container.locked = true;
 
-     // 强制触发一次 UI 状态更新，确保选中态同步
-     postSelection();
+       try {
+         // Store it on the table frame
+         table.setPluginData("rowActionType", message.action);
 
-     const cols = getColumnFrames(table);
-     if (cols.length === 0) return;
+         // 强制触发一次 UI 状态更新，确保选中态同步
+         postSelection();
 
-     // Identify if the first column is a row action column using plugin data
-     const firstCol = cols[0];
-     const isActionCol = firstCol.getPluginData("isRowActionColumn") === "true";
+         const cols = getColumnFrames(table);
+         if (cols.length === 0) return;
 
-     if (message.action === "none") {
-         if (isActionCol) {
-             firstCol.remove();
-             figma.notify("已移除操作列");
+         // Identify if the first column is a row action column using plugin data
+         const firstCol = cols[0];
+         const isActionCol = firstCol.getPluginData("isRowActionColumn") === "true";
+
+         if (message.action === "none") {
+             if (isActionCol) {
+                 firstCol.remove();
+                 figma.notify("已移除操作列");
+             }
+             return;
          }
-         return;
-     }
 
-     // Map message.action to the type expected by createRowActionColumn
-     let type: "Checkbox" | "Radio" | "Drag" | "Expand" | "Switch" = "Checkbox";
-     if (message.action === "multiple") type = "Checkbox";
-     else if (message.action === "single") type = "Radio";
-     else if (message.action === "drag") type = "Drag";
-     else if (message.action === "expand") type = "Expand";
-     else if (message.action === "switch") type = "Switch";
+         // Map message.action to the type expected by createRowActionColumn
+         let type: "Checkbox" | "Radio" | "Drag" | "Expand" | "Switch" = "Checkbox";
+         if (message.action === "multiple") type = "Checkbox";
+         else if (message.action === "single") type = "Radio";
+         else if (message.action === "drag") type = "Drag";
+         else if (message.action === "expand") type = "Expand";
+         else if (message.action === "switch") type = "Switch";
 
-     // If it's already an action column and the type is the same, do nothing
-     if (isActionCol && firstCol.getPluginData("rowActionType") === type) {
-         return;
-     }
+         // If it's already an action column and the type is the same, do nothing
+         if (isActionCol && firstCol.getPluginData("rowActionType") === type) {
+             return;
+         }
 
-    // If it's an action column but different type, or not an action column at all
-    if (isActionCol) {
-        // Record position to replace it exactly
-        const index = table.children.indexOf(firstCol);
-        firstCol.remove();
-        
-        // Calculate rows (excluding header)
-        // We look at other columns to determine row count
-        const otherCol = getColumnFrames(table)[0];
-        if (otherCol) {
-            const offset = await getHeaderOffset(otherCol);
-            const rowCount = otherCol.children.length - offset;
+        // If it's an action column but different type, or not an action column at all
+        if (isActionCol) {
+            // Record position to replace it exactly
+            const index = table.children.indexOf(firstCol);
+            firstCol.remove();
+            
+            // Calculate rows (excluding header)
+            // We look at other columns to determine row count
+            const otherCol = getColumnFrames(table)[0];
+            if (otherCol) {
+                const offset = await getHeaderOffset(otherCol);
+                const rowCount = otherCol.children.length - offset;
 
-            // Create the new row action column at the same position
-            const newCol = await createRowActionColumn(table, rowCount, type);
-            table.insertChild(index, newCol);
+                // Create the new row action column at the same position
+                const newCol = await createRowActionColumn(table, rowCount, type);
+                table.insertChild(index, newCol);
+            }
+        } else {
+            // Original logic for adding a new action column at the beginning
+            const otherCol = getColumnFrames(table)[0];
+            if (otherCol) {
+                const offset = await getHeaderOffset(otherCol);
+                const rowCount = otherCol.children.length - offset;
+                await createRowActionColumn(table, rowCount, type);
+            }
         }
-    } else {
-        // Original logic for adding a new action column at the beginning
-        const otherCol = getColumnFrames(table)[0];
-        if (otherCol) {
-            const offset = await getHeaderOffset(otherCol);
-            const rowCount = otherCol.children.length - offset;
-            await createRowActionColumn(table, rowCount, type);
-        }
+
+        figma.notify(`已设置操作列为 ${type}`);
+        postSelection();
+      } finally {
+        if (container) container.locked = originalLocked;
+      }
+    } finally {
+      setProcessing(false);
     }
-
-    figma.notify(`已设置操作列为 ${type}`);
-    postSelection();
   }
 
   if (message.type === "set_table_switch") {
-     // Update global state for future creations
-     if (message.key in tableSwitchesState) {
-       (tableSwitchesState as any)[message.key] = message.enabled;
-     }
+     setProcessing(true);
+     try {
+       // Update global state for future creations
+       if (message.key in tableSwitchesState) {
+         (tableSwitchesState as any)[message.key] = message.enabled;
+       }
 
-     const selection = figma.currentPage.selection;
-     if (selection.length === 0) return;
-     const table = findTableFrameFromNode(selection[0] as any);
-     if (!table) return;
+       const selection = figma.currentPage.selection;
+       if (selection.length === 0) return;
+       const table = findTableFrameFromNode(selection[0] as any);
+       if (!table) return;
 
-     // 保存到 Plugin Data
-     const mapping: Record<string, string> = {
-         "tabs": "hasTabs",
-         "filter": "hasFilter",
-         "actions": "hasActions",
-         "pagination": "hasPagination"
-     };
-     const standardKey = mapping[message.key] || `switch_${message.key}`;
-     table.setPluginData(standardKey, message.enabled ? "true" : "false");
-     
-     const container = table.parent;
-     if (!container || container.type !== "FRAME") return;
+       const container = table.parent as FrameNode;
+       const originalLocked = container?.locked ?? false;
+       if (container) container.locked = true;
 
-     if (message.key === "pagination") {
-         let pager: SceneNode | undefined;
-         for (const c of container.children) {
-             if (c.name.includes("Pagination")) {
-                 pager = c;
-                 break;
-             }
-             if (c.type === "INSTANCE") {
-                 const main = await (c as InstanceNode).getMainComponentAsync();
-                 if (main?.key === PAGINATION_COMPONENT_KEY || (main?.parent?.type === "COMPONENT_SET" && (main.parent as ComponentSetNode).key === PAGINATION_COMPONENT_KEY)) {
+       try {
+         // 保存到 Plugin Data
+         const mapping: Record<string, string> = {
+             "tabs": "hasTabs",
+             "filter": "hasFilter",
+             "actions": "hasActions",
+             "pagination": "hasPagination"
+         };
+         const standardKey = mapping[message.key] || `switch_${message.key}`;
+         table.setPluginData(standardKey, message.enabled ? "true" : "false");
+         
+         if (!container || container.type !== "FRAME") return;
+
+         if (message.key === "pagination") {
+             let pager: SceneNode | undefined;
+             for (const c of container.children) {
+                 if (c.name.includes("Pagination")) {
                      pager = c;
                      break;
                  }
-             }
-         }
-         
-         if (!pager && message.enabled) {
-                try {
-                    const comp = await loadComponent(PAGINATION_COMPONENT_KEY, "Pagination");
-                    let inst: SceneNode | null = null;
-                    if (comp.type === "COMPONENT_SET") {
-                     const defaultVar = comp.defaultVariant as ComponentNode | undefined;
-                     const target = defaultVar ?? (comp.children.find((c) => c.type === "COMPONENT") as ComponentNode | undefined);
-                     if (target) inst = target.createInstance();
-                 } else {
-                     inst = (comp as ComponentNode).createInstance();
-                 }
-                 if (inst) {
-                     inst.name = "Pagination";
-                     container.appendChild(inst);
-                     if ("layoutSizingHorizontal" in inst) {
-                         (inst as any).layoutSizingHorizontal = "FILL";
+                 if (c.type === "INSTANCE") {
+                     const main = await (c as InstanceNode).getMainComponentAsync();
+                     if (main?.key === PAGINATION_COMPONENT_KEY || (main?.parent?.type === "COMPONENT_SET" && (main.parent as ComponentSetNode).key === PAGINATION_COMPONENT_KEY)) {
+                         pager = c;
+                         break;
                      }
-                     pager = inst;
                  }
-             } catch (e) {
-                 console.warn("Failed to load Pagination", e);
              }
-         }
-         
-         if (pager) {
-             pager.visible = message.enabled;
-         }
-     } else {
-         let topBar = container.children.find(c => c.name === "Top Bar Container") as FrameNode | undefined;
-         if (!topBar && message.enabled) {
-             // Create Top Bar if missing
-             topBar = figma.createFrame();
-             topBar.name = "Top Bar Container";
-             topBar.layoutMode = "HORIZONTAL";
-             topBar.counterAxisSizingMode = "AUTO";
-             topBar.primaryAxisSizingMode = "FIXED";
-             topBar.itemSpacing = 20;
-             topBar.paddingBottom = 20;
-             topBar.fills = [];
-             topBar.clipsContent = false;
-             container.insertChild(0, topBar); // Insert at top
-             topBar.layoutSizingHorizontal = "FILL";
-         }
-
-         if (topBar && topBar.type === "FRAME") {
-             const nameMap: Record<string, string> = {
-                 filter: "Filter",
-                 actions: "Actions",
-                 tabs: "Tabs",
-                 pagination: "" 
-             };
-             const keyMap: Record<string, string> = {
-                 filter: FILTER_COMPONENT_KEY,
-                 actions: BUTTON_GROUP_COMPONENT_KEY,
-                 tabs: TABS_COMPONENT_KEY
-             };
-             const layoutMap: Record<string, "FILL" | "HUG"> = {
-                 filter: "FILL",
-                 actions: "HUG",
-                 tabs: "HUG"
-             };
-
-             const targetName = nameMap[message.key];
-             const targetKey = keyMap[message.key];
              
-             if (targetName && targetKey) {
-                 let target = topBar.children.find(c => c.name === targetName);
-                 
-                 if (!target && message.enabled) {
+             if (!pager && message.enabled) {
                     try {
-                        const comp = await loadComponent(targetKey, targetName);
+                        const comp = await loadComponent(PAGINATION_COMPONENT_KEY, "Pagination");
                         let inst: SceneNode | null = null;
                         if (comp.type === "COMPONENT_SET") {
-                             const defaultVar = comp.defaultVariant as ComponentNode | undefined;
-                             const targetNode = defaultVar ?? (comp.children.find((c) => c.type === "COMPONENT") as ComponentNode | undefined);
-                             if (targetNode) inst = targetNode.createInstance();
-                         } else {
-                             inst = (comp as ComponentNode).createInstance();
-                         }
-                         
-                         if (inst) {
-                             inst.name = targetName;
-                             // Top Bar order: Tabs, Filter, Actions.
-                             const order = ["Tabs", "Filter", "Actions"];
-                             const idx = order.indexOf(targetName);
-                             
-                             let insertIndex = topBar.children.length;
-                             for(let i=0; i<topBar.children.length; i++) {
-                                 const cName = topBar.children[i].name;
-                                 const cIdx = order.indexOf(cName);
-                                 if (cIdx > idx) {
-                                     insertIndex = i;
-                                     break;
-                                 }
-                             }
-                             topBar.insertChild(insertIndex, inst);
-
-                             if ("layoutSizingHorizontal" in inst) {
-                                 (inst as any).layoutSizingHorizontal = layoutMap[message.key] === "FILL" ? "FILL" : "HUG";
-                             }
-                             target = inst;
-                         }
-                     } catch (e) {
-                         console.warn(`Failed to load ${targetName}`, e);
-                     }
-                 }
-
-                 if (target) {
-                     if (message.key === "filter" && target.type === "INSTANCE") {
-                         // Filter logic: Switch OFF -> Quantity="0", Switch ON -> Quantity="3"
-                         target.visible = true;
-                         const props = target.componentProperties;
-                         const key = Object.keys(props).find(k => k.includes("数量"));
-                         if (key) {
-                             const val = message.enabled ? "3" : "0";
-                             try {
-                                 target.setProperties({ [key]: val });
-                             } catch (e) {}
-                         } else {
-                             // Fallback
-                             target.visible = message.enabled;
-                         }
+                         const defaultVar = comp.defaultVariant as ComponentNode | undefined;
+                         const target = defaultVar ?? (comp.children.find((c) => c.type === "COMPONENT") as ComponentNode | undefined);
+                         if (target) inst = target.createInstance();
                      } else {
-                         target.visible = message.enabled;
+                         inst = (comp as ComponentNode).createInstance();
                      }
+                     if (inst) {
+                         inst.name = "Pagination";
+                         // Ensure paginator is always at the bottom
+                         container.insertChild(container.children.length, inst);
+                         if ("layoutSizingHorizontal" in inst) {
+                             (inst as any).layoutSizingHorizontal = "FILL";
+                         }
+                         pager = inst;
+                     }
+                 } catch (e) {
+                     console.warn("Failed to load Pagination", e);
                  }
-                 
-                 // Update Top Bar visibility
-                 const tabs = topBar.children.find(c => c.name === "Tabs");
-                 const filter = topBar.children.find(c => c.name === "Filter");
-                 const actions = topBar.children.find(c => c.name === "Actions");
-                 
-                 const isFilterActive = () => {
-                     if (!filter || !filter.visible) return false;
-                     if (filter.type === "INSTANCE") {
-                         const props = filter.componentProperties;
-                         const key = Object.keys(props).find(k => k.includes("数量"));
-                         if (key && props[key].value === "0") return false;
-                     }
-                     return true;
+             }
+             
+             if (pager) {
+                 pager.visible = message.enabled;
+             }
+         } else {
+             let topBar = container.children.find(c => c.name === "Top Bar Container") as FrameNode | undefined;
+             if (!topBar && message.enabled) {
+                 // Create Top Bar if missing
+                 topBar = figma.createFrame();
+                 topBar.name = "Top Bar Container";
+                 topBar.layoutMode = "HORIZONTAL";
+                 topBar.counterAxisSizingMode = "AUTO";
+                 topBar.primaryAxisSizingMode = "FIXED";
+                 topBar.itemSpacing = 20;
+                 topBar.paddingBottom = 20;
+                 topBar.fills = [];
+                 topBar.clipsContent = false;
+                 container.insertChild(0, topBar); // Insert at top
+                 topBar.layoutSizingHorizontal = "FILL";
+             }
+
+             if (topBar && topBar.type === "FRAME") {
+                 const nameMap: Record<string, string> = {
+                     filter: "Filter",
+                     actions: "Actions",
+                     tabs: "Tabs",
+                     pagination: "" 
+                 };
+                 const keyMap: Record<string, string> = {
+                     filter: FILTER_COMPONENT_KEY,
+                     actions: BUTTON_GROUP_COMPONENT_KEY,
+                     tabs: TABS_COMPONENT_KEY
+                 };
+                 const layoutMap: Record<string, "FILL" | "HUG"> = {
+                     filter: "FILL",
+                     actions: "HUG",
+                     tabs: "HUG"
                  };
 
-                 const anyVisible = (tabs?.visible ?? false) || isFilterActive() || (actions?.visible ?? false);
-                 topBar.visible = anyVisible;
+                 const targetName = nameMap[message.key];
+                 const targetKey = keyMap[message.key];
+                 
+                 if (targetName && targetKey) {
+                     let target = topBar.children.find(c => c.name === targetName);
+                     
+                     if (!target && message.enabled) {
+                        try {
+                            const comp = await loadComponent(targetKey, targetName);
+                            let inst: SceneNode | null = null;
+                            if (comp.type === "COMPONENT_SET") {
+                                 const defaultVar = comp.defaultVariant as ComponentNode | undefined;
+                                 const targetNode = defaultVar ?? (comp.children.find((c) => c.type === "COMPONENT") as ComponentNode | undefined);
+                                 if (targetNode) inst = targetNode.createInstance();
+                             } else {
+                                 inst = (comp as ComponentNode).createInstance();
+                             }
+                             
+                             if (inst) {
+                                 inst.name = targetName;
+                                 // Top Bar order: Tabs, Filter, Actions.
+                                 const order = ["Tabs", "Filter", "Actions"];
+                                 const idx = order.indexOf(targetName);
+                                 
+                                 let insertIndex = topBar.children.length;
+                                 for(let i=0; i<topBar.children.length; i++) {
+                                     const cName = topBar.children[i].name;
+                                     const cIdx = order.indexOf(cName);
+                                     if (cIdx > idx) {
+                                         insertIndex = i;
+                                         break;
+                                     }
+                                 }
+                                 topBar.insertChild(insertIndex, inst);
+
+                                 if ("layoutSizingHorizontal" in inst) {
+                                     (inst as any).layoutSizingHorizontal = layoutMap[message.key] === "FILL" ? "FILL" : "HUG";
+                                 }
+                                 target = inst;
+                             }
+                         } catch (e) {
+                             console.warn(`Failed to load ${targetName}`, e);
+                         }
+                     }
+
+                     if (target) {
+                         if (message.key === "filter" && target.type === "INSTANCE") {
+                             // Filter logic: Switch OFF -> Quantity="0", Switch ON -> Quantity="3"
+                             target.visible = true;
+                             const props = target.componentProperties;
+                             const key = Object.keys(props).find(k => k.includes("数量"));
+                             if (key) {
+                                 const val = message.enabled ? "3" : "0";
+                                 try {
+                                     target.setProperties({ [key]: val });
+                                 } catch (e) {}
+                             } else {
+                                 // Fallback
+                                 target.visible = message.enabled;
+                             }
+                         } else {
+                             target.visible = message.enabled;
+                         }
+                     }
+                     
+                     // Update Top Bar visibility
+                     const tabs = topBar.children.find(c => c.name === "Tabs");
+                     const filter = topBar.children.find(c => c.name === "Filter");
+                     const actions = topBar.children.find(c => c.name === "Actions");
+                     
+                     const isFilterActive = () => {
+                         if (!filter || !filter.visible) return false;
+                         if (filter.type === "INSTANCE") {
+                             const props = filter.componentProperties;
+                             const key = Object.keys(props).find(k => k.includes("数量"));
+                             if (key && props[key].value === "0") return false;
+                         }
+                         return true;
+                     };
+
+                     const anyVisible = (tabs?.visible ?? false) || isFilterActive() || (actions?.visible ?? false);
+                     topBar.visible = anyVisible;
+                 }
              }
          }
+         postSelection();
+       } finally {
+         if (container) container.locked = originalLocked;
+       }
+     } finally {
+       setProcessing(false);
      }
-     postSelection();
+  }
+
+  if (message.type === "get_figma_tokens") {
+    const tokens = await getFigmaTokens();
+    figma.ui.postMessage({ type: "figma_tokens", tokens });
+    return;
   }
 
   if (message.type === "ping") {
@@ -5837,6 +6183,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
   }
 
   if (message.type === "create_table") {
+    setProcessing(true);
     try {
       await createTable({
         rows: toPositiveInt(message.rows, 10),
@@ -5880,10 +6227,13 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       const msg = e instanceof Error ? e.message : String(e);
       figma.notify(msg);
       postError(msg);
+    } finally {
+      setProcessing(false);
     }
   }
 
   if (message.type === "ai_create_table") {
+    setProcessing(true);
     try {
       const spec = message.spec;
 
@@ -5959,6 +6309,8 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       const msg = e instanceof Error ? e.message : String(e);
       figma.notify(msg);
       postError(msg);
+    } finally {
+      setProcessing(false);
     }
   }
 };

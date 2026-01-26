@@ -122,12 +122,15 @@ const applyToColumnBtn = document.getElementById("apply-to-column");
 const componentKeyInput = document.getElementById("component-key") as HTMLInputElement;
 const pluginDataOutput = document.getElementById("plugin-data-output") as HTMLDivElement;
 const getPropsBtn = document.getElementById("get-props");
+const btnGetTokens = document.getElementById("btn-get-tokens");
 const btnOneClickCreate = document.getElementById("btn-one-click-create");
 const propsOutput = document.getElementById("props-output");
+const debugOutput = document.getElementById("debug-output");
 const outputEl = document.getElementById("output");
 const alertEl = document.getElementById("alert") as HTMLDivElement | null;
 const alertTextEl = document.getElementById("alert-text") as HTMLSpanElement | null;
 const btnCopyError = document.getElementById("btn-copy-error") as HTMLButtonElement | null;
+const btnCloseAlert = document.getElementById("btn-close-alert") as HTMLButtonElement | null;
 const selectionLabelEl = document.getElementById("selection-label") as HTMLDivElement | null;
 const selectionLabelEditEl = document.getElementById("selection-status-edit") as HTMLDivElement | null;
 const loadingDescEl = document.querySelector(".loading-desc") as HTMLDivElement | null;
@@ -147,6 +150,12 @@ function updateCreateBtnEnabled() {
   const hasAttachments = createAttachments && createAttachments.length > 0;
   const shouldDisable = (val.length === 0 && !hasAttachments) || currentLoadingButton === btnCreate;
   btnCreate.disabled = shouldDisable;
+}
+
+if (btnCloseAlert) {
+  btnCloseAlert.onclick = () => {
+    hideAlert();
+  };
 }
 
 if (btnCopyError) {
@@ -178,8 +187,6 @@ if (btnCopyError) {
     window.clearTimeout(alertTimer);
     alertTimer = null;
   }
-  alertTextEl.style.whiteSpace = "pre-wrap";
-  alertTextEl.style.wordBreak = "break-all";
   alertTextEl.textContent = msg;
   alertEl.style.display = "flex";
   alertEl.style.opacity = "1";
@@ -285,6 +292,7 @@ function updateAiTabLabel(v: boolean) {
 
 function setActiveTab(tab: "ai" | "manual" | "debug") {
   console.log(`Setting active tab to: ${tab}`);
+  hideAlert();
   tabButtons.forEach((btn) => {
     const key = btn.dataset.tab === tab ? "add" : "remove";
     btn.classList[key]("active");
@@ -781,7 +789,7 @@ function extractAllJsonObjects(raw: string): string[] {
   const result: string[] = [];
   let inString = false;
   let escaped = false;
-  let depth = 0;
+  let stack: string[] = [];
   let start = -1;
 
   for (let i = 0; i < s.length; i++) {
@@ -803,32 +811,43 @@ function extractAllJsonObjects(raw: string): string[] {
     }
 
     if (ch === "{") {
-      if (depth === 0) start = i;
-      depth++;
+      if (stack.length === 0) start = i;
+      stack.push("{");
+    } else if (ch === "[") {
+      if (stack.length === 0) start = i;
+      stack.push("[");
     } else if (ch === "}") {
-      depth--;
-      if (depth === 0 && start !== -1) {
-        result.push(s.slice(start, i + 1).trim());
-        start = -1;
-      } else if (depth < 0) {
-        // 容错：忽略多余的闭合括号
-        depth = 0;
+      if (stack.length > 0 && stack[stack.length - 1] === "{") {
+        stack.pop();
+        if (stack.length === 0 && start !== -1) {
+          result.push(s.slice(start, i + 1).trim());
+          start = -1;
+        }
+      }
+    } else if (ch === "]") {
+      if (stack.length > 0 && stack[stack.length - 1] === "[") {
+        stack.pop();
+        if (stack.length === 0 && start !== -1) {
+          result.push(s.slice(start, i + 1).trim());
+          start = -1;
+        }
       }
     }
   }
 
   // Handle truncated JSON: if we're still inside an object when the string ends
-  if (depth > 0 && start !== -1) {
+  if (stack.length > 0 && start !== -1) {
     let truncated = s.slice(start).trim();
-    // Proactively try to close the JSON structure
-    let closure = "";
-    for (let d = 0; d < depth; d++) {
-      closure += "}";
-    }
     
     // Also check if we're inside a string
     if (inString) {
       truncated += '"';
+    }
+
+    // Proactively try to close the JSON structure in correct order
+    let closure = "";
+    for (let i = stack.length - 1; i >= 0; i--) {
+      closure += stack[i] === "{" ? "}" : "]";
     }
     
     result.push(truncated + closure);
@@ -843,46 +862,72 @@ function tryParseTruncatedJson(s: string): any {
   } catch (e) {
     let repaired = s.trim();
     
-    // 容错：如果末尾有多余的闭合括号，尝试移除它们
-    while (repaired.endsWith("}") && !repaired.startsWith("{")) {
-        repaired = repaired.slice(0, -1).trim();
+    // 移除非法逗号，特别是在闭合括号之前的逗号
+    let lastRepaired = "";
+    while (repaired !== lastRepaired) {
+      lastRepaired = repaired;
+      repaired = repaired.replace(/,\s*([\]\}])/g, "$1");
     }
     
-    // Count braces and brackets
-    let openBraces = (repaired.match(/\{/g) || []).length;
-    let closeBraces = (repaired.match(/\}/g) || []).length;
-    let openBrackets = (repaired.match(/\[/g) || []).length;
-    let closeBrackets = (repaired.match(/\]/g) || []).length;
-    
-    // 移除末尾非法逗号
-    repaired = repaired.replace(/,\s*$/, "");
-    
-    // 自动闭合
-    while (openBrackets > closeBrackets) {
-      repaired += "]";
-      closeBrackets++;
-    }
-    while (openBraces > closeBraces) {
-      repaired += "}";
-      closeBraces++;
-    }
-    
-    // 再次尝试：如果闭合括号过多，尝试逐个移除末尾的 } 直到解析成功
-    let attempt = repaired;
-    while (attempt.endsWith("}")) {
+    // 尝试补全并解析
+    try {
+      return JSON.parse(reCloseJson(repaired));
+    } catch {
+      // 如果还是失败，尝试逐个移除末尾字符直到成功或无法继续
+      let attempt = repaired;
+      while (attempt.length > 0) {
+        // 尝试移除可能导致问题的末尾非结构化字符 (比如截断的单词或逗号)
+        attempt = attempt.replace(/[^\]\}]+$/, "").trim();
+        if (attempt.length === 0) break;
+
         try {
-            return JSON.parse(attempt);
+          const closed = reCloseJson(attempt);
+          return JSON.parse(closed);
         } catch {
-            attempt = attempt.slice(0, -1).trim();
+          // 移除最后一个闭合括号并继续尝试
+          attempt = attempt.slice(0, -1).trim();
         }
+      }
     }
     
     return null;
   }
 }
 
+/**
+ * 辅助函数：重新计算并补全 JSON 结构
+ */
+function reCloseJson(s: string): string {
+  let inString = false;
+  let escaped = false;
+  let stack: string[] = [];
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") stack.push("{");
+    else if (ch === "[") stack.push("[");
+    else if (ch === "}") { if (stack[stack.length - 1] === "{") stack.pop(); }
+    else if (ch === "]") { if (stack[stack.length - 1] === "[") stack.pop(); }
+  }
+  let res = s;
+  if (inString) res += '"';
+  for (let i = stack.length - 1; i >= 0; i--) {
+    res += stack[i] === "{" ? "}" : "]";
+  }
+  return res;
+}
+
 function isHeaderMode(v: any): v is HeaderMode {
-  return v === "none" || v === "filter" || v === "sort" || v === "search";
+  return v === "none" || v === "filter" || v === "sort" || v === "search" || v === "info";
 }
 
 function isColumnType(v: any): v is ColumnType {
@@ -1029,7 +1074,9 @@ function coerceLegacyToEnvelope(obj: any): AiTableEnvelope {
       id: typeof c?.id === "string" ? c.id : `col_${i + 1}`,
       title: typeof c?.title === "string" ? c.title : "",
       type: isColumnType(c?.type) ? (c.type as ColumnType) : (String(c?.type).toLowerCase() === "number" ? "Text" : "Text"),
-      header: isHeaderMode(c?.header) ? (c.header as HeaderMode) : "none"
+      header: isHeaderMode(c?.header) ? (c.header as HeaderMode) : "none",
+      width: (c?.width === "FILL" || c?.width === "FIXED") ? c.width : undefined,
+      align: (c?.align === "left" || c?.align === "center" || c?.align === "right") ? c.align : undefined
     }));
     const data = normalizeData(rows, cols, s.data, columns.map((c) => ({ title: c.title, type: c.type as ColumnType })));
     const rowAction = s.rowAction;
@@ -1060,7 +1107,9 @@ function coerceLegacyToEnvelope(obj: any): AiTableEnvelope {
       id: typeof c?.id === "string" ? c.id : `col_${i + 1}`,
       title: typeof c?.title === "string" ? c.title : "",
       type: isColumnType(c?.type) ? (c.type as ColumnType) : "Text",
-      header: isHeaderMode(c?.header) ? (c.header as HeaderMode) : "none"
+      header: isHeaderMode(c?.header) ? (c.header as HeaderMode) : "none",
+      width: (c?.width === "FILL" || c?.width === "FIXED") ? c.width : undefined,
+      align: (c?.align === "left" || c?.align === "center" || c?.align === "right") ? c.align : undefined
     }));
     const data = normalizeData(rows, cols, obj.data, columns.map((c) => ({ title: c.title, type: c.type as ColumnType })));
     return { intent: "create", schema: { rows, cols, columns, data } };
@@ -1132,19 +1181,25 @@ function coerceLegacyToEnvelope(obj: any): AiTableEnvelope {
 function parseEnvelopeFromText(raw: string): AiTableEnvelope {
   const body = extractJsonText(raw);
   const segments = extractAllJsonObjects(body);
+  console.log("parseEnvelopeFromText segments found:", segments.length);
   for (let i = segments.length - 1; i >= 0; i--) {
     const seg = segments[i];
     try {
       const obj = tryParseTruncatedJson(seg);
-      if (!obj) continue;
+      if (!obj) {
+        console.warn("tryParseTruncatedJson returned null for segment:", seg.slice(0, 100) + "...");
+        continue;
+      }
       if (typeof obj === "object" && ((obj as any).name === "FunctionCallPlugin" || (obj as any).name === "FunctionCall")) {
         continue;
       }
       const env = coerceLegacyToEnvelope(obj);
       return env;
-    } catch {
+    } catch (e) {
+      console.error("Error parsing segment:", e, seg.slice(0, 100) + "...");
     }
   }
+  console.error("No valid envelope found in segments. Raw text snippet:", raw.slice(0, 500));
   throw new Error("无法识别 AI 返回结构");
 }
 
@@ -1689,6 +1744,15 @@ getPropsBtn?.addEventListener("click", () => {
   post({ type: "get_component_props", key } as any);
 });
 
+// Get Figma Tokens
+btnGetTokens?.addEventListener("click", () => {
+  if (debugOutput) {
+    debugOutput.style.display = "block";
+    debugOutput.innerText = "Fetching Figma Tokens...";
+  }
+  post({ type: "get_figma_tokens" });
+});
+
 // One-click create subscription table
 btnOneClickCreate?.addEventListener("click", () => {
   const subscriptionData = {
@@ -1831,6 +1895,12 @@ window.onmessage = (event) => {
       propsOutput.textContent = JSON.stringify(msg.props, null, 2);
       propsOutput.style.display = "block";
     }
+  } else if (msg.type === "figma_tokens") {
+    console.log("Received Figma Tokens:", msg.tokens);
+    if (debugOutput) {
+      debugOutput.textContent = JSON.stringify(msg.tokens, null, 2);
+      debugOutput.style.display = "block";
+    }
   } else if (msg.type === "error") {
     const text = `错误: ${msg.message}`;
     setOutput(text);
@@ -1853,6 +1923,10 @@ window.onmessage = (event) => {
     resetLoadingState();
   } else if (msg.type === "ai_apply_envelope_done") {
     resetLoadingState();
+  } else if (msg.type === "processing_start") {
+    if (loadingOverlay) loadingOverlay.classList.remove("hidden");
+  } else if (msg.type === "processing_end") {
+    if (loadingOverlay) loadingOverlay.classList.add("hidden");
   }
 };
   // Start initialization immediately

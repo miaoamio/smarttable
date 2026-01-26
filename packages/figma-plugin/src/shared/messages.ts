@@ -131,6 +131,7 @@ export type UiToPluginMessage =
   | { type: "set_row_action"; action: "none" | "multiple" | "single" | "drag" | "expand" | "switch" }
   | { type: "set_table_switch"; key: "pagination" | "filter" | "actions" | "tabs"; enabled: boolean }
   | { type: "set_table_rows"; rows: number }
+  | { type: "get_figma_tokens" }
   | { type: "ping" };
 
 export interface TableContext {
@@ -178,5 +179,8 @@ export type PluginToUiMessage =
   | { type: "table_created"; rows: number; cols: number }
   | { type: "edit_completed" }
   | { type: "ai_apply_envelope_done" }
+  | { type: "processing_start" }
+  | { type: "processing_end" }
+  | { type: "figma_tokens"; tokens: any }
   | { type: "error"; message: string }
   | { type: "status"; message: string };
