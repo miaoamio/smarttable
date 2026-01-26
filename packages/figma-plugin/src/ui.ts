@@ -1558,24 +1558,38 @@ async function handleExcelFile(file: File, target: UploadTarget) {
           let garbledCount = 0;
           let chineseCount = 0;
           let rareChineseCount = 0;
-          const range = XLSX.utils.decode_range(firstSheet['!ref'] || 'A1:E10');
-          for (let r = range.s.r; r <= Math.min(range.e.r, 10); r++) {
-            for (let c = range.s.c; c <= Math.min(range.e.c, 10); c++) {
+          
+          // 扩大采样范围到 20 行 10 列
+          const range = XLSX.utils.decode_range(firstSheet['!ref'] || 'A1:J20');
+          const maxR = Math.min(range.e.r, 20);
+          const maxC = Math.min(range.e.c, 10);
+          
+          for (let r = range.s.r; r <= maxR; r++) {
+            for (let c = range.s.c; c <= maxC; c++) {
               const cell = firstSheet[XLSX.utils.encode_cell({r, c})];
               if (cell && typeof cell.v === 'string' && cell.v.trim().length > 0) {
                 const val = cell.v;
-                if (val.includes('\uFFFD')) garbledCount += 10;
-                if (val.includes('\u0000')) garbledCount += 20;
+                
+                // 更加精准的乱码检测：统计 \uFFFD (替换字符) 和 \u0000 (空字节) 的出现次数
+                const garbledMatch = val.match(/[\uFFFD\u0000]/g);
+                if (garbledMatch) garbledCount += garbledMatch.length;
+                
+                // 常用汉字
                 const commonChineseMatch = val.match(/[\u4e00-\u9fa5]/g);
                 if (commonChineseMatch) chineseCount += commonChineseMatch.length;
+                
+                // 生僻汉字：权重降低，避免误伤
                 const rareChineseMatch = val.match(/[\u3400-\u4DBF\u20000-\u2A6DF\u9FA6-\u9FFF]/g);
                 if (rareChineseMatch) rareChineseCount += rareChineseMatch.length;
               }
             }
           }
-          let score = chineseCount * 10 - rareChineseCount * 15 - garbledCount * 20;
+          
+          // 优化评分算法：乱码扣分加重，生僻字扣分减弱
+          let score = chineseCount * 10 - rareChineseCount * 5 - garbledCount * 50;
+          
           if (garbledCount === 0 && chineseCount > 0) {
-            score += 500;
+            score += 1000; // 纯净的中文文本给予大幅加分
           }
           return { score, chineseCount, garbledCount };
         } catch (e) {
@@ -1632,9 +1646,16 @@ async function handleExcelFile(file: File, target: UploadTarget) {
         for (let i = 1; i < candidates.length; i++) {
           const res = tryReadWithEncoding(buf, candidates[i].cp);
           console.log(`[Probe] ${candidates[i].name}: Score ${res.score}, Chinese ${res.chineseCount}, Garbled ${res.garbledCount}`);
+          // 如果分数更高，或者当前分数虽然相等但之前的最佳选择是负分且当前编码是 UTF-8/GBK 等更通用的编码
           if (res.score > bestRes.score) {
             bestRes = res;
             bestEnc = candidates[i];
+          } else if (res.score === bestRes.score && bestRes.score < 0) {
+             // 倾向于选择 GBK，因为很多乱码文件其实是 GBK
+             if (candidates[i].name === 'GBK') {
+                bestRes = res;
+                bestEnc = candidates[i];
+             }
           }
         }
         console.log(`[Final Decision] Using ${bestEnc.name}, score ${bestRes.score}, chinese ${bestRes.chineseCount}, garbled ${bestRes.garbledCount}`);
@@ -1647,7 +1668,9 @@ async function handleExcelFile(file: File, target: UploadTarget) {
           wb = XLSX.read(binary, { type: "array" });
           const scoreInfo = getWorkbookScore(wb);
           console.log(`[Workbook Score] initial score ${scoreInfo.score}, chinese ${scoreInfo.chineseCount}, garbled ${scoreInfo.garbledCount}`);
-          if (scoreInfo.score < 0 || scoreInfo.garbledCount >= 20) {
+          
+          // 只有当分数极低，且不是标准的 XLSX 时，才尝试切换编码（防止 XLSX 误判）
+          if (scoreInfo.score < -500 && !isXLSX) {
             const picked = selectWorkbookByEncoding(binary);
             if (picked.workbook && picked.score > scoreInfo.score) {
               wb = picked.workbook;
