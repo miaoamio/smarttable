@@ -12,8 +12,8 @@ async function bundle() {
       footer: {
         js: 'export default handle;',
       },
-      // We want to bundle everything EXCEPT node built-ins
-      external: ['node:*', 'canvas', 'jsdom'], 
+      // We want to bundle everything EXCEPT node built-ins and Prisma
+      external: ['node:*', 'canvas', 'jsdom', '@prisma/client', '.prisma/client'], 
       banner: {
         js: `
 import { createRequire } from 'module';

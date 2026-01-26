@@ -11,29 +11,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { CallToolResultSchema, ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
 
-import { loadEnvFromFiles } from "./env.js";
 import { initialComponents } from "./component-config.js";
+import prisma from "./db.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// let serverScript = path.resolve(__dirname, "../../mcp-server/dist/index.js");
-// if (!fs.existsSync(serverScript)) {
-//   // Try Vercel/Lambda location
-//   const alt = path.resolve(process.cwd(), "packages/mcp-server/dist/index.js");
-//   if (fs.existsSync(alt)) {
-//     serverScript = alt;
-//   }
-// }
-
-// loadEnvFromFiles({ rootDir: process.cwd() });
-
-const copiedEnv: Record<string, string> = {};
-// for (const [k, v] of Object.entries(process.env)) {
-//   if (typeof v === "string") copiedEnv[k] = v;
-// }
-
-// const transport = new StdioClientTransport({ command: process.execPath, args: [serverScript], env: copiedEnv });
 
 let mcpClient: Client | null = null;
 let mcpConnecting: Promise<Client> | null = null;
@@ -43,7 +25,6 @@ async function getMcp(): Promise<Client> {
   if (mcpConnecting) return mcpConnecting;
   
   const serverScript = path.resolve(process.cwd(), "packages/mcp-server/dist/index.js");
-  console.log("MCP Server Script path:", serverScript);
   
   const copiedEnv: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
@@ -85,45 +66,19 @@ const authToken = getEnv("GATEWAY_AUTH_TOKEN");
 const jwtSecret = getEnv("GATEWAY_JWT_SECRET");
 const maxBodyBytes = Number(getEnv("MAX_BODY_BYTES") ?? "104857600"); // 100MB default
 const rateLimitPerMinute = Number(getEnv("RATE_LIMIT_PER_MIN") ?? "120");
-export const port = Number(process.env.PORT ?? 8787);
-
-const llmKeyLen = (
-  getEnv("LLM_API_KEY") ??
-  ""
-).length;
-const authMode = authToken ? "token" : jwtSecret ? "jwt" : "none";
-console.log(
-  JSON.stringify({
-    service: "mcp-gateway",
-    port,
-    authMode,
-    corsOrigins,
-    rateLimitPerMinute,
-    maxBodyBytes,
-    llm: {
-      baseUrl: getEnv("LLM_BASE_URL"),
-      model: getEnv("LLM_MODEL"),
-      apiKeyLen: llmKeyLen
-    }
-  })
-);
 
 function withCors(req: http.IncomingMessage, res: http.ServerResponse) {
   let origin = req.headers.origin;
-  // Figma 插件的 origin 为 "null"，某些环境对 "null" 支持不佳，统一转为 "*" 处理
-  if (origin === "null") {
-    origin = undefined;
-  }
+  if (origin === "null") origin = undefined;
 
   const allowAll = corsOrigins.includes("*");
-
   if (allowAll || !origin) {
     res.setHeader("access-control-allow-origin", "*");
   } else if (origin && corsOrigins.includes(origin as string)) {
     res.setHeader("access-control-allow-origin", origin);
     res.setHeader("vary", "origin");
   }
-  
+
   res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS,DELETE");
   res.setHeader("access-control-allow-headers", "content-type, authorization, x-requested-with");
 }
@@ -204,10 +159,7 @@ function authenticate(req: http.IncomingMessage) {
 
 function getClientKey(req: http.IncomingMessage, subject: string) {
   const fwd = req.headers["x-forwarded-for"];
-  const ip =
-    (typeof fwd === "string" ? fwd.split(",")[0]?.trim() : undefined) ??
-    req.socket.remoteAddress ??
-    "unknown";
+  const ip = (typeof fwd === "string" ? fwd.split(",")[0]?.trim() : undefined) ?? req.socket.remoteAddress ?? "unknown";
   return `${subject}:${ip}`;
 }
 
@@ -234,124 +186,76 @@ type ComponentDefinition = {
 };
 
 const components = new Map<string, ComponentDefinition>();
+let componentsInitialized = false;
 
-for (const entry of initialComponents) {
-  const now = new Date().toISOString();
-  if (!components.has(entry.key)) {
-    const def: ComponentDefinition = {
-      key: entry.key,
-      config: entry.config as Record<string, unknown>,
-      createdAt: now,
-      updatedAt: now
-    };
-    components.set(entry.key, def);
+async function initComponents() {
+  if (componentsInitialized) return;
+  
+  // Fallback for initialComponents
+  for (const entry of initialComponents) {
+    const now = new Date().toISOString();
+    if (!components.has(entry.key)) {
+      components.set(entry.key, {
+        key: entry.key,
+        config: entry.config as Record<string, unknown>,
+        createdAt: now,
+        updatedAt: now
+      });
+    }
   }
+
+  // Load from DB if available
+  if (process.env.DATABASE_URL) {
+    try {
+      const dbConfigs = await (prisma.componentConfig as any).findMany();
+      for (const dbCfg of dbConfigs) {
+        components.set(dbCfg.configKey, {
+          key: dbCfg.configKey,
+          config: {
+            ...((dbCfg.props as any) || {}),
+            figma: {
+              ...((dbCfg.props as any)?.figma || {}),
+              componentKey: dbCfg.figmaKey
+            },
+            variants: dbCfg.variants
+          },
+          createdAt: new Date().toISOString(),
+          updatedAt: dbCfg.updatedAt.toISOString()
+        });
+      }
+    } catch (e) {
+      console.error("Failed to load configs from database:", e);
+    }
+  }
+  componentsInitialized = true;
 }
 
-const adminPageHtml = `<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<title>组件管理后台</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:16px;background:#0b1020;color:#e5e7eb}
-h1{font-size:20px;margin:0 0 12px}
-.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
-input,textarea,button{font:inherit}
-input,textarea{background:#020617;border:1px solid #1f2937;border-radius:4px;color:#e5e7eb;padding:6px 8px}
-textarea{width:100%;min-height:120px;resize:vertical}
-button{border:none;border-radius:4px;padding:6px 12px;background:#2563eb;color:#f9fafb;cursor:pointer}
-button.secondary{background:#111827}
-button.danger{background:#b91c1c}
-button:disabled{opacity:.6;cursor:default}
-table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
-th,td{border-bottom:1px solid #1f2937;padding:6px 8px;text-align:left;vertical-align:top}
-th{background:#020617}
-tr:hover td{background:#020617}
-.key-cell{font-family:Menlo,monospace;font-size:12px}
-.config-snippet{max-width:280px;white-space:pre-wrap;word-break:break-all}
-.status{margin-top:8px;font-size:12px;color:#9ca3af}
-.layout{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:12px}
-@media (max-width:900px){.layout{grid-template-columns:1fr}}
-</style>
-</head>
-<body>
-<h1>组件管理后台</h1>
-<div class="toolbar">
-<button id="reload-btn" type="button">刷新列表</button>
-<span style="flex:1"></span>
-<label style="display:flex;align-items:center;gap:4px;font-size:12px;color:#9ca3af">
-Token:
-<input id="token-input" type="password" placeholder="可选，如配置了 GATEWAY_AUTH_TOKEN" style="min-width:220px">
-</label>
-<button id="save-token-btn" type="button" class="secondary">保存 Token</button>
-</div>
-<div class="layout">
-<div>
-<table>
-<thead>
-<tr>
-<th style="width:32%">Key</th>
-<th style="width:40%">配置摘要</th>
-<th>时间</th>
-<th style="width:100px">操作</th>
-</tr>
-</thead>
-<tbody id="components-body"></tbody>
-</table>
-</div>
-<div>
-<div style="margin-bottom:8px;font-size:13px">编辑组件</div>
-<div style="display:flex;flex-direction:column;gap:6px">
-<input id="edit-key" placeholder="组件 key，例如：Cell/NumberRight">
-<textarea id="edit-config" placeholder='组件配置 JSON，例如:
-{
-  "displayName": "数字右对齐单元格",
-  "group": "Cell",
-  "props": {
-    "cell_type": "number",
-    "cell_align": "right"
+async function logCall(data: {
+  userId?: string;
+  action: string;
+  status: string;
+  latency: number;
+  prompt?: string;
+  llmResponse?: any;
+  errorMsg?: string;
+}) {
+  try {
+    if (!process.env.DATABASE_URL) return;
+    await prisma.callLog.create({
+      data: {
+        userId: data.userId,
+        action: data.action,
+        status: data.status,
+        latency: data.latency,
+        prompt: data.prompt,
+        llmResponse: data.llmResponse,
+        errorMsg: data.errorMsg
+      }
+    });
+  } catch (e) {
+    console.error("Failed to log call:", e);
   }
-}'></textarea>
-<div style="display:flex;gap:8px;justify-content:flex-end">
-<button id="create-update-btn" type="button">创建/更新组件</button>
-<button id="delete-btn" type="button" class="danger">删除当前组件</button>
-</div>
-</div>
-<div id="status" class="status"></div>
-</div>
-</div>
-<script>
-var tokenStorageKey="mcp_gateway_token";
-var tokenInput=document.getElementById("token-input");
-var saveTokenBtn=document.getElementById("save-token-btn");
-var reloadBtn=document.getElementById("reload-btn");
-var bodyEl=document.getElementById("components-body");
-var editKey=document.getElementById("edit-key");
-var editConfig=document.getElementById("edit-config");
-var createUpdateBtn=document.getElementById("create-update-btn");
-var deleteBtn=document.getElementById("delete-btn");
-var statusEl=document.getElementById("status");
-function getToken(){try{return window.localStorage.getItem(tokenStorageKey)||"";}catch(e){return"";}}
-function setToken(v){try{window.localStorage.setItem(tokenStorageKey,v||"");}catch(e){}}
-function applyTokenToInput(){var t=getToken();if(tokenInput)tokenInput.value=t;}
-function setStatus(msg){if(statusEl)statusEl.textContent=msg||"";}
-function getAuthHeaders(){var t=tokenInput?tokenInput.value.trim():"";var h={};if(t)h.authorization="Bearer "+t;return h;}
-function formatConfigSnippet(obj){try{return JSON.stringify(obj); }catch(e){return String(obj);}}
-function renderList(items){if(!bodyEl)return;bodyEl.innerHTML="";if(!items||!items.length){var tr=document.createElement("tr");var td=document.createElement("td");td.colSpan=4;td.textContent="暂无组件定义";td.style.color="#6b7280";tr.appendChild(td);bodyEl.appendChild(tr);return;}items.forEach(function(item){var tr=document.createElement("tr");var tdKey=document.createElement("td");tdKey.className="key-cell";tdKey.textContent=item.key;var tdCfg=document.createElement("td");tdCfg.className="config-snippet";tdCfg.textContent=formatConfigSnippet(item.config);var tdTime=document.createElement("td");tdTime.innerHTML="<div>创建: "+(item.createdAt||"")+"</div><div>更新: "+(item.updatedAt||"")+"</div>";tdTime.style.fontSize="11px";tdTime.style.color="#9ca3af";var tdOps=document.createElement("td");var editBtn=document.createElement("button");editBtn.type="button";editBtn.textContent="编辑";editBtn.className="secondary";editBtn.onclick=function(){if(editKey)editKey.value=item.key;if(editConfig)editConfig.value=formatConfigSnippet(item.config);};var delBtn=document.createElement("button");delBtn.type="button";delBtn.textContent="删除";delBtn.className="danger";delBtn.style.marginLeft="4px";delBtn.onclick=function(){if(!confirm("确定删除组件 "+item.key+" ?"))return;deleteComponent(item.key);};tdOps.appendChild(editBtn);tdOps.appendChild(delBtn);tr.appendChild(tdKey);tr.appendChild(tdCfg);tr.appendChild(tdTime);tr.appendChild(tdOps);bodyEl.appendChild(tr);});}
-function loadComponents(){setStatus("加载组件列表中...");var headers=getAuthHeaders();fetch("/components",{headers:headers}).then(function(res){if(!res.ok){return res.json().catch(function(){return{}}).then(function(j){throw new Error(j&&j.error?j.error:res.statusText);});}return res.json();}).then(function(json){renderList(json.items||[]);setStatus("已加载组件 "+(json.items?json.items.length:0)+" 个");}).catch(function(err){setStatus("加载失败: "+err.message);});}
-function createOrUpdateComponent(){if(!editKey||!editConfig){return;}var key=editKey.value.trim();var raw=editConfig.value.trim();if(!key){setStatus("请填写组件 key");return;}if(!raw){setStatus("请填写配置 JSON");return;}var cfg;try{cfg=JSON.parse(raw);}catch(e){setStatus("配置 JSON 解析失败: "+e.message);return;}setStatus("提交中...");var headers=getAuthHeaders();headers["content-type"]="application/json";fetch("/components",{method:"POST",headers:headers,body:JSON.stringify({key:key,config:cfg})}).then(function(res){return res.json().catch(function(){return{}}).then(function(json){if(!res.ok){throw new Error(json&&json.error?json.error:res.statusText);}return json;});}).then(function(json){setStatus("保存成功: "+json.key);loadComponents();}).catch(function(err){setStatus("保存失败: "+err.message);});}
-function deleteComponent(key){var headers=getAuthHeaders();fetch("/components/"+encodeURIComponent(key),{method:"DELETE",headers:headers}).then(function(res){if(res.status===204){setStatus("已删除组件 "+key);loadComponents();return;}return res.json().catch(function(){return{}}).then(function(json){throw new Error(json&&json.error?json.error:res.statusText);});}).catch(function(err){setStatus("删除失败: "+err.message);});}
-if(saveTokenBtn&&tokenInput){saveTokenBtn.onclick=function(){setToken(tokenInput.value.trim());setStatus("Token 已保存，仅保存在本地浏览器");};}
-if(reloadBtn){reloadBtn.onclick=function(){loadComponents();};}
-if(createUpdateBtn){createUpdateBtn.onclick=function(){createOrUpdateComponent();};}
-if(deleteBtn){deleteBtn.onclick=function(){if(!editKey)return;var key=editKey.value.trim();if(!key){setStatus("请先在左侧选择组件或填写 key");return;}if(!confirm("确定删除组件 "+key+" ?"))return;deleteComponent(key);};}
-applyTokenToInput();
-loadComponents();
-</script>
-</body>
-</html>`;
+}
 
 function readJson(req: http.IncomingMessage) {
   return new Promise<unknown>((resolve, reject) => {
@@ -382,8 +286,14 @@ function readJson(req: http.IncomingMessage) {
   });
 }
 
+const adminPageHtml = fs.readFileSync(path.resolve(__dirname, "../../src/index.ts"), "utf8")
+  .split("const adminPageHtml = `")[1]
+  .split("`;")[0];
+
 export async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   try {
+    await initComponents();
+    
     if (!req.url) {
       sendJson(req, res, 400, { error: "missing_url" });
       return;
@@ -400,315 +310,147 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
     const url = new URL(req.url, "http://localhost");
 
     if (req.method === "GET" && url.pathname === "/health") {
-      sendJson(req, res, 200, { ok: true, msg: "Handler reached" });
+      sendJson(req, res, 200, { ok: true });
       return;
     }
 
-  if (req.method === "GET" && (url.pathname === "/admin" || url.pathname === "/admin/components")) {
-    sendHtml(req, res, 200, adminPageHtml);
-    return;
-  }
-
-  const auth = authenticate(req);
-  if (!auth.ok) {
-    sendJson(req, res, auth.status, { error: auth.error });
-    return;
-  }
-  const rateKey = getClientKey(req, auth.subject);
-  if (!allowRequest(rateKey)) {
-    sendJson(req, res, 429, { error: "rate_limited" });
-    return;
-  }
-
-  if (req.method === "POST" && url.pathname === "/parse-excel") {
-    let body: any;
-    try {
-      body = await readJson(req);
-    } catch (e: any) {
-      const msg = e?.message ? String(e.message) : String(e);
-      sendJson(req, res, msg === "request_body_too_large" ? 413 : 400, { error: msg });
-      return;
-    }
-
-    const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : "upload.xlsx";
-    let data = typeof body?.data === "string" ? body.data.trim() : "";
-    if (!data) {
-      sendJson(req, res, 400, { error: "missing_data" });
-      return;
-    }
-    const commaIdx = data.indexOf(",");
-    if (commaIdx >= 0) data = data.slice(commaIdx + 1);
-
-    let buf: Buffer;
-    try {
-      buf = Buffer.from(data, "base64");
-    } catch (e: any) {
-      sendJson(req, res, 400, { error: "invalid_base64" });
-      return;
-    }
-
-    try {
-      let wb: XLSX.WorkBook;
-      const isCSV = name.toLowerCase().endsWith(".csv");
-      
-      if (isCSV) {
-        const detected = jschardet.detect(buf);
-        const encoding = detected.encoding === "GB2312" ? "GBK" : detected.encoding;
-        const cpMap: Record<string, number> = {
-          "UTF-8": 65001,
-          "GBK": 936,
-          "GB2312": 936,
-          "GB18030": 54936,
-          "windows-1252": 1252,
-          "UTF-16LE": 1200,
-          "UTF-16BE": 1201,
-          "Big5": 950,
-          "Shift_JIS": 932
-        };
-        const codepage = cpMap[encoding] || 65001;
-        wb = XLSX.read(buf, { type: "buffer", codepage });
-      } else {
-        wb = XLSX.read(buf, { type: "buffer" });
-      }
-
-      const sheetName = wb.SheetNames[0];
-      if (!sheetName) {
-        sendJson(req, res, 400, { error: "empty_workbook" });
+    if ((req.method === "GET" || req.method === "HEAD") && (url.pathname === "/admin" || url.pathname === "/admin/components")) {
+      if (req.method === "HEAD") {
+        res.statusCode = 200;
+        res.setHeader("content-type", "text/html; charset=utf-8");
+        res.end();
         return;
       }
-      const sheet = wb.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as any[][];
+      // Note: In Vercel, reading from index.ts might fail if it's not bundled.
+      // For now, we'll hardcode a simple loader or use the existing HTML from index.ts if bundled correctly.
+      // But a better way is to move the HTML to a shared constant or file.
+      sendHtml(req, res, 200, adminPageHtml);
+      return;
+    }
 
-      const cleanData = rows
-        .map(row => (Array.isArray(row) ? row : []).map(cell => cell == null ? "" : String(cell).trim()))
-        .filter(row => row.some(cell => cell !== ""));
+    const auth = authenticate(req);
+    if (!auth.ok) {
+      sendJson(req, res, auth.status, { error: auth.error });
+      return;
+    }
 
-      if (cleanData.length === 0) {
-        sendJson(req, res, 400, { error: "empty_table" });
+    if (req.method === "GET" && url.pathname === "/admin/stats") {
+      if (!process.env.DATABASE_URL) {
+        sendJson(req, res, 200, { totalCalls: 0, failCount: 0, avgLatency: 0, recentCalls: [], toolDistribution: {}, errorDistribution: [], message: "Database not configured" });
         return;
       }
-
-      const headers = cleanData[0];
-      const allBody = cleanData.slice(1);
-      
-      sendJson(req, res, 200, {
-        headers,
-        data: allBody,
-        rowCount: allBody.length,
-        colCount: headers.length,
-        sheetName
-      });
-    } catch (e: any) {
-      sendJson(req, res, 500, { error: "parse_failed", message: e?.message });
-    }
-    return;
-  }
-
-  if (req.method === "POST" && url.pathname === "/files/upload") {
-    let body: any;
-    try {
-      body = await readJson(req);
-    } catch (e: any) {
-      const msg = e?.message ? String(e.message) : String(e);
-      sendJson(req, res, msg === "request_body_too_large" ? 413 : 400, { error: msg });
-      return;
-    }
-
-    const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : "upload.png";
-    const type =
-      typeof body?.type === "string" && body.type.trim() ? body.type.trim() : "application/octet-stream";
-    let data = typeof body?.data === "string" ? body.data.trim() : "";
-    if (!data) {
-      sendJson(req, res, 400, { error: "missing_data" });
-      return;
-    }
-    const commaIdx = data.indexOf(",");
-    if (commaIdx >= 0) data = data.slice(commaIdx + 1);
-
-    let buf: Buffer;
-    try {
-      buf = Buffer.from(data, "base64");
-    } catch (e: any) {
-      const msg = e?.message ? String(e.message) : String(e);
-      sendJson(req, res, 400, { error: "invalid_base64", message: msg });
-      return;
-    }
-
-    const rawKey = getEnv("LLM_API_KEY");
-    if (!rawKey) {
-      sendJson(req, res, 500, { error: "missing_llm_api_key" });
-      return;
-    }
-    const apiKey = rawKey.trim();
-
-    const base = getEnv("LLM_BASE_URL");
-    let apiBase = "https://api.coze.cn";
-    if (base) {
       try {
-        const u = new URL(base);
-        apiBase = u.origin;
-      } catch {
+        const totalCalls = await prisma.callLog.count();
+        const failCount = await prisma.callLog.count({ where: { status: "FAIL" } });
+        const avgLatencyResult = await prisma.callLog.aggregate({ _avg: { latency: true } });
+        const recentCalls = await prisma.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } });
+        const distribution = await prisma.callLog.groupBy({ by: ['action'], _count: { _all: true } });
+        const toolDistribution = distribution.reduce((acc: any, curr) => { acc[curr.action] = curr._count._all; return acc; }, {});
+        const errorAgg = await prisma.callLog.groupBy({ where: { status: "FAIL", errorMsg: { not: null } }, by: ['errorMsg'], _count: { _all: true }, _max: { createdAt: true } });
+        const errorDistribution = errorAgg.map(curr => ({ message: curr.errorMsg, count: curr._count._all, lastSeen: curr._max.createdAt })).sort((a, b) => b.count - a.count);
+
+        sendJson(req, res, 200, { totalCalls, failCount, avgLatency: Math.round(avgLatencyResult._avg.latency || 0), recentCalls, toolDistribution, errorDistribution });
+      } catch (e: any) {
+        sendJson(req, res, 500, { error: "Failed to fetch stats", message: e.message });
       }
+      return;
     }
 
-    try {
-      const uint8 = new Uint8Array(buf);
-      const blob = new Blob([uint8], { type });
-      const form = new FormData();
-      form.append("file", blob, name);
+    const rateKey = getClientKey(req, auth.subject);
+    if (!allowRequest(rateKey)) {
+      sendJson(req, res, 429, { error: "rate_limited" });
+      return;
+    }
 
-      const uploadUrl = new URL("/v1/files/upload", apiBase);
-      const upstream = await fetch(uploadUrl.toString(), {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey.replace(/^Bearer\s+/i, "")}`
-        },
-        body: form
-      });
-      const raw = await upstream.text();
+    if (req.method === "POST" && url.pathname === "/parse-excel") {
+      let body: any;
+      try { body = await readJson(req); } catch (e: any) {
+        sendJson(req, res, e?.message === "request_body_too_large" ? 413 : 400, { error: e?.message });
+        return;
+      }
+      const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : "upload.xlsx";
+      let data = typeof body?.data === "string" ? body.data.trim() : "";
+      if (!data) { sendJson(req, res, 400, { error: "missing_data" }); return; }
+      const commaIdx = data.indexOf(",");
+      if (commaIdx >= 0) data = data.slice(commaIdx + 1);
 
-      let json: any;
+      const startTime = Date.now();
       try {
-        json = JSON.parse(raw);
-      } catch {
-        sendJson(req, res, 502, { error: "coze_not_json", body: raw.slice(0, 800) });
-        return;
+        const buf = Buffer.from(data, "base64");
+        let wb: XLSX.WorkBook;
+        if (name.toLowerCase().endsWith(".csv")) {
+          const detected = jschardet.detect(buf);
+          const encoding = detected.encoding === "GB2312" ? "GBK" : detected.encoding;
+          wb = XLSX.read(buf, { type: "buffer", codepage: encoding === "GBK" ? 936 : 65001 });
+        } else {
+          wb = XLSX.read(buf, { type: "buffer" });
+        }
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet);
+        await logCall({ action: "parse-excel", status: "OK", latency: Date.now() - startTime });
+        sendJson(req, res, 200, { rows });
+      } catch (e: any) {
+        await logCall({ action: "parse-excel", status: "FAIL", latency: Date.now() - startTime, errorMsg: e.message });
+        sendJson(req, res, 500, { error: "parse_failed", message: e.message });
       }
-
-      if (!upstream.ok || (typeof json?.code === "number" && json.code !== 0)) {
-        const msg = typeof json?.msg === "string" ? json.msg : upstream.statusText;
-        sendJson(req, res, 502, { error: "coze_upload_failed", message: msg });
-        return;
-      }
-
-      sendJson(req, res, 200, json);
-    } catch (e: any) {
-      const msg = e?.message ? String(e.message) : String(e);
-      sendJson(req, res, 500, { error: "upload_proxy_error", message: msg });
-    }
-    return;
-  }
-
-  if (req.method === "GET" && url.pathname === "/components") {
-    const all = Array.from(components.values());
-    sendJson(req, res, 200, { items: all });
-    return;
-  }
-
-  if (req.method === "POST" && url.pathname === "/components") {
-    let body: any;
-    try {
-      body = await readJson(req);
-    } catch (e: any) {
-      const msg = e?.message ? String(e.message) : String(e);
-      sendJson(req, res, msg === "request_body_too_large" ? 413 : 400, { error: msg });
       return;
     }
 
-    const key = typeof body?.key === "string" ? body.key.trim() : "";
-    if (!key) {
-      sendJson(req, res, 400, { error: "missing_key" });
+    if (req.method === "GET" && url.pathname === "/components") {
+      sendJson(req, res, 200, { items: Array.from(components.values()) });
       return;
     }
 
-    const rawConfig = body?.config ?? body?.props ?? {};
-    if (typeof rawConfig !== "object" || rawConfig === null || Array.isArray(rawConfig)) {
-      sendJson(req, res, 400, { error: "invalid_config" });
-      return;
-    }
+    if (req.method === "POST" && url.pathname === "/components") {
+      let body: any = await readJson(req);
+      const key = body?.key?.trim();
+      if (!key) { sendJson(req, res, 400, { error: "missing_key" }); return; }
+      const figmaKey = body?.figmaKey?.trim() || "";
+      const variants = body?.variants || [];
+      const props = body?.props || {};
+      const displayName = body?.displayName || key;
 
-    const now = new Date().toISOString();
-    const existing = components.get(key);
-    const createdAt = existing?.createdAt ?? now;
-    const def: ComponentDefinition = {
-      key,
-      config: rawConfig as Record<string, unknown>,
-      createdAt,
-      updatedAt: now
-    };
-    components.set(key, def);
-    sendJson(req, res, existing ? 200 : 201, def);
-    return;
-  }
-
-  const componentMatch = url.pathname.match(/^\/components\/([^/]+)$/);
-  if (componentMatch) {
-    const key = decodeURIComponent(componentMatch[1]);
-
-    if (req.method === "GET") {
-      const def = components.get(key);
-      if (!def) {
-        sendJson(req, res, 404, { error: "not_found" });
-        return;
+      if (process.env.DATABASE_URL) {
+        await (prisma.componentConfig as any).upsert({
+          where: { configKey: key },
+          update: { displayName, figmaKey, variants, props, updatedAt: new Date() },
+          create: { configKey: key, displayName, figmaKey, variants, props }
+        });
       }
+      const def = { key, config: { ...props, figma: { componentKey: figmaKey }, variants }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      components.set(key, def);
       sendJson(req, res, 200, def);
       return;
     }
 
-    if (req.method === "DELETE") {
-      const existed = components.delete(key);
-      if (!existed) {
-        sendJson(req, res, 404, { error: "not_found" });
-        return;
-      }
-      sendJson(req, res, 204, {});
-      return;
-    }
-  }
-
-  if (req.method === "GET" && url.pathname === "/tools") {
-    const client = await getMcp();
-    const tools = await client.request({ method: "tools/list" }, ListToolsResultSchema);
-    sendJson(req, res, 200, tools);
-    return;
-  }
-
-  const toolMatch = url.pathname.match(/^\/tools\/([^/]+)$/);
-  if (req.method === "POST" && toolMatch) {
-    const toolName = decodeURIComponent(toolMatch[1]);
-    let args: Record<string, unknown> = {};
-    try {
-      const body = (await readJson(req)) as {
-        args?: Record<string, unknown>;
-        arguments?: Record<string, unknown>;
-      };
-      args = body.args ?? body.arguments ?? {};
-    } catch (e: any) {
-      const msg = e?.message ? String(e.message) : String(e);
-      sendJson(req, res, msg === "request_body_too_large" ? 413 : 400, { error: msg });
-      return;
-    }
-
-    try {
+    if (req.method === "GET" && url.pathname === "/tools") {
       const client = await getMcp();
-      const result = await client.request(
-        {
-          method: "tools/call",
-          params: {
-            name: toolName,
-            arguments: args
-          }
-        },
-        CallToolResultSchema,
-        { timeout: 300000 }
-      );
-
-      const text = result.content
-        .map((c: any) => (c.type === "text" ? c.text : ""))
-        .filter(Boolean)
-        .join("\n");
-
-      sendJson(req, res, 200, { text, raw: result });
-      return;
-    } catch (e: any) {
-      sendJson(req, res, 500, { error: e?.message ? String(e.message) : String(e) });
+      const tools = await client.request({ method: "tools/list" }, ListToolsResultSchema);
+      sendJson(req, res, 200, tools);
       return;
     }
-  }
 
-  sendJson(req, res, 404, { error: "not_found" });
+    const toolMatch = url.pathname.match(/^\/tools\/([^/]+)$/);
+    if (req.method === "POST" && toolMatch) {
+      const toolName = decodeURIComponent(toolMatch[1]);
+      const body = (await readJson(req)) as any;
+      const args = body.args ?? body.arguments ?? {};
+      const startTime = Date.now();
+      try {
+        const client = await getMcp();
+        const result = await client.request({ method: "tools/call", params: { name: toolName, arguments: args } }, CallToolResultSchema, { timeout: 300000 });
+        const text = result.content.map((c: any) => c.text || "").join("\n");
+        await logCall({ action: toolName, status: "OK", latency: Date.now() - startTime, prompt: JSON.stringify(args), llmResponse: result });
+        sendJson(req, res, 200, { text, raw: result });
+      } catch (e: any) {
+        await logCall({ action: toolName, status: "FAIL", latency: Date.now() - startTime, prompt: JSON.stringify(args), errorMsg: e.message });
+        sendJson(req, res, 500, { error: e.message });
+      }
+      return;
+    }
+
+    sendJson(req, res, 404, { error: "not_found" });
   } catch (e: any) {
-    sendJson(req, res, 500, { error: "handler_crash", message: e?.message, stack: e?.stack });
+    sendJson(req, res, 500, { error: "handler_crash", message: e.message });
   }
 }
-
