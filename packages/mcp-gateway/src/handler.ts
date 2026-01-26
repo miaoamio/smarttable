@@ -69,18 +69,22 @@ const rateLimitPerMinute = Number(getEnv("RATE_LIMIT_PER_MIN") ?? "120");
 
 function withCors(req: http.IncomingMessage, res: http.ServerResponse) {
   let origin = req.headers.origin;
-  if (origin === "null") origin = undefined;
-
-  const allowAll = corsOrigins.includes("*");
-  if (allowAll || !origin) {
+  // Handle 'null' origin (common in local file or some plugin environments)
+  if (origin === "null") {
     res.setHeader("access-control-allow-origin", "*");
-  } else if (origin && corsOrigins.includes(origin as string)) {
-    res.setHeader("access-control-allow-origin", origin);
-    res.setHeader("vary", "origin");
+  } else {
+    const allowAll = corsOrigins.includes("*");
+    if (allowAll || !origin) {
+      res.setHeader("access-control-allow-origin", "*");
+    } else if (origin && corsOrigins.includes(origin as string)) {
+      res.setHeader("access-control-allow-origin", origin);
+      res.setHeader("vary", "origin");
+    }
   }
 
   res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS,DELETE");
   res.setHeader("access-control-allow-headers", "content-type, authorization, x-requested-with");
+  res.setHeader("access-control-max-age", "86400"); // 24 hours
 }
 
 function sendJson(req: http.IncomingMessage, res: http.ServerResponse, status: number, body: unknown) {
@@ -345,9 +349,9 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
         const avgLatencyResult = await prisma.callLog.aggregate({ _avg: { latency: true } });
         const recentCalls = await prisma.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } });
         const distribution = await prisma.callLog.groupBy({ by: ['action'], _count: { _all: true } });
-        const toolDistribution = distribution.reduce((acc: any, curr) => { acc[curr.action] = curr._count._all; return acc; }, {});
+        const toolDistribution = distribution.reduce((acc: any, curr: any) => { acc[curr.action] = curr._count._all; return acc; }, {});
         const errorAgg = await prisma.callLog.groupBy({ where: { status: "FAIL", errorMsg: { not: null } }, by: ['errorMsg'], _count: { _all: true }, _max: { createdAt: true } });
-        const errorDistribution = errorAgg.map(curr => ({ message: curr.errorMsg, count: curr._count._all, lastSeen: curr._max.createdAt })).sort((a, b) => b.count - a.count);
+        const errorDistribution = errorAgg.map((curr: any) => ({ message: curr.errorMsg, count: curr._count._all, lastSeen: curr._max.createdAt })).sort((a: any, b: any) => b.count - a.count);
 
         sendJson(req, res, 200, { totalCalls, failCount, avgLatency: Math.round(avgLatencyResult._avg.latency || 0), recentCalls, toolDistribution, errorDistribution });
       } catch (e: any) {

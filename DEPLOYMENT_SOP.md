@@ -80,10 +80,37 @@
 | `tsc: command not found` | Vercel 环境变量未同步 | 在 `package.json` 中改用 `../../node_modules/.bin/tsc` |
 | `Module not found: @modelcontextprotocol/sdk` | 依赖未打包 | 检查 `scripts/bundle-gateway.mjs` 是否正常生成了 `api/gateway.js` |
 | `401: access_token require prefix Bearer` | API Key 缺少 Bearer 前缀 | 检查代码是否使用了 `apiKey.startsWith("Bearer ") ? apiKey : \`Bearer ${apiKey}\`` 动态处理逻辑 |
+| `CORS Error: Preflight request failed` | OPTIONS 请求未正确响应或 Origin 为 null | 确保 `vercel.json` 和 `handler.ts` 显式允许 `Origin: null` 并返回 200 OK |
 | `npm error Exit handler never called!` | Node 20 版本的 npm Bug | 在 Vercel 设置中将 Node.js 版本切换到 22.x |
-| 访问接口返回 404 | 路由配置错误 | 检查 `vercel.json` 中的 `dest` 是否指向了实际生成的 `.js` 文件路径 |
 
-## 5. 维护建议
+## 5. 跨域 (CORS) 专项配置
+
+由于 Figma 插件环境的特殊性（Origin 经常为 `null`），必须在两个层面确保 CORS 正常工作：
+
+### 1. Vercel 层配置 (vercel.json)
+显式拦截 `OPTIONS` 方法并直接返回成功，避免进入 Serverless 函数前被 Vercel 默认拦截。
+```json
+{
+  "src": "/(.*)",
+  "methods": ["OPTIONS"],
+  "headers": {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS,DELETE",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With"
+  },
+  "dest": "/api/gateway.js"
+}
+```
+
+### 2. 代码层配置 (handler.ts)
+在代码中手动处理 `origin: null` 的情况：
+```typescript
+if (origin === "null") {
+  res.setHeader("access-control-allow-origin", "*");
+}
+```
+
+## 6. 维护建议
 
 *   **更新依赖**：在根目录运行 `npm install` 后，务必检查 `package-lock.json` 是否已同步。
 *   **测试构建**：在推送代码前，本地运行 `npm run build`，检查 `api/gateway.js` 是否成功生成。
