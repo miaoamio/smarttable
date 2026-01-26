@@ -32,8 +32,9 @@ export function distributePrompt(
   // 1. 任务指令 (Task Instruction)
   let taskInstruction = "";
   if (!isEdit) {
-    taskInstruction = `# Task: Create a New Table
+    taskInstruction = `# 任务：创建新表格 (Task: Create a New Table)
 你是一个 Figma 表格设计专家。请根据用户需求和提供的参考资料，从零开始设计一个表格。
+**语言要求：请务必保持输出语言与用户需求或上传资料中的语言一致。如果上传资料是中文，请生成中文内容。**
 必须确保生成的 JSON 符合 "intent": "create" 协议。
 **重要格式约束：**
 1. **只输出 JSON 对象本身**：不要包含任何前导或后继文字，不要使用 Markdown 代码块包裹。
@@ -41,20 +42,24 @@ export function distributePrompt(
 3. **行数限制**：请务必生成正好 ${rowCount} 行数据内容。
 4. **功能配置**：请务必在 JSON 的 "config" 字段中配置 "filters"（筛选器）和 "buttons"（按钮组），除非用户明确要求不需要。`;
   } else {
-    taskInstruction = `# Task: Edit Existing Table
+    taskInstruction = `# 任务：编辑现有表格 (Task: Edit Existing Table)
 你是一个 Figma 表格编辑专家。用户当前正在对一个已有的 Figma 表格进行增量修改。
+**语言要求：请务必保持输出语言与当前表格上下文或用户最新指令中的语言一致。**
 你必须基于提供的 [Current Table Context] 进行修改，并返回 "intent": "edit" 协议。
 **重要格式约束：**
 1. **只输出 JSON 对象本身**：不要包含任何前导或后继文字，不要使用 Markdown 代码块包裹。
-2. **禁止重复输出**：严格按照 "patch" 协议返回修改操作，严禁在返回结果中包含多余的结构或嵌套。
+2. **禁止重复输出**：严格按照 "patch" 协议返回修改操作，严禁在返回结果中包含多余的结构 or 嵌套。
 3. **行数限制**：如果涉及新增行或重新生成内容，请确保最终结果中包含正好 ${rowCount} 行数据内容。`;
   }
 
   // 1.5 组件样式指南 (Component Style Guide)
   const styleGuide = `
-## Component Style Guide
-- **English Casing (英文大小写规范)**: 
-    - 默认遵循 **Sentence case** 格式：仅首字母大写，其余小写（例如："User name", "Created date"）。
+## 组件样式指南 (Component Style Guide)
+- **Language Consistency (语言一致性)**: 
+    - **严禁擅自将中文转换为英文**。
+    - 输出语言必须与用户输入及参考资料（Excel/图片）保持高度一致。
+- **Casing (大小写规范)**: 
+    - 对于英文内容，默认遵循 **Sentence case** 格式：仅首字母大写，其余小写（例如："User name", "Created date"）。
     - **特殊例外**：仅当字段为专有名词缩写、ID 或用户有明确全大写要求时，才使用 **UPPERCASE**（例如："ID", "URL", "SKU"）。
 - **Avatar (头像)**: 专门用于展示人物或实体的列。在 JSON 中 type 应为 "Avatar"。
 - **ActionText (操作列)**: 专门用于展示“查看、编辑、删除”等操作的列。在 JSON 中 type 应为 "ActionText"。
@@ -71,7 +76,7 @@ export function distributePrompt(
   // 2. 选中态上下文 (Selection Context)
   let selectionContext = "";
   if (isEdit) {
-    selectionContext = `## User Selection in Figma
+    selectionContext = `## 用户在 Figma 中的选中内容 (User Selection in Figma)
 当前用户在 Figma 中选中了: 【${selectionLabel}】
 请根据选中目标精准理解用户的修改意图：`;
 
@@ -97,7 +102,7 @@ export function distributePrompt(
   // 2.5 表格内容上下文 (Table Content Context)
   let tableContentContext = "";
   if (isEdit && tableContext) {
-    tableContentContext = `\n## Current Table Context
+    tableContentContext = `\n## 当前表格上下文 (Current Table Context)
 - Rows: ${tableContext.rows}
 - Columns: ${tableContext.cols}
 - Headers: ${JSON.stringify(tableContext.headers)}
@@ -110,18 +115,19 @@ export function distributePrompt(
   // 3. 参考数据注入 (Data Reference)
   let dataReference = "";
   if (tableAttachments.length > 0) {
-    dataReference += `## Reference Data (from Uploaded Excel)
+    dataReference += `## 参考数据（来自上传的 Excel） (Reference Data from Uploaded Excel)
 以下是用户上传的表格文件内容（已根据要求的行数 ${rowCount} 提取典型数据）。请将其作为生成数据的主要来源。
+**重要：请保持数据中的语言（中文/英文）不变，严禁擅自翻译。**
 **注意：为了保持 Figma 性能和展示效果，请严格按照提供的这 ${rowCount} 行数据进行生成，不要自行扩展更多行。**\n`;
     tableAttachments.forEach((table, index) => {
       if (table.data) {
-        dataReference += `\n--- File: ${table.fileName} ---\n${JSON.stringify(table.data, null, 2)}\n`;
+        dataReference += `\n--- 文件: ${table.fileName} ---\n${JSON.stringify(table.data, null, 2)}\n`;
       }
     });
   }
 
   if (imageAttachments.length > 0) {
-    dataReference += `\n## Visual Reference
+    dataReference += `\n## 视觉参考 (Visual Reference)
 用户上传了 ${imageAttachments.length} 张截图。请结合视觉特征（如颜色、布局、组件样式）来决定表格的配置。`;
   }
 
@@ -157,8 +163,8 @@ export function distributePrompt(
     // else: 选中的是表格或表格列或单元格或分页器，则 prompt 携带现在整个表格的信息（表格+按钮组+分页器+页签信息）
     // 默认就是 tableContext
 
-    currentState = `## Current Table Context (JSON)
-这是当前 Figma 中选中目标的结构和上下文信息。你的修改必须基于此数据：
+    currentState = `## 当前表格 JSON 上下文 (Current Table Context JSON)
+这是当前 Figma 中选中目标的结构和上下文信息。你的修改必须基于此数据，并保持语言一致性：
 \`\`\`json
 ${JSON.stringify(contextToProvide, null, 2)}
 \`\`\`
@@ -179,12 +185,13 @@ ${dataReference}
 
 ${currentState}
 
-## User Requirement
+## 用户需求 (User Requirement)
 ${prompt || "请根据以上参考资料生成/优化表格"}
 
 ---
 请严格遵守 SYSTEM_PROMPT 中定义的协议规范。
 只能输出一个有效的 JSON 对象，严禁任何解释性文字、Markdown 标记或重复嵌套结构。
+**特别提醒：保持语言的一致性，输入为中文则输出为中文。**
 **注意：生成的 JSON 不要使用 Markdown 代码块（即不要使用 \`\`\`json ... \`\`\`）包裹。**
 `.trim();
 

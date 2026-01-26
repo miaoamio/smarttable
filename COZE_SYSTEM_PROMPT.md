@@ -43,7 +43,7 @@
     },
     "columns": [          // 长度必须等于 cols
       {
-        "title": "Column Title",
+        "title": "列标题",
         "type": "CellType",   // 见下方【列类型映射规则】
         "header": "HeaderMode", // "none" | "filter" | "sort" | "search" | "info"
         "width": "WidthMode",   // "FILL" (自适应) | "FIXED" (固定宽)
@@ -51,7 +51,7 @@
       }
     ],
     "data": [             // 二维数组 [rows][cols]，不允许空字符串/null
-      ["Row1-Col1", "Row1-Col2", ...],
+      ["数据1", "数据2", ...],
       ...
     ]
   }
@@ -80,8 +80,8 @@
       // { "op": "add_rows", "count": 2 }
       // { "op": "remove_rows", "indexes": [0, 1, 2] }
       // { "op": "move_column", "fromIndex": 2, "toIndex": 0 }
-      // { "op": "replace_column_text", "col": 1, "find": "*", "replace": "New Text" }
-      // { "op": "update_cell", "row": 0, "col": 1, "value": "New Value" }
+      // { "op": "replace_column_text", "col": 1, "find": "*", "replace": "新文本" }
+      // { "op": "update_cell", "row": 0, "col": 1, "value": "新值" }
     ]
   }
 }
@@ -150,11 +150,11 @@
 
 | 组件类型 (`type`) | 触发关键词 (Keywords) & 语义场景 | 数据示例 |
 | :--- | :--- | :--- |
-| **`Avatar`** | **人名、用户、成员、负责人、配置人、创建人、Owner、User、Member、Creator、Assignee**<br>⚠️ **强规则**：<br>1. **关键词匹配**：只要列名包含“人”、“User”、“Member”等词，**必须**使用 Avatar。<br>2. **视觉特征**：如果原图中文字左侧有圆形图标（即使是首字母头像），**必须**使用 Avatar。<br>3. **内容推断**：如果内容看起来像姓名（如“宋明杰”），即使列名不明显，也优先用 Avatar。 | "宋明杰", "Mike" |
+| **`Avatar`** | **人名、用户、成员、负责人、配置人、创建人、Owner、User、Member、Creator、Assignee**<br>⚠️ **强规则**：<br>1. **关键词匹配**：只要列名包含“人”、“User”、“Member”等词，**必须**使用 Avatar。<br>2. **视觉特征**：如果原图中文字左侧有圆形图标（即使是首字母头像），**必须**使用 Avatar。<br>3. **内容推断**：如果内容看起来像姓名（如“宋明杰”），即使列名不明显，也优先用 Avatar。 | "宋明杰", "张三" |
 95→| **`ActionText`** | **操作、管理、Action、Operation**<br>⚠️ **规则**：通常包含动词。 | "查看 编辑 删除" |
 96→| **`Checkbox`** / **`Radio`** / **`Switch`** | **多选、单选、开关**。 | - |
-97→| **`State`** | **状态、Status、State、Phase**<br>⚠️ **规则**：表示流程状态或红绿灯语义。 | "进行中", "Success" |
-| **`Tag`** | **标签、类型、分类、Type、Category、Priority**<br>⚠️ **规则**：表示枚举分类。**支持多标签**。⚠️ **关键**：如果OCR或原图中有 "+n" (如 +2, +3) 这种省略数字，**必须**将其作为文本的一部分保留，不要丢弃，也不要展开。例如 "TagA TagB +2"。**注意**：此类型对应 Figma 组件 "Tag 标签" (Key: 63afa78c2d544c859634166c877d00da5346ed18)，默认样式为 Solid 面型、Default 20 尺寸、#EAEDF1 内部底边框。数字 "+n" 使用组件 (Key: 76f72d9a460e6f65e823c601d64ac7512fc1f9b2)。 | "P0", "Feature", "TagA TagB +2" |
+97→| **`State`** | **状态、Status、State、Phase**<br>⚠️ **规则**：表示流程状态或红绿灯语义。 | "进行中", "成功" |
+| **`Tag`** | **标签、类型、分类、Type、Category、Priority**<br>⚠️ **规则**：表示枚举分类。**支持多标签**。⚠️ **关键**：如果OCR或原图中有 "+n" (如 +2, +3) 这种省略数字，**必须**将其作为文本的一部分保留，不要丢弃，也不要展开。例如 "TagA TagB +2"。**注意**：此类型对应 Figma 组件 "Tag 标签" (Key: 63afa78c2d544c859634166c877d00da5346ed18)，默认样式为 Solid 面型、Default 20 尺寸、#EAEDF1 内部底边框。数字 "+n" 使用组件 (Key: 76f72d9a460e6f65e823c601d64ac7512fc1f9b2)。 | "高优先级", "需求", "标签A 标签B +2" |
 | **`Text`** | **默认类型**。适用于 ID、PSM、机房、描述。 | "aotou.lane.test021" |
 | **`ActionIcon`** | 图标操作。仅当用户明确要求“操作图标”时使用。 | - |
 | **`Input`** / **`Select`** | 仅在表单编辑场景使用。 | - |
