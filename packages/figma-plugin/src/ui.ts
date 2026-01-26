@@ -1498,242 +1498,66 @@ function setupImageUpload() {
   }
 }
 
-async function handleExcelFile(file: File, target: UploadTarget) {
-  const currentAttachments = getAttachments(target);
-  if (currentAttachments.length >= 3) {
-    showAlert("error", "最多只能上传 3 个附件。");
-    return;
+  function arrayBufferToBase64(buffer: ArrayBuffer): string {
+    let binary = "";
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
   }
 
-  // Optimistic UI
-  const tempId = Math.random().toString(36).slice(2);
-  const tempState: UploadedFileState = {
-    fileId: tempId,
-    fileName: file.name,
-    previewUrl: "", // No URL needed for table icon rendering
-    loading: true,
-    type: "table"
-  };
+  async function handleExcelFile(file: File, target: UploadTarget) {
+    const currentAttachments = getAttachments(target);
+    if (currentAttachments.length >= 3) {
+      showAlert("error", "最多只能上传 3 个附件。");
+      return;
+    }
 
-  const next = currentAttachments.concat([tempState]);
-  setAttachments(target, next);
-  renderAttachmentPreview(target);
+    // Optimistic UI
+    const tempId = Math.random().toString(36).slice(2);
+    const tempState: UploadedFileState = {
+      fileId: tempId,
+      fileName: file.name,
+      previewUrl: "", // No URL needed for table icon rendering
+      loading: true,
+      type: "table"
+    };
 
-  try {
+    const next = currentAttachments.concat([tempState]);
+    setAttachments(target, next);
+    renderAttachmentPreview(target);
+
+    try {
       const buffer = await file.arrayBuffer();
-      const binary = new Uint8Array(buffer);
+      const base64Data = arrayBufferToBase64(buffer);
+
+      const gatewayUrl = getGatewayBaseUrl();
+      const headers = {
+        "Content-Type": "application/json",
+        ...getGatewayAuthHeaders()
+      };
+
+      const response = await fetch(`${gatewayUrl}/parse-excel`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          name: file.name,
+          data: base64Data
+        })
+      });
+
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error || `HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
       
-      // Log magic number for debugging
-      const magic = Array.from(binary.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase();
-      console.log(`File: ${file.name}, Size: ${file.size} bytes, Magic: ${magic}`);
-
-      let wb;
-      const isXLSX = magic.startsWith("50 4B"); // ZIP/XLSX
-      const isXLS = magic.startsWith("D0 CF");  // Old XLS (97-2003)
-      const isCSV = file.name.toLowerCase().endsWith(".csv") || magic.startsWith("22") || magic.startsWith("49 44"); // " (quote) or ID (ID/IDN)
-      const isUTF16LE = magic.startsWith("FF FE"); // UTF-16LE BOM
-      const isUTF16BE = magic.startsWith("FE FF"); // UTF-16BE BOM
-      const isUTF8BOM = magic.startsWith("EF BB BF"); // UTF-8 BOM
-      const isHTML = magic.startsWith("3C 21") || magic.startsWith("3C 68") || magic.startsWith("3C 3F"); // <! or <h or <?
-      const headBytes = binary.slice(0, 2048);
-      let zeroCount = 0;
-      let lineBreakCount = 0;
-      let delimiterCount = 0;
-      for (let i = 0; i < headBytes.length; i++) {
-        const b = headBytes[i];
-        if (b === 0) zeroCount++;
-        if (b === 0x0A || b === 0x0D) lineBreakCount++;
-        if (b === 0x2C || b === 0x09 || b === 0x3B) delimiterCount++;
-      }
-      const zeroRatio = headBytes.length > 0 ? zeroCount / headBytes.length : 1;
-      const isLikelyText = !isXLSX && !isXLS && !isHTML && zeroRatio < 0.05 && lineBreakCount > 0 && delimiterCount > 2;
-
-      console.log(`[File Probe] Name: ${file.name}, Magic: ${magic}, isXLS: ${isXLS}, isCSV: ${isCSV}, isHTML: ${isHTML}, isLikelyText: ${isLikelyText}, size: ${file.size}`);
-
-      const getWorkbookScore = (workbook: any): { score: number, chineseCount: number, garbledCount: number } => {
-        try {
-          const firstSheetName = workbook.SheetNames[0];
-          if (!firstSheetName) return { score: -100, chineseCount: 0, garbledCount: 0 };
-          const firstSheet = workbook.Sheets[firstSheetName];
-          let garbledCount = 0;
-          let chineseCount = 0;
-          let rareChineseCount = 0;
-          
-          // 扩大采样范围到 20 行 10 列
-          const range = XLSX.utils.decode_range(firstSheet['!ref'] || 'A1:J20');
-          const maxR = Math.min(range.e.r, 20);
-          const maxC = Math.min(range.e.c, 10);
-          
-          for (let r = range.s.r; r <= maxR; r++) {
-            for (let c = range.s.c; c <= maxC; c++) {
-              const cell = firstSheet[XLSX.utils.encode_cell({r, c})];
-              if (cell && typeof cell.v === 'string' && cell.v.trim().length > 0) {
-                const val = cell.v;
-                
-                // 更加精准的乱码检测：统计 \uFFFD (替换字符) 和 \u0000 (空字节) 的出现次数
-                const garbledMatch = val.match(/[\uFFFD\u0000]/g);
-                if (garbledMatch) garbledCount += garbledMatch.length;
-                
-                // 常用汉字
-                const commonChineseMatch = val.match(/[\u4e00-\u9fa5]/g);
-                if (commonChineseMatch) chineseCount += commonChineseMatch.length;
-                
-                // 生僻汉字：权重降低，避免误伤
-                const rareChineseMatch = val.match(/[\u3400-\u4DBF\u20000-\u2A6DF\u9FA6-\u9FFF]/g);
-                if (rareChineseMatch) rareChineseCount += rareChineseMatch.length;
-              }
-            }
-          }
-          
-          // 优化评分算法：乱码扣分加重，生僻字扣分减弱
-          let score = chineseCount * 10 - rareChineseCount * 5 - garbledCount * 50;
-          
-          if (garbledCount === 0 && chineseCount > 0) {
-            score += 1000; // 纯净的中文文本给予大幅加分
-          }
-          return { score, chineseCount, garbledCount };
-        } catch (e) {
-          return { score: -999, chineseCount: 0, garbledCount: 999 };
-        }
-      };
-
-      const tryReadWithEncoding = (buf: Uint8Array, cp: number | string): { workbook: any, score: number, chineseCount: number, garbledCount: number } => {
-        try {
-          const readOptions: any = { type: "array" };
-          if (cp !== "auto") {
-            readOptions.codepage = typeof cp === 'string' ? parseInt(cp) : cp;
-          }
-          
-          const workbook = XLSX.read(buf, readOptions);
-          const scoreInfo = getWorkbookScore(workbook);
-          let score = scoreInfo.score;
-          if ((cp === "auto" || cp === 65001) && scoreInfo.garbledCount === 0 && scoreInfo.chineseCount > 0) {
-            score += 500;
-          }
-          return { workbook, score, chineseCount: scoreInfo.chineseCount, garbledCount: scoreInfo.garbledCount };
-        } catch (e) {
-          return { workbook: null, score: -999, chineseCount: 0, garbledCount: 999 };
-        }
-      };
-
-      const encodings = [
-        { name: 'UTF-8', cp: 65001 },
-        { name: 'GBK', cp: 936 },
-        { name: 'GB18030', cp: 54936 },
-        { name: 'UTF-16LE', cp: 1200 },
-        { name: 'UTF-16BE', cp: 1201 },
-        { name: 'Big5', cp: 950 },
-        { name: 'Shift-JIS', cp: 932 }
-      ];
-
-      const selectWorkbookByEncoding = (buf: Uint8Array) => {
-        const candidates = encodings.slice();
-        const uint8View = buf;
-        let nullCount = 0;
-        for (let i = 1; i < Math.min(uint8View.length, 1000); i += 2) {
-          if (uint8View[i] === 0) nullCount++;
-        }
-        if (nullCount > 50) {
-          const leIdx = candidates.findIndex(e => e.name === 'UTF-16LE');
-          if (leIdx > -1) {
-            const [le] = candidates.splice(leIdx, 1);
-            candidates.unshift(le);
-          }
-        }
-
-        let bestEnc = candidates[0];
-        let bestRes = tryReadWithEncoding(buf, bestEnc.cp);
-        for (let i = 1; i < candidates.length; i++) {
-          const res = tryReadWithEncoding(buf, candidates[i].cp);
-          console.log(`[Probe] ${candidates[i].name}: Score ${res.score}, Chinese ${res.chineseCount}, Garbled ${res.garbledCount}`);
-          // 如果分数更高，或者当前分数虽然相等但之前的最佳选择是负分且当前编码是 UTF-8/GBK 等更通用的编码
-          if (res.score > bestRes.score) {
-            bestRes = res;
-            bestEnc = candidates[i];
-          } else if (res.score === bestRes.score && bestRes.score < 0) {
-             // 倾向于选择 GBK，因为很多乱码文件其实是 GBK
-             if (candidates[i].name === 'GBK') {
-                bestRes = res;
-                bestEnc = candidates[i];
-             }
-          }
-        }
-        console.log(`[Final Decision] Using ${bestEnc.name}, score ${bestRes.score}, chinese ${bestRes.chineseCount}, garbled ${bestRes.garbledCount}`);
-        return { workbook: bestRes.workbook, encoding: bestEnc, score: bestRes.score };
-      };
-
-      try {
-        if (isXLSX || isXLS) {
-          console.log(isXLSX ? "Standard XLSX" : "Legacy XLS (97-2003)");
-          wb = XLSX.read(binary, { type: "array" });
-          const scoreInfo = getWorkbookScore(wb);
-          console.log(`[Workbook Score] initial score ${scoreInfo.score}, chinese ${scoreInfo.chineseCount}, garbled ${scoreInfo.garbledCount}`);
-          
-          // 只有当分数极低，且不是标准的 XLSX 时，才尝试切换编码（防止 XLSX 误判）
-          if (scoreInfo.score < -500 && !isXLSX) {
-            const picked = selectWorkbookByEncoding(binary);
-            if (picked.workbook && picked.score > scoreInfo.score) {
-              wb = picked.workbook;
-              console.log(`[Workbook Retry] switched encoding to ${picked.encoding.name}`);
-            }
-          }
-        } else if (isCSV) {
-          console.log("CSV detected, starting encoding detection...");
-          if (isUTF8BOM) {
-            wb = XLSX.read(binary, { type: "array", codepage: 65001 });
-          } else if (isUTF16LE) {
-            wb = XLSX.read(binary, { type: "array", codepage: 1200 });
-          } else if (isUTF16BE) {
-            wb = XLSX.read(binary, { type: "array", codepage: 1201 });
-          } else {
-            const picked = selectWorkbookByEncoding(binary);
-            wb = picked.workbook || XLSX.read(binary, { type: "array" });
-          }
-        } else if (isUTF8BOM) {
-          console.log("UTF-8 with BOM detected");
-          wb = XLSX.read(binary, { type: "array", codepage: 65001 });
-        } else if (isUTF16LE) {
-          console.log("UTF-16LE with BOM detected");
-          wb = XLSX.read(binary, { type: "array", codepage: 1200 });
-        } else if (isUTF16BE) {
-          console.log("UTF-16BE with BOM detected");
-          wb = XLSX.read(binary, { type: "array", codepage: 1201 });
-        } else if (isHTML) {
-          console.log("HTML/XML table detected");
-          wb = XLSX.read(binary, { type: "array" });
-        } else if (isLikelyText) {
-          const picked = selectWorkbookByEncoding(binary);
-          wb = picked.workbook || XLSX.read(binary, { type: "array" });
-        } else {
-          const picked = selectWorkbookByEncoding(binary);
-          wb = picked.workbook || XLSX.read(binary, { type: "array" });
-        }
-      } catch (e) {
-        console.error("Parse failed:", e);
-        wb = XLSX.read(binary, { type: "array" });
-      }
-    const sheetName = wb.SheetNames[0];
-      if (wb.SheetNames.length > 1) {
-        console.warn(`File has multiple sheets: ${wb.SheetNames.join(", ")}. Using the first one: ${sheetName}`);
-        showAlert("success", `检测到多个工作表，已默认读取第一个：${sheetName}`);
-      }
-      const sheet = wb.Sheets[sheetName];
-    const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as string[][];
-      const headerRow = data[0] || [];
-      const sampleRows = data.slice(1, 4);
-      const preview = { headers: headerRow, sample: sampleRows };
-      console.log(`Parsed ${file.name}: rows ${data.length}, cols ${headerRow.length}`);
-      console.log(`[Parsed Preview]`, preview);
-      if (data && data.length > 0) {
-      // Clean data: remove completely empty rows
-      const cleanData = data
-        .map(row => (row || []).map(cell => cell == null ? "" : String(cell).trim()))
-        .filter(row => row.some(cell => cell !== ""));
-
-      if (cleanData.length === 0) throw new Error("表格内容为空");
-
-      const headers = cleanData[0];
-      const allBody = cleanData.slice(1);
+      // result expected: { headers: string[], data: string[][], rowCount: number, colCount: number, sheetName: string }
+      const headers_list = result.headers || [];
+      const allBody = result.data || [];
       
       // 1. 限制原始数据参考最多 15 行，避免 prompt 过长
       const limitedBody = allBody.slice(0, 15);
@@ -1750,12 +1574,12 @@ async function handleExcelFile(file: File, target: UploadTarget) {
       }
 
       const rows = typicalBody.length;
-      const cols = headers.length;
+      const cols = headers_list.length;
       
       const spec: AiTableSpec = {
         rows,
         cols,
-        headers,
+        headers: headers_list,
         data: typicalBody
       };
       
@@ -1772,21 +1596,19 @@ async function handleExcelFile(file: File, target: UploadTarget) {
       
       const msg = `成功解析表格 (已按设定行数 ${selectedRowCount} 提取数据): ${rows}行 x ${cols}列`;
       setOutput(msg);
-    } else {
-      throw new Error("表格内容为空");
+    } catch (e) {
+      // Failure
+      const latest = getAttachments(target);
+      const updated = latest.filter((item) => item.fileId !== tempId);
+      setAttachments(target, updated);
+      renderAttachmentPreview(target);
+      
+      const msg = "解析表格失败: " + String(e);
+      setOutput(msg);
+      showAlert("error", msg);
     }
-  } catch (e) {
-    // Failure
-    const latest = getAttachments(target);
-    const updated = latest.filter((item) => item.fileId !== tempId);
-    setAttachments(target, updated);
-    renderAttachmentPreview(target);
-    
-    const msg = "解析表格失败: " + String(e);
-    setOutput(msg);
-    showAlert("error", msg);
   }
-}
+
 
 function setupExcelUpload() {
   console.log("Setting up Excel upload...");

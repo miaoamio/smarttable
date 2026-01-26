@@ -4,6 +4,8 @@
   "type": "module",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
+    "jschardet": "^3.0.0",
+    "xlsx": "^0.18.5",
     "zod": "^3.25.0"
   },
   "scripts": {
@@ -13,4 +15,3 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }
-

@@ -3,6 +3,9 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
+import * as XLSX from "xlsx";
+import jschardet from "jschardet";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { CallToolResultSchema, ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -376,6 +379,96 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
   const rateKey = getClientKey(req, auth.subject);
   if (!allowRequest(rateKey)) {
     sendJson(req, res, 429, { error: "rate_limited" });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/parse-excel") {
+    let body: any;
+    try {
+      body = await readJson(req);
+    } catch (e: any) {
+      const msg = e?.message ? String(e.message) : String(e);
+      sendJson(req, res, msg === "request_body_too_large" ? 413 : 400, { error: msg });
+      return;
+    }
+
+    const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : "upload.xlsx";
+    let data = typeof body?.data === "string" ? body.data.trim() : "";
+    if (!data) {
+      sendJson(req, res, 400, { error: "missing_data" });
+      return;
+    }
+    const commaIdx = data.indexOf(",");
+    if (commaIdx >= 0) data = data.slice(commaIdx + 1);
+
+    let buf: Buffer;
+    try {
+      buf = Buffer.from(data, "base64");
+    } catch (e: any) {
+      sendJson(req, res, 400, { error: "invalid_base64" });
+      return;
+    }
+
+    try {
+      let wb: XLSX.WorkBook;
+      const isCSV = name.toLowerCase().endsWith(".csv");
+      
+      if (isCSV) {
+        // For CSV, try to detect encoding
+        const detected = jschardet.detect(buf);
+        const encoding = detected.encoding === "GB2312" ? "GBK" : detected.encoding;
+        
+        // Map common encodings to codepages
+        const cpMap: Record<string, number> = {
+          "UTF-8": 65001,
+          "GBK": 936,
+          "GB2312": 936,
+          "GB18030": 54936,
+          "windows-1252": 1252,
+          "UTF-16LE": 1200,
+          "UTF-16BE": 1201,
+          "Big5": 950,
+          "Shift_JIS": 932
+        };
+        
+        const codepage = cpMap[encoding] || 65001;
+        wb = XLSX.read(buf, { type: "buffer", codepage });
+      } else {
+        // For Excel files, they are usually self-describing or ZIP
+        wb = XLSX.read(buf, { type: "buffer" });
+      }
+
+      const sheetName = wb.SheetNames[0];
+      if (!sheetName) {
+        sendJson(req, res, 400, { error: "empty_workbook" });
+        return;
+      }
+      const sheet = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as any[][];
+
+      // Clean data: remove completely empty rows and trim strings
+      const cleanData = rows
+        .map(row => (Array.isArray(row) ? row : []).map(cell => cell == null ? "" : String(cell).trim()))
+        .filter(row => row.some(cell => cell !== ""));
+
+      if (cleanData.length === 0) {
+        sendJson(req, res, 400, { error: "empty_table" });
+        return;
+      }
+
+      const headers = cleanData[0];
+      const allBody = cleanData.slice(1);
+      
+      sendJson(req, res, 200, {
+        headers,
+        data: allBody,
+        rowCount: allBody.length,
+        colCount: headers.length,
+        sheetName
+      });
+    } catch (e: any) {
+      sendJson(req, res, 500, { error: "parse_failed", message: e?.message });
+    }
     return;
   }
 
