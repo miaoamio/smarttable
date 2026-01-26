@@ -133832,7 +133832,7 @@ function getEnv(name) {
 var corsOrigins = (getEnv("CORS_ORIGINS") ?? "*").split(",").map((s) => s.trim()).filter(Boolean);
 var authToken = getEnv("GATEWAY_AUTH_TOKEN");
 var jwtSecret = getEnv("GATEWAY_JWT_SECRET");
-var maxBodyBytes = Number(getEnv("MAX_BODY_BYTES") ?? "1048576");
+var maxBodyBytes = Number(getEnv("MAX_BODY_BYTES") ?? "104857600");
 var rateLimitPerMinute = Number(getEnv("RATE_LIMIT_PER_MIN") ?? "120");
 var port = Number(process.env.PORT ?? 8787);
 var llmKeyLen = (getEnv("LLM_API_KEY") ?? "").length;

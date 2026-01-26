@@ -49,7 +49,7 @@ const corsOrigins = (getEnv("CORS_ORIGINS") ?? "*")
 
 const authToken = getEnv("GATEWAY_AUTH_TOKEN");
 const jwtSecret = getEnv("GATEWAY_JWT_SECRET");
-const maxBodyBytes = Number(getEnv("MAX_BODY_BYTES") ?? "10485760");
+const maxBodyBytes = Number(getEnv("MAX_BODY_BYTES") ?? "104857600"); // 100MB default
 const rateLimitPerMinute = Number(getEnv("RATE_LIMIT_PER_MIN") ?? "120");
 const port = Number(process.env.PORT ?? 8787);
 
