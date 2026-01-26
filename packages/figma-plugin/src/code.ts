@@ -2803,11 +2803,47 @@ async function applyColumnWidthToColumn(table: FrameNode, colIndex: number, mode
           (child as any).layoutAlign = "STRETCH";
         }
       } else {
-        (child as any).layoutSizingHorizontal = mode === "HUG" ? "HUG" : "FILL";
-        if (mode === "HUG" && "layoutAlign" in child) {
-          (child as any).layoutAlign = "INHERIT";
-        } else if (mode !== "HUG" && "layoutAlign" in child) {
-          (child as any).layoutAlign = "STRETCH";
+        const cellType = child.getPluginData("cellType");
+        const isAction = cellType === "ActionText" || cellType === "ActionIcon";
+        
+        // If it's an action cell, we want special handling:
+        // 1. If column is FIXED/FILL, cell should be FILL to stretch background
+        // 2. But internal content should be FIXED/AUTO based on needs
+        
+        if (isAction) {
+           (child as any).layoutSizingHorizontal = "FILL";
+           if ("layoutAlign" in child) {
+               (child as any).layoutAlign = "STRETCH";
+           }
+           // Ensure internal layout is correct
+           if (child.type === "FRAME") {
+               const frame = child as FrameNode;
+               frame.layoutMode = "HORIZONTAL";
+               // If column is HUG, cell must be HUG to shrink-wrap content
+               // If column is FIXED/FILL, cell must be FILL (handled above) but primaryAxisSizingMode depends...
+               // Actually, for action cells:
+               // - HUG column: cell is HUG
+               // - FIXED/FILL column: cell is FILL, but internal items stay left-aligned (GAP handles spacing)
+               
+               if (mode === "HUG") {
+                   (child as any).layoutSizingHorizontal = "HUG";
+                   frame.primaryAxisSizingMode = "AUTO"; 
+                   frame.counterAxisSizingMode = "FIXED";
+                   if ("layoutAlign" in child) (child as any).layoutAlign = "INHERIT";
+               } else {
+                   // FIXED or FILL column
+                   frame.primaryAxisSizingMode = "FIXED"; // Don't shrink-wrap, respect FILL width
+                   frame.counterAxisSizingMode = "FIXED";
+               }
+           }
+        } else {
+            // Normal cells
+            (child as any).layoutSizingHorizontal = mode === "HUG" ? "HUG" : "FILL";
+            if (mode === "HUG" && "layoutAlign" in child) {
+              (child as any).layoutAlign = "INHERIT";
+            } else if (mode !== "HUG" && "layoutAlign" in child) {
+              (child as any).layoutAlign = "STRETCH";
+            }
         }
       }
     }
