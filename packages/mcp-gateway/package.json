@@ -4,13 +4,13 @@
   "type": "module",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
-    "@prisma/client": "^6.2.1",
+    "@prisma/client": "6.2.1",
     "jschardet": "^3.0.0",
     "xlsx": "^0.18.5",
     "zod": "^3.25.0"
   },
   "devDependencies": {
-    "prisma": "^6.2.1"
+    "prisma": "6.2.1"
   },
   "scripts": {
     "build": "../../node_modules/.bin/tsc -p tsconfig.json",
