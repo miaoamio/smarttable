@@ -1429,6 +1429,7 @@ colWidthSelect?.addEventListener("change", () => {
   let mode: "Fixed" | "Fill" | "Hug" = "Fixed";
   if (colWidthSelect.value === "FILL") mode = "Fill";
   else if (colWidthSelect.value === "HUG") mode = "Hug";
+  console.log(`[UI] colWidthSelect changed to: ${mode}`);
   post({ type: "set_col_width", mode });
 });
 
@@ -1451,10 +1452,12 @@ colWidthFixedBtn?.addEventListener("click", () => {
 });
 
 colWidthHugBtn?.addEventListener("click", () => {
+  console.log("[UI] HUG button clicked");
   setColWidthMode("HUG");
 });
 
 colWidthFillBtn?.addEventListener("click", () => {
+  console.log("[UI] FILL button clicked");
   setColWidthMode("FILL");
 });
 

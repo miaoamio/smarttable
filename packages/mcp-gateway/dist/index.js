@@ -9,6 +9,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { CallToolResultSchema, ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { loadEnvFromFiles } from "./env.js";
 import { initialComponents } from "./component-config.js";
+import prisma from "./db.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const serverScript = path.resolve(__dirname, "../../mcp-server/dist/index.js");
@@ -170,6 +171,57 @@ function allowRequest(key) {
     return true;
 }
 const components = new Map();
+// Load from DB if available
+if (process.env.DATABASE_URL) {
+    try {
+        const dbConfigs = await prisma.componentConfig.findMany();
+        for (const dbCfg of dbConfigs) {
+            components.set(dbCfg.configKey, {
+                key: dbCfg.configKey,
+                config: {
+                    ...(dbCfg.props || {}),
+                    figma: {
+                        ...(dbCfg.props?.figma || {}),
+                        componentKey: dbCfg.figmaKey
+                    },
+                    variants: dbCfg.variants
+                },
+                createdAt: new Date().toISOString(),
+                updatedAt: dbCfg.updatedAt.toISOString()
+            });
+        }
+        console.log(`Loaded ${dbConfigs.length} configs from database.`);
+        // Sync initialComponents to DB if not present
+        for (const entry of initialComponents) {
+            if (!components.has(entry.key)) {
+                console.log(`Syncing initial component ${entry.key} to database...`);
+                const cfg = entry.config;
+                const dbCfg = await prisma.componentConfig.create({
+                    data: {
+                        configKey: entry.key,
+                        displayName: cfg.displayName || entry.key,
+                        figmaKey: cfg.figma?.componentKey || "",
+                        variants: cfg.variants || [],
+                        props: cfg
+                    }
+                });
+                components.set(entry.key, {
+                    key: entry.key,
+                    config: {
+                        ...cfg,
+                        variants: dbCfg.variants
+                    },
+                    createdAt: new Date().toISOString(),
+                    updatedAt: dbCfg.updatedAt.toISOString()
+                });
+            }
+        }
+    }
+    catch (e) {
+        console.error("Failed to sync/load configs from database:", e);
+    }
+}
+// Fallback for initialComponents (non-DB environment)
 for (const entry of initialComponents) {
     const now = new Date().toISOString();
     if (!components.has(entry.key)) {
@@ -186,103 +238,388 @@ const adminPageHtml = `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>组件管理后台</title>
+<title>Figma AI 插件管理后台</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:16px;background:#0b1020;color:#e5e7eb}
-h1{font-size:20px;margin:0 0 12px}
-.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
-input,textarea,button{font:inherit}
-input,textarea{background:#020617;border:1px solid #1f2937;border-radius:4px;color:#e5e7eb;padding:6px 8px}
-textarea{width:100%;min-height:120px;resize:vertical}
-button{border:none;border-radius:4px;padding:6px 12px;background:#2563eb;color:#f9fafb;cursor:pointer}
-button.secondary{background:#111827}
-button.danger{background:#b91c1c}
-button:disabled{opacity:.6;cursor:default}
-table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
-th,td{border-bottom:1px solid #1f2937;padding:6px 8px;text-align:left;vertical-align:top}
-th{background:#020617}
-tr:hover td{background:#020617}
-.key-cell{font-family:Menlo,monospace;font-size:12px}
-.config-snippet{max-width:280px;white-space:pre-wrap;word-break:break-all}
-.status{margin-top:8px;font-size:12px;color:#9ca3af}
-.layout{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:12px}
+:root {
+  --bg-color: #ffffff;
+  --secondary-bg: #f7f7f8;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --border-color: #e5e7eb;
+  --accent-color: #10a37f; /* OpenAI green */
+  --accent-hover: #1a7f64;
+  --danger-color: #ef4444;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;margin:0;padding:0;background:var(--secondary-bg);color:var(--text-primary);line-height:1.5}
+.header{background:var(--bg-color);border-bottom:1px solid var(--border-color);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.header h1{font-size:16px;font-weight:600;margin:0;display:flex;align-items:center;gap:10px}
+.header h1 svg{color:var(--accent-color)}
+.container{max-width:1100px;margin:32px auto;padding:0 24px}
+.tabs{display:flex;gap:24px;margin-bottom:32px;border-bottom:1px solid var(--border-color)}
+.tab{padding:8px 4px 12px;cursor:pointer;font-size:14px;color:var(--text-secondary);font-weight:500;border-bottom:2px solid transparent;transition:all 0.2s}
+.tab.active{color:var(--text-primary);border-bottom-color:var(--text-primary)}
+.tab:hover:not(.active){color:var(--text-primary)}
+.toolbar{display:flex;gap:12px;align-items:center}
+input,textarea,button{font:inherit;outline:none}
+input,textarea{background:var(--bg-color);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);padding:8px 12px;font-size:14px;transition:border-color 0.2s}
+input:focus,textarea:focus{border-color:var(--accent-color)}
+textarea{width:100%;min-height:200px;resize:vertical;font-family:Menlo,monospace;font-size:13px}
+button{border:1px solid transparent;border-radius:8px;padding:8px 16px;font-size:14px;font-weight:500;cursor:pointer;transition:all 0.2s;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+button.primary{background:var(--text-primary);color:white}
+button.primary:hover{background:#374151}
+button.secondary{background:var(--bg-color);border-color:var(--border-color);color:var(--text-primary)}
+button.secondary:hover{background:var(--secondary-bg)}
+button.danger{background:white;border-color:#fee2e2;color:var(--danger-color)}
+button.danger:hover{background:#fef2f2}
+button:disabled{opacity:.5;cursor:not-allowed}
+.card{background:var(--bg-color);border:1px solid var(--border-color);border-radius:12px;padding:24px;margin-bottom:24px;box-shadow:0 1px 2px rgba(0,0,0,0.05)}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:32px}
+.stat-item{background:var(--bg-color);padding:20px;border-radius:12px;border:1px solid var(--border-color);box-shadow:0 1px 2px rgba(0,0,0,0.05)}
+.stat-label{font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em}
+.stat-value{font-size:28px;font-weight:700;color:var(--text-primary);margin-top:8px}
+table{width:100%;border-collapse:separate;border-spacing:0;margin-top:8px}
+th,td{padding:12px 16px;text-align:left;font-size:14px;border-bottom:1px solid var(--border-color)}
+th{background:var(--secondary-bg);color:var(--text-secondary);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.05em}
+tr:last-child td{border-bottom:none}
+.key-cell{font-family:Menlo,monospace;font-size:13px;font-weight:600;color:var(--accent-color)}
+.config-snippet{max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--text-secondary);font-family:Menlo,monospace}
+.tag{padding:2px 8px;border-radius:9999px;font-size:12px;font-weight:500}
+.tag-success{background:#d1fae5;color:#065f46}
+.tag-fail{background:#fee2e2;color:#991b1b}
+.layout{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.8fr);gap:24px}
 @media (max-width:900px){.layout{grid-template-columns:1fr}}
+.hidden{display:none}
+.status-msg{margin-top:12px;font-size:13px;padding:8px 12px;border-radius:6px}
+.status-success{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
+.status-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
 </style>
 </head>
 <body>
-<h1>组件管理后台</h1>
-<div class="toolbar">
-<button id="reload-btn" type="button">刷新列表</button>
-<span style="flex:1"></span>
-<label style="display:flex;align-items:center;gap:4px;font-size:12px;color:#9ca3af">
-Token:
-<input id="token-input" type="password" placeholder="可选，如配置了 GATEWAY_AUTH_TOKEN" style="min-width:220px">
-</label>
-<button id="save-token-btn" type="button" class="secondary">保存 Token</button>
+<header class="header">
+  <h1>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2ZM12 4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20C7.58172 20 4 16.4183 4 12C4 7.58172 7.58172 4 12 4ZM11 7V11H7V13H11V17H13V13H17V11H13V7H11Z" fill="currentColor"/></svg>
+    Figma AI Gateway Admin
+  </h1>
+  <div class="toolbar">
+    <input id="token-input" type="password" placeholder="Access Token" style="width:180px">
+    <button id="save-token-btn" class="primary">验证</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="tabs">
+    <div class="tab active" data-target="stats-section">运行统计</div>
+    <div class="tab" data-target="configs-section">组件配置</div>
+  </div>
+
+  <div id="stats-section">
+    <div class="stats-grid">
+      <div class="stat-item">
+        <div class="stat-label">Total Calls</div>
+        <div id="stat-total" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Failures</div>
+        <div id="stat-fails" class="stat-value" style="color:var(--danger-color)">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Avg Latency</div>
+        <div id="stat-latency" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Success Rate</div>
+        <div id="stat-rate" class="stat-value">-</div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="card">
+        <div style="font-weight:600;margin-bottom:20px;font-size:15px">Feature Distribution</div>
+        <div id="distribution-container"></div>
+      </div>
+      <div class="card">
+        <div style="font-weight:600;margin-bottom:20px;font-size:15px">Recent Activity</div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Status</th>
+                <th>Latency</th>
+              </tr>
+            </thead>
+            <tbody id="logs-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="error-agg-card" style="margin-top:24px">
+      <div style="font-weight:600;margin-bottom:20px;font-size:15px">Aggregated Errors</div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Error Message</th>
+              <th style="width:80px">Count</th>
+              <th style="width:150px">Last Seen</th>
+            </tr>
+          </thead>
+          <tbody id="errors-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="configs-section" class="hidden">
+    <div class="layout">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <div style="font-weight:600;font-size:15px">Registered Components</div>
+          <button id="reload-btn" class="secondary" style="padding:4px 10px;font-size:12px">Refresh</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="components-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div style="font-weight:600;margin-bottom:20px;font-size:15px">Edit Configuration</div>
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <div>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Component Key</label>
+            <input id="edit-key" style="width:100%;box-sizing:border-box" placeholder="e.g. Cell/Tag">
+          </div>
+          <div>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Figma Component Key</label>
+            <input id="edit-figma-key" style="width:100%;box-sizing:border-box" placeholder="Unique Figma Key">
+          </div>
+          <div>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Display States (Variants - JSON)</label>
+            <textarea id="edit-variants" spellcheck="false" style="min-height:100px" placeholder='[ { "property": "value" }, ... ]'></textarea>
+          </div>
+          <div>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Configuration (Props - JSON)</label>
+            <textarea id="edit-config" spellcheck="false" style="min-height:150px" placeholder='{ "displayName": "...", "props": { ... } }'></textarea>
+          </div>
+          <div style="display:flex;gap:12px;justify-content:flex-end">
+            <button id="delete-btn" class="danger">Delete</button>
+            <button id="create-update-btn" class="primary">Save Changes</button>
+          </div>
+          <div id="status" class="status-msg hidden"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
-<div class="layout">
-<div>
-<table>
-<thead>
-<tr>
-<th style="width:32%">Key</th>
-<th style="width:40%">配置摘要</th>
-<th>时间</th>
-<th style="width:100px">操作</th>
-</tr>
-</thead>
-<tbody id="components-body"></tbody>
-</table>
-</div>
-<div>
-<div style="margin-bottom:8px;font-size:13px">编辑组件</div>
-<div style="display:flex;flex-direction:column;gap:6px">
-<input id="edit-key" placeholder="组件 key，例如：Cell/NumberRight">
-<textarea id="edit-config" placeholder='组件配置 JSON，例如:
-{
-  "displayName": "数字右对齐单元格",
-  "group": "Cell",
-  "props": {
-    "cell_type": "number",
-    "cell_align": "right"
-  }
-}'></textarea>
-<div style="display:flex;gap:8px;justify-content:flex-end">
-<button id="create-update-btn" type="button">创建/更新组件</button>
-<button id="delete-btn" type="button" class="danger">删除当前组件</button>
-</div>
-</div>
-<div id="status" class="status"></div>
-</div>
-</div>
+
 <script>
 var tokenStorageKey="mcp_gateway_token";
 var tokenInput=document.getElementById("token-input");
 var saveTokenBtn=document.getElementById("save-token-btn");
 var reloadBtn=document.getElementById("reload-btn");
 var bodyEl=document.getElementById("components-body");
+var logsBody=document.getElementById("logs-body");
+var errorsBody=document.getElementById("errors-body");
 var editKey=document.getElementById("edit-key");
+var editFigmaKey=document.getElementById("edit-figma-key");
+var editVariants=document.getElementById("edit-variants");
 var editConfig=document.getElementById("edit-config");
 var createUpdateBtn=document.getElementById("create-update-btn");
 var deleteBtn=document.getElementById("delete-btn");
 var statusEl=document.getElementById("status");
+
+// Tabs logic
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.onclick = function() {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    this.classList.add("active");
+    const target = this.getAttribute("data-target");
+    document.getElementById("stats-section").classList.add("hidden");
+    document.getElementById("configs-section").classList.add("hidden");
+    document.getElementById(target).classList.remove("hidden");
+    if(target === "stats-section") loadStats();
+    if(target === "configs-section") loadComponents();
+  };
+});
+
 function getToken(){try{return window.localStorage.getItem(tokenStorageKey)||"";}catch(e){return"";}}
 function setToken(v){try{window.localStorage.setItem(tokenStorageKey,v||"");}catch(e){}}
 function applyTokenToInput(){var t=getToken();if(tokenInput)tokenInput.value=t;}
-function setStatus(msg){if(statusEl)statusEl.textContent=msg||"";}
+function setStatus(msg, type){
+  if(!statusEl) return;
+  statusEl.textContent=msg||"";
+  statusEl.className = "status-msg " + (type === "error" ? "status-error" : "status-success");
+  statusEl.classList.toggle("hidden", !msg);
+}
 function getAuthHeaders(){var t=tokenInput?tokenInput.value.trim():"";var h={};if(t)h.authorization="Bearer "+t;return h;}
-function formatConfigSnippet(obj){try{return JSON.stringify(obj); }catch(e){return String(obj);}}
-function renderList(items){if(!bodyEl)return;bodyEl.innerHTML="";if(!items||!items.length){var tr=document.createElement("tr");var td=document.createElement("td");td.colSpan=4;td.textContent="暂无组件定义";td.style.color="#6b7280";tr.appendChild(td);bodyEl.appendChild(tr);return;}items.forEach(function(item){var tr=document.createElement("tr");var tdKey=document.createElement("td");tdKey.className="key-cell";tdKey.textContent=item.key;var tdCfg=document.createElement("td");tdCfg.className="config-snippet";tdCfg.textContent=formatConfigSnippet(item.config);var tdTime=document.createElement("td");tdTime.innerHTML="<div>创建: "+(item.createdAt||"")+"</div><div>更新: "+(item.updatedAt||"")+"</div>";tdTime.style.fontSize="11px";tdTime.style.color="#9ca3af";var tdOps=document.createElement("td");var editBtn=document.createElement("button");editBtn.type="button";editBtn.textContent="编辑";editBtn.className="secondary";editBtn.onclick=function(){if(editKey)editKey.value=item.key;if(editConfig)editConfig.value=formatConfigSnippet(item.config);};var delBtn=document.createElement("button");delBtn.type="button";delBtn.textContent="删除";delBtn.className="danger";delBtn.style.marginLeft="4px";delBtn.onclick=function(){if(!confirm("确定删除组件 "+item.key+" ?"))return;deleteComponent(item.key);};tdOps.appendChild(editBtn);tdOps.appendChild(delBtn);tr.appendChild(tdKey);tr.appendChild(tdCfg);tr.appendChild(tdTime);tr.appendChild(tdOps);bodyEl.appendChild(tr);});}
-function loadComponents(){setStatus("加载组件列表中...");var headers=getAuthHeaders();fetch("/components",{headers:headers}).then(function(res){if(!res.ok){return res.json().catch(function(){return{}}).then(function(j){throw new Error(j&&j.error?j.error:res.statusText);});}return res.json();}).then(function(json){renderList(json.items||[]);setStatus("已加载组件 "+(json.items?json.items.length:0)+" 个");}).catch(function(err){setStatus("加载失败: "+err.message);});}
-function createOrUpdateComponent(){if(!editKey||!editConfig){return;}var key=editKey.value.trim();var raw=editConfig.value.trim();if(!key){setStatus("请填写组件 key");return;}if(!raw){setStatus("请填写配置 JSON");return;}var cfg;try{cfg=JSON.parse(raw);}catch(e){setStatus("配置 JSON 解析失败: "+e.message);return;}setStatus("提交中...");var headers=getAuthHeaders();headers["content-type"]="application/json";fetch("/components",{method:"POST",headers:headers,body:JSON.stringify({key:key,config:cfg})}).then(function(res){return res.json().catch(function(){return{}}).then(function(json){if(!res.ok){throw new Error(json&&json.error?json.error:res.statusText);}return json;});}).then(function(json){setStatus("保存成功: "+json.key);loadComponents();}).catch(function(err){setStatus("保存失败: "+err.message);});}
-function deleteComponent(key){var headers=getAuthHeaders();fetch("/components/"+encodeURIComponent(key),{method:"DELETE",headers:headers}).then(function(res){if(res.status===204){setStatus("已删除组件 "+key);loadComponents();return;}return res.json().catch(function(){return{}}).then(function(json){throw new Error(json&&json.error?json.error:res.statusText);});}).catch(function(err){setStatus("删除失败: "+err.message);});}
-if(saveTokenBtn&&tokenInput){saveTokenBtn.onclick=function(){setToken(tokenInput.value.trim());setStatus("Token 已保存，仅保存在本地浏览器");};}
-if(reloadBtn){reloadBtn.onclick=function(){loadComponents();};}
-if(createUpdateBtn){createUpdateBtn.onclick=function(){createOrUpdateComponent();};}
-if(deleteBtn){deleteBtn.onclick=function(){if(!editKey)return;var key=editKey.value.trim();if(!key){setStatus("请先在左侧选择组件或填写 key");return;}if(!confirm("确定删除组件 "+key+" ?"))return;deleteComponent(key);};}
+
+function loadStats() {
+  var headers = getAuthHeaders();
+  fetch("/admin/stats", {headers: headers})
+    .then(res => res.json())
+    .then(data => {
+      if(data.error) { setStatus(data.error, "error"); return; }
+      
+      renderLogs(data.recentCalls || []);
+      renderDistribution(data.toolDistribution || {});
+      renderErrors(data.errorDistribution || []);
+      
+      // Update summary counters
+      document.getElementById("stat-total").textContent = data.totalCalls || 0;
+      document.getElementById("stat-fails").textContent = data.failCount || 0;
+      document.getElementById("stat-latency").textContent = (data.avgLatency || 0) + "ms";
+      const rate = data.totalCalls ? Math.round(((data.totalCalls - data.failCount) / data.totalCalls) * 100) : 100;
+      document.getElementById("stat-rate").textContent = rate + "%";
+    });
+}
+
+function renderErrors(errors) {
+  if(!errorsBody) return;
+  errorsBody.innerHTML = "";
+  if(errors.length === 0) {
+    errorsBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-secondary);padding:20px">No errors recorded</td></tr>';
+    return;
+  }
+  errors.forEach(err => {
+      var tr = document.createElement("tr");
+      tr.innerHTML = " \
+        <td style='font-family:Menlo,monospace;font-size:12px;color:var(--danger-color);word-break:break-all'>" + err.message + "</td> \
+        <td style='font-weight:600;text-align:center'>" + err.count + "</td> \
+        <td style='color:var(--text-secondary);font-size:12px'>" + new Date(err.lastSeen).toLocaleString() + "</td> \
+      ";
+      errorsBody.appendChild(tr);
+    });
+}
+
+function renderLogs(logs) {
+  if(!logsBody) return;
+  logsBody.innerHTML = "";
+  logs.forEach(log => {
+    var tr = document.createElement("tr");
+    tr.innerHTML = \`
+      <td style="color:var(--text-secondary);font-size:12px">\${new Date(log.createdAt).toLocaleTimeString()}</td>
+      <td style="font-weight:500;font-size:13px">\${log.action.replace('TOOL_CALL:', '')}</td>
+      <td><span class="tag \${log.status==='SUCCESS'?'tag-success':'tag-fail'}">\${log.status}</span></td>
+      <td style="font-size:13px">\${log.latency}ms</td>
+    \`;
+    logsBody.appendChild(tr);
+  });
+}
+
+function renderDistribution(dist) {
+  const container = document.getElementById("distribution-container");
+  if(!container) return;
+  container.innerHTML = "";
+  const entries = Object.entries(dist).sort((a,b) => (b[1]) - (a[1]));
+  const max = entries.length > 0 ? entries[0][1] : 1;
+  
+  entries.forEach(([action, count]) => {
+    const barWidth = Math.max(5, (count / max) * 100);
+    const div = document.createElement("div");
+    div.style.marginBottom = "16px";
+    div.innerHTML = \`
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+        <span style="font-weight:500">\${action.replace('TOOL_CALL:', '')}</span>
+        <span style="color:var(--text-secondary)">\${count}</span>
+      </div>
+      <div style="height:6px;background:var(--secondary-bg);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:\${barWidth}%;background:var(--accent-color);border-radius:3px"></div>
+      </div>
+    \`;
+    container.appendChild(div);
+  });
+}
+
+function renderList(items){
+  if(!bodyEl)return;
+  bodyEl.innerHTML="";
+  items.forEach(function(item){
+    var tr=document.createElement("tr");
+    tr.innerHTML = \`
+      <td class="key-cell">\${item.key}</td>
+      <td style="text-align:right">
+        <button class="secondary" style="padding:4px 10px;font-size:12px" onclick="editItem('\${item.key}', \${JSON.stringify(item.config).replace(/"/g, '&quot;')})">Edit</button>
+      </td>
+    \`;
+    bodyEl.appendChild(tr);
+  });
+}
+
+window.editItem = function(key, config) {
+  editKey.value = key;
+  editFigmaKey.value = config.figma?.componentKey || "";
+  editVariants.value = JSON.stringify(config.variants || [], null, 2);
+  // Clean up config for general props display
+  const displayConfig = {...config};
+  delete displayConfig.variants;
+  editConfig.value = JSON.stringify(displayConfig, null, 2);
+  document.getElementById("configs-section").scrollIntoView({behavior: "smooth"});
+};
+
+function loadComponents(){
+  var headers=getAuthHeaders();
+  fetch("/components",{headers:headers}).then(res => res.json()).then(json => {
+    renderList(json.items||[]);
+  });
+}
+
+function createOrUpdateComponent(){
+  var key=editKey.value.trim();
+  var figmaKey=editFigmaKey.value.trim();
+  var variantsRaw=editVariants.value.trim();
+  var configRaw=editConfig.value.trim();
+  
+  if(!key || !configRaw) return;
+  
+  try{
+    var cfg=JSON.parse(configRaw);
+    var variants = variantsRaw ? JSON.parse(variantsRaw) : [];
+    
+    // Merge back into config
+    cfg.variants = variants;
+    if (figmaKey) {
+      cfg.figma = cfg.figma || {};
+      cfg.figma.componentKey = figmaKey;
+    }
+
+    setStatus("Saving...");
+    var headers=getAuthHeaders();
+    headers["content-type"]="application/json";
+    fetch("/components",{method:"POST",headers:headers,body:JSON.stringify({key:key,config:cfg})})
+      .then(res => res.json())
+      .then(() => { setStatus("Saved successfully"); loadComponents(); });
+  }catch(e){ setStatus("Invalid JSON: "+e.message, "error"); }
+}
+
+function deleteComponent(){
+  var key=editKey.value.trim();
+  if(!key || !confirm("Delete this component?")) return;
+  var headers=getAuthHeaders();
+  fetch("/components/"+encodeURIComponent(key),{method:"DELETE",headers:headers}).then(() => {
+    setStatus("Deleted successfully");
+    loadComponents();
+    editKey.value = "";
+    editConfig.value = "";
+  });
+}
+
+saveTokenBtn.onclick=function(){setToken(tokenInput.value.trim()); setStatus("Token updated"); loadStats();};
+reloadBtn.onclick=loadComponents;
+createUpdateBtn.onclick=createOrUpdateComponent;
+deleteBtn.onclick=deleteComponent;
+
 applyTokenToInput();
-loadComponents();
+loadStats();
 </script>
 </body>
 </html>`;
@@ -315,6 +652,26 @@ function readJson(req) {
         req.on("error", reject);
     });
 }
+async function logCall(data) {
+    try {
+        if (!process.env.DATABASE_URL)
+            return;
+        await prisma.callLog.create({
+            data: {
+                userId: data.userId,
+                action: data.action,
+                status: data.status,
+                latency: data.latency,
+                prompt: data.prompt,
+                llmResponse: data.llmResponse,
+                errorMsg: data.errorMsg
+            }
+        });
+    }
+    catch (e) {
+        console.error("Failed to log call:", e);
+    }
+}
 const server = http.createServer(async (req, res) => {
     if (!req.url) {
         sendJson(req, res, 400, { error: "missing_url" });
@@ -332,13 +689,83 @@ const server = http.createServer(async (req, res) => {
         sendJson(req, res, 200, { ok: true });
         return;
     }
-    if (req.method === "GET" && (url.pathname === "/admin" || url.pathname === "/admin/components")) {
+    if ((req.method === "GET" || req.method === "HEAD") && (url.pathname === "/admin" || url.pathname === "/admin/components")) {
+        if (req.method === "HEAD") {
+            res.statusCode = 200;
+            res.setHeader("content-type", "text/html; charset=utf-8");
+            res.end();
+            return;
+        }
         sendHtml(req, res, 200, adminPageHtml);
         return;
     }
+    // API endpoints below require authentication
     const auth = authenticate(req);
     if (!auth.ok) {
         sendJson(req, res, auth.status, { error: auth.error });
+        return;
+    }
+    if (req.method === "GET" && url.pathname === "/admin/stats") {
+        if (!process.env.DATABASE_URL) {
+            sendJson(req, res, 200, {
+                totalCalls: 0,
+                failCount: 0,
+                avgLatency: 0,
+                recentCalls: [],
+                toolDistribution: {},
+                message: "Database not configured"
+            });
+            return;
+        }
+        try {
+            const totalCalls = await prisma.callLog.count();
+            const failCount = await prisma.callLog.count({ where: { status: "FAIL" } });
+            const avgLatencyResult = await prisma.callLog.aggregate({
+                _avg: { latency: true }
+            });
+            const recentCalls = await prisma.callLog.findMany({
+                take: 20,
+                orderBy: { createdAt: "desc" }
+            });
+            // Simple tool distribution
+            const distribution = await prisma.callLog.groupBy({
+                by: ['action'],
+                _count: {
+                    _all: true
+                }
+            });
+            const toolDistribution = distribution.reduce((acc, curr) => {
+                acc[curr.action] = curr._count._all;
+                return acc;
+            }, {});
+            // Error distribution (aggregated errors)
+            const errorAgg = await prisma.callLog.groupBy({
+                where: { status: "FAIL", errorMsg: { not: null } },
+                by: ['errorMsg'],
+                _count: {
+                    _all: true
+                },
+                _max: {
+                    createdAt: true
+                }
+            });
+            const errorDistribution = errorAgg.map(curr => ({
+                message: curr.errorMsg,
+                count: curr._count._all,
+                lastSeen: curr._max.createdAt
+            })).sort((a, b) => b.count - a.count);
+            sendJson(req, res, 200, {
+                totalCalls,
+                failCount,
+                avgLatency: Math.round(avgLatencyResult._avg.latency || 0),
+                recentCalls,
+                toolDistribution,
+                errorDistribution
+            });
+        }
+        catch (e) {
+            sendJson(req, res, 500, { error: "Failed to fetch stats", message: e.message });
+        }
         return;
     }
     const rateKey = getClientKey(req, auth.subject);
@@ -365,11 +792,20 @@ const server = http.createServer(async (req, res) => {
         const commaIdx = data.indexOf(",");
         if (commaIdx >= 0)
             data = data.slice(commaIdx + 1);
+        const startTime = Date.now();
         let buf;
         try {
             buf = Buffer.from(data, "base64");
         }
         catch (e) {
+            const msg = e?.message ? String(e.message) : String(e);
+            await logCall({
+                userId: auth.subject,
+                action: "PARSE_EXCEL",
+                status: "FAIL",
+                latency: Date.now() - startTime,
+                errorMsg: `Invalid Base64: ${msg}`
+            });
             sendJson(req, res, 400, { error: "invalid_base64" });
             return;
         }
@@ -401,8 +837,7 @@ const server = http.createServer(async (req, res) => {
             }
             const sheetName = wb.SheetNames[0];
             if (!sheetName) {
-                sendJson(req, res, 400, { error: "empty_workbook" });
-                return;
+                throw new Error("empty_workbook");
             }
             const sheet = wb.Sheets[sheetName];
             const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
@@ -411,11 +846,17 @@ const server = http.createServer(async (req, res) => {
                 .map(row => (Array.isArray(row) ? row : []).map(cell => cell == null ? "" : String(cell).trim()))
                 .filter(row => row.some(cell => cell !== ""));
             if (cleanData.length === 0) {
-                sendJson(req, res, 400, { error: "empty_table" });
-                return;
+                throw new Error("empty_table");
             }
             const headers = cleanData[0];
             const allBody = cleanData.slice(1);
+            await logCall({
+                userId: auth.subject,
+                action: "PARSE_EXCEL",
+                status: "SUCCESS",
+                latency: Date.now() - startTime,
+                prompt: `File: ${name}, Rows: ${allBody.length}`
+            });
             sendJson(req, res, 200, {
                 headers,
                 data: allBody,
@@ -425,7 +866,15 @@ const server = http.createServer(async (req, res) => {
             });
         }
         catch (e) {
-            sendJson(req, res, 500, { error: "parse_failed", message: e?.message });
+            const errorMsg = e?.message ? String(e.message) : String(e);
+            await logCall({
+                userId: auth.subject,
+                action: "PARSE_EXCEL",
+                status: "FAIL",
+                latency: Date.now() - startTime,
+                errorMsg
+            });
+            sendJson(req, res, 500, { error: "parse_failed", message: errorMsg });
         }
         return;
     }
@@ -449,17 +898,32 @@ const server = http.createServer(async (req, res) => {
         const commaIdx = data.indexOf(",");
         if (commaIdx >= 0)
             data = data.slice(commaIdx + 1);
+        const startTime = Date.now();
         let buf;
         try {
             buf = Buffer.from(data, "base64");
         }
         catch (e) {
             const msg = e?.message ? String(e.message) : String(e);
+            await logCall({
+                userId: auth.subject,
+                action: "FILE_UPLOAD",
+                status: "FAIL",
+                latency: Date.now() - startTime,
+                errorMsg: `Invalid Base64: ${msg}`
+            });
             sendJson(req, res, 400, { error: "invalid_base64", message: msg });
             return;
         }
         const rawKey = getEnv("LLM_API_KEY");
         if (!rawKey) {
+            await logCall({
+                userId: auth.subject,
+                action: "FILE_UPLOAD",
+                status: "FAIL",
+                latency: Date.now() - startTime,
+                errorMsg: "Missing LLM_API_KEY"
+            });
             sendJson(req, res, 500, { error: "missing_llm_api_key" });
             return;
         }
@@ -493,18 +957,30 @@ const server = http.createServer(async (req, res) => {
                 json = JSON.parse(raw);
             }
             catch {
-                sendJson(req, res, 502, { error: "coze_not_json", body: raw.slice(0, 800) });
-                return;
+                throw new Error(`Upstream returned non-JSON: ${raw.slice(0, 100)}`);
             }
             if (!upstream.ok || (typeof json?.code === "number" && json.code !== 0)) {
                 const msg = typeof json?.msg === "string" ? json.msg : upstream.statusText;
-                sendJson(req, res, 502, { error: "coze_upload_failed", message: msg });
-                return;
+                throw new Error(msg);
             }
+            await logCall({
+                userId: auth.subject,
+                action: "FILE_UPLOAD",
+                status: "SUCCESS",
+                latency: Date.now() - startTime,
+                prompt: `File: ${name}, Type: ${type}, Size: ${buf.length}`
+            });
             sendJson(req, res, 200, json);
         }
         catch (e) {
             const msg = e?.message ? String(e.message) : String(e);
+            await logCall({
+                userId: auth.subject,
+                action: "FILE_UPLOAD",
+                status: "FAIL",
+                latency: Date.now() - startTime,
+                errorMsg: msg
+            });
             sendJson(req, res, 500, { error: "upload_proxy_error", message: msg });
         }
         return;
@@ -537,6 +1013,9 @@ const server = http.createServer(async (req, res) => {
         const now = new Date().toISOString();
         const existing = components.get(key);
         const createdAt = existing?.createdAt ?? now;
+        // Ensure variants and figmaKey are extracted for memory storage
+        const variants = rawConfig.variants || [];
+        const figmaKey = rawConfig.figma?.componentKey || "";
         const def = {
             key,
             config: rawConfig,
@@ -544,6 +1023,31 @@ const server = http.createServer(async (req, res) => {
             updatedAt: now
         };
         components.set(key, def);
+        // Save to DB if available
+        if (process.env.DATABASE_URL) {
+            try {
+                const cfg = rawConfig;
+                await prisma.componentConfig.upsert({
+                    where: { configKey: key },
+                    update: {
+                        props: cfg,
+                        displayName: cfg.displayName || key,
+                        figmaKey: figmaKey,
+                        variants: variants
+                    },
+                    create: {
+                        configKey: key,
+                        displayName: cfg.displayName || key,
+                        figmaKey: figmaKey,
+                        variants: variants,
+                        props: cfg
+                    }
+                });
+            }
+            catch (e) {
+                console.error("Failed to save config to database:", e);
+            }
+        }
         sendJson(req, res, existing ? 200 : 201, def);
         return;
     }
@@ -564,6 +1068,15 @@ const server = http.createServer(async (req, res) => {
             if (!existed) {
                 sendJson(req, res, 404, { error: "not_found" });
                 return;
+            }
+            // Delete from DB if available
+            if (process.env.DATABASE_URL) {
+                try {
+                    await prisma.componentConfig.delete({ where: { configKey: key } });
+                }
+                catch (e) {
+                    console.error("Failed to delete config from database:", e);
+                }
             }
             sendJson(req, res, 204, {});
             return;
@@ -587,6 +1100,7 @@ const server = http.createServer(async (req, res) => {
             sendJson(req, res, msg === "request_body_too_large" ? 413 : 400, { error: msg });
             return;
         }
+        const startTime = Date.now();
         try {
             const result = await mcp.request({
                 method: "tools/call",
@@ -599,14 +1113,35 @@ const server = http.createServer(async (req, res) => {
                 .map((c) => (c.type === "text" ? c.text : ""))
                 .filter(Boolean)
                 .join("\n");
+            const latency = Date.now() - startTime;
+            await logCall({
+                userId: auth.subject,
+                action: `TOOL_CALL:${toolName}`,
+                status: "SUCCESS",
+                latency,
+                prompt: JSON.stringify(args),
+                llmResponse: result
+            });
             sendJson(req, res, 200, { text, raw: result });
             return;
         }
         catch (e) {
-            sendJson(req, res, 500, { error: e?.message ? String(e.message) : String(e) });
+            const latency = Date.now() - startTime;
+            const errorMsg = e?.message ? String(e.message) : String(e);
+            await logCall({
+                userId: auth.subject,
+                action: `TOOL_CALL:${toolName}`,
+                status: "FAIL",
+                latency,
+                prompt: JSON.stringify(args),
+                errorMsg
+            });
+            sendJson(req, res, 500, { error: errorMsg });
             return;
         }
     }
     sendJson(req, res, 404, { error: "not_found" });
 });
-server.listen(port);
+server.listen(port, "0.0.0.0", () => {
+    console.log(`Server is running on http://0.0.0.0:${port}`);
+});

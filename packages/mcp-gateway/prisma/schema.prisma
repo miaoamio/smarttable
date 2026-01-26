@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model CallLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  action      String
+  status      String
+  latency     Int
+  prompt      String?
+  llmResponse Json?
+  errorMsg    String?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([status])
+}
+
+model ComponentConfig {
+  id          Int      @id @default(autoincrement())
+  configKey   String   @unique
+  displayName String
+  figmaKey    String
+  variants    Json?    // Added to store variant configurations (states)
+  props       Json
+  updatedAt   DateTime @updatedAt
+}
+
+model SystemSetting {
+  key         String   @id
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+}

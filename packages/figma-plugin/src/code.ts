@@ -1835,7 +1835,7 @@ async function renderActionIconCell(
   // Layout styling
   cellFrame.itemSpacing = 24; // User requested 24px spacing
   cellFrame.layoutMode = "HORIZONTAL";
-  (cellFrame as any).layoutSizingHorizontal = "HUG";
+  (cellFrame as any).layoutSizingHorizontal = "FILL";
   cellFrame.counterAxisSizingMode = "FIXED";
   cellFrame.counterAxisAlignItems = "CENTER";
 }
@@ -1882,7 +1882,8 @@ async function renderActionCell(
     // Color logic: "删除" -> danger-6, else link-6
     const isDelete = part.includes("删除");
     const colorHex = isDelete ? TOKENS.colors["danger-6"] : TOKENS.colors["link-6"];
-    textNode.fills = [{ type: "SOLID", color: hexToRgb(colorHex) }];
+    const color = hexToRgb(colorHex);
+    textNode.fills = [{ type: "SOLID", color }];
     
     cellFrame.appendChild(textNode);
   }
@@ -1925,7 +1926,7 @@ async function renderActionCell(
   // Layout styling
   cellFrame.itemSpacing = 16;
   cellFrame.layoutMode = "HORIZONTAL";
-  (cellFrame as any).layoutSizingHorizontal = "HUG";
+  (cellFrame as any).layoutSizingHorizontal = "FILL";
   cellFrame.counterAxisSizingMode = "FIXED";
   cellFrame.counterAxisAlignItems = "CENTER";
 }
@@ -2745,10 +2746,10 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
         inst.setPluginData("cellValue", "编辑 删除 …");
       }
 
-      // Ensure action cells are HUG if type is Action
+      // Ensure action cells are FILL if type is Action
       if (type === "ActionText" || type === "ActionIcon") {
         if ("layoutSizingHorizontal" in inst) {
-          (inst as any).layoutSizingHorizontal = "HUG";
+          (inst as any).layoutSizingHorizontal = "FILL";
         }
       }
     }
@@ -2756,7 +2757,19 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
 
   // Final check: if the column is now an action column, ensure it's HUG
   if (type === "ActionText" || type === "ActionIcon" || col.name.toLowerCase().includes("操作") || col.name.toLowerCase().includes("action")) {
-    col.layoutSizingHorizontal = "HUG";
+    // We don't set HUG immediately here because it might cause uneven widths if content varies.
+    // Instead, we rely on the user or the table creation/modification process to trigger applyColumnWidthToColumn(..., "HUG")
+    // which handles the measurement and normalization correctly.
+    // However, for immediate feedback if this is a single column update, we might want to trigger it.
+    // Given the architecture, applyColumnTypeToColumn is usually called by a user action or during creation.
+    // If it's a user action, we should ideally trigger the width adjustment.
+    
+    // Let's trigger a width adjustment if we can find the table context
+    // But applyColumnTypeToColumn doesn't have easy access to table index or full table structure in a way that guarantees
+    // we can call applyColumnWidthToColumn safely without potential recursion or context issues.
+    // For now, we leave the column as is (likely FIXED or FILL from previous state) and rely on the explicit width setting logic.
+    // If we force HUG here on the column, we get the "jagged" look.
+    // So we REMOVE the forced HUG on the column here.
   }
 }
 
@@ -3186,12 +3199,7 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
         const newCell = await cloneOrCreateBodyCell(col, pos + i);
         col.insertChild(insertIndex + i, newCell);
         if ("layoutSizingHorizontal" in newCell) {
-          const colName = col.name.toLowerCase();
-          if (colName.includes("操作") || colName.includes("action")) {
-            (newCell as any).layoutSizingHorizontal = "HUG";
-          } else {
-            (newCell as any).layoutSizingHorizontal = "FILL";
-          }
+          (newCell as any).layoutSizingHorizontal = "FILL";
         }
       }
     }
@@ -4528,6 +4536,18 @@ async function createTable(params: CreateTableOptions) {
     await applyOperationToTable(tableFrame, { op: "update_buttons", items: envelopeSchema.config.buttons || [] });
   }
 
+  // Final Layout Pass for HUG columns (especially Action columns)
+  // This ensures all cells in a HUG column have consistent width based on the widest content
+  const finalCols = getColumnFrames(tableFrame);
+  for (let i = 0; i < finalCols.length; i++) {
+    const col = finalCols[i];
+    const cellType = col.getPluginData("cellType");
+    const isAction = cellType === "ActionText" || cellType === "ActionIcon";
+    if (isAction || col.layoutSizingHorizontal === "HUG") {
+      await applyColumnWidthToColumn(tableFrame, i, "HUG");
+    }
+  }
+
   // Position at center
   // Give Figma a moment to finalize layout
   await yieldToMain();
@@ -4563,50 +4583,22 @@ async function createTable(params: CreateTableOptions) {
 function setColumnLayout(mode: "FIXED" | "FILL" | "HUG") {
   const selection = figma.currentPage.selection;
   for (const node of selection) {
-    let columnFrame: FrameNode | null = null;
+    const table = findTableFrameFromNode(node as any);
+    if (!table) continue;
 
-    // 1. Check if node IS the column
-    if (node.type === "FRAME" && node.layoutMode === "VERTICAL") {
-       columnFrame = node;
-    } 
-    // 2. Check parent (Cell selected)
-    else if (node.parent?.type === "FRAME" && node.parent.layoutMode === "VERTICAL") {
-       columnFrame = node.parent as FrameNode;
-    }
+    const columnFrame = findColumnFrame(node as any);
+    if (!columnFrame) continue;
 
-    if (columnFrame) {
-      if (mode === "FILL") {
-         columnFrame.layoutSizingHorizontal = "FILL";
-      } else if (mode === "HUG") {
-         columnFrame.layoutSizingHorizontal = "HUG";
-      } else {
-         columnFrame.layoutSizingHorizontal = "FIXED";
-      }
+    const cols = getColumnFrames(table);
+    const colIndex = cols.indexOf(columnFrame);
+
+    if (colIndex !== -1) {
+      applyColumnWidthToColumn(table, colIndex, mode);
       
       // Sync to plugin data for selection readout and persistence
       columnFrame.setPluginData("colWidthMode", mode);
-      
-      // ALSO ensure cells are filling the column, UNLESS it's HUG mode
-      for (const child of columnFrame.children) {
-         if ("layoutSizingHorizontal" in child) {
-            if (isHeaderNode(child as SceneNode)) {
-                (child as any).layoutSizingHorizontal = "FILL";
-                if ("layoutAlign" in child) {
-                    (child as any).layoutAlign = "STRETCH";
-                }
-            } else {
-                child.layoutSizingHorizontal = (mode === "HUG") ? "HUG" : "FILL";
-                if (mode === "HUG" && "layoutAlign" in child) {
-                    (child as any).layoutAlign = "INHERIT";
-                } else if (mode !== "HUG" && "layoutAlign" in child) {
-                    (child as any).layoutAlign = "STRETCH";
-                }
-            }
-         }
-      }
-      
     } else {
-       throw new Error("选中节点不像是表格的列内单元格(父级不是垂直自动布局Frame)");
+       throw new Error("选中节点不像是表格的列内单元格(无法确定列索引)");
     }
   }
 }
