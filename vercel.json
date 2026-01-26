@@ -18,14 +18,14 @@
       },
       "continue": true
     },
-    { "src": "/admin", "dest": "/api/gateway" },
-    { "src": "/admin/components", "dest": "/api/gateway" },
-    { "src": "/components", "dest": "/api/gateway" },
-    { "src": "/components/.*", "dest": "/api/gateway" },
-    { "src": "/files/upload", "dest": "/api/gateway" },
-    { "src": "/tools", "dest": "/api/gateway" },
-    { "src": "/tools/.*", "dest": "/api/gateway" },
-    { "src": "/health", "dest": "/api/gateway" },
-    { "src": "/parse-excel", "dest": "/api/gateway" }
+    { "src": "/admin", "dest": "/api/gateway.js" },
+    { "src": "/admin/components", "dest": "/api/gateway.js" },
+    { "src": "/components", "dest": "/api/gateway.js" },
+    { "src": "/components/.*", "dest": "/api/gateway.js" },
+    { "src": "/files/upload", "dest": "/api/gateway.js" },
+    { "src": "/tools", "dest": "/api/gateway.js" },
+    { "src": "/tools/.*", "dest": "/api/gateway.js" },
+    { "src": "/health", "dest": "/api/gateway.js" },
+    { "src": "/parse-excel", "dest": "/api/gateway.js" }
   ]
 }

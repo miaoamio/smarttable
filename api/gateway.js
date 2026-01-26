@@ -5167,9 +5167,9 @@ var require_xlsx = __commonJS({
           }
           return o;
         }
-        var fs;
+        var fs2;
         function get_fs() {
-          return fs || (fs = __require("fs"));
+          return fs2 || (fs2 = __require("fs"));
         }
         function parse3(file, options) {
           if (file[0] == 80 && file[1] == 75) return parse_zip2(file, options);
@@ -5445,7 +5445,7 @@ var require_xlsx = __commonJS({
         }
         function read_file(filename2, options) {
           get_fs();
-          return parse3(fs.readFileSync(filename2), options);
+          return parse3(fs2.readFileSync(filename2), options);
         }
         function read2(blob, options) {
           var type = options && options.type;
@@ -5771,7 +5771,7 @@ var require_xlsx = __commonJS({
         function write_file(cfb, filename2, options) {
           get_fs();
           var o = _write(cfb, options);
-          fs.writeFileSync(filename2, o);
+          fs2.writeFileSync(filename2, o);
         }
         function a2s2(o) {
           var out = new Array(o.length);
@@ -5783,7 +5783,7 @@ var require_xlsx = __commonJS({
           switch (options && options.type || "buffer") {
             case "file":
               get_fs();
-              fs.writeFileSync(options.filename, o);
+              fs2.writeFileSync(options.filename, o);
               return o;
             case "binary":
               return typeof o == "string" ? o : a2s2(o);
@@ -32773,7 +32773,7 @@ var require_xlsx = __commonJS({
         return out;
       }
       var qreg = /"/g;
-      function make_csv_row(sheet, r, R, cols, fs, rs, FS, o) {
+      function make_csv_row(sheet, r, R, cols, fs2, rs, FS, o) {
         var isempty = true;
         var row = [], txt = "", rr = encode_row(R);
         for (var C = r.s.c; C <= r.e.c; ++C) {
@@ -32783,7 +32783,7 @@ var require_xlsx = __commonJS({
           else if (val.v != null) {
             isempty = false;
             txt = "" + (o.rawNumbers && val.t == "n" ? val.v : format_cell(val, null, o));
-            for (var i = 0, cc = 0; i !== txt.length; ++i) if ((cc = txt.charCodeAt(i)) === fs || cc === rs || cc === 34 || o.forceQuotes) {
+            for (var i = 0, cc = 0; i !== txt.length; ++i) if ((cc = txt.charCodeAt(i)) === fs2 || cc === rs || cc === 34 || o.forceQuotes) {
               txt = '"' + txt.replace(qreg, '""') + '"';
               break;
             }
@@ -32803,7 +32803,7 @@ var require_xlsx = __commonJS({
         var o = opts == null ? {} : opts;
         if (sheet == null || sheet["!ref"] == null) return "";
         var r = safe_decode_range(sheet["!ref"]);
-        var FS = o.FS !== void 0 ? o.FS : ",", fs = FS.charCodeAt(0);
+        var FS = o.FS !== void 0 ? o.FS : ",", fs2 = FS.charCodeAt(0);
         var RS = o.RS !== void 0 ? o.RS : "\n", rs = RS.charCodeAt(0);
         var endregex = new RegExp((FS == "|" ? "\\|" : FS) + "+$");
         var row = "", cols = [];
@@ -32814,7 +32814,7 @@ var require_xlsx = __commonJS({
         var w = 0;
         for (var R = r.s.r; R <= r.e.r; ++R) {
           if ((rowinfo[R] || {}).hidden) continue;
-          row = make_csv_row(sheet, r, R, cols, fs, rs, FS, o);
+          row = make_csv_row(sheet, r, R, cols, fs2, rs, FS, o);
           if (row == null) {
             continue;
           }
@@ -33086,7 +33086,7 @@ var require_xlsx = __commonJS({
           return stream;
         }
         var r = safe_decode_range(sheet["!ref"]);
-        var FS = o.FS !== void 0 ? o.FS : ",", fs = FS.charCodeAt(0);
+        var FS = o.FS !== void 0 ? o.FS : ",", fs2 = FS.charCodeAt(0);
         var RS = o.RS !== void 0 ? o.RS : "\n", rs = RS.charCodeAt(0);
         var endregex = new RegExp((FS == "|" ? "\\|" : FS) + "+$");
         var row = "", cols = [];
@@ -33104,7 +33104,7 @@ var require_xlsx = __commonJS({
           while (R <= r.e.r) {
             ++R;
             if ((rowinfo[R - 1] || {}).hidden) continue;
-            row = make_csv_row(sheet, r, R - 1, cols, fs, rs, FS, o);
+            row = make_csv_row(sheet, r, R - 1, cols, fs2, rs, FS, o);
             if (row != null) {
               if (o.strip) row = row.replace(endregex, "");
               if (row || o.blankrows !== false) return stream.push((w++ ? RS : "") + row);
@@ -125781,12 +125781,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs, exportName) {
+    function addFormats(ajv, list, fs2, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs[f]);
+        ajv.addFormat(f, fs2[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -125799,7 +125799,7 @@ var require_windows = __commonJS({
   "node_modules/isexe/windows.js"(exports, module) {
     module.exports = isexe;
     isexe.sync = sync;
-    var fs = __require("fs");
+    var fs2 = __require("fs");
     function checkPathExt(path2, options) {
       var pathext = options.pathExt !== void 0 ? options.pathExt : process.env.PATHEXT;
       if (!pathext) {
@@ -125824,12 +125824,12 @@ var require_windows = __commonJS({
       return checkPathExt(path2, options);
     }
     function isexe(path2, options, cb) {
-      fs.stat(path2, function(er, stat) {
+      fs2.stat(path2, function(er, stat) {
         cb(er, er ? false : checkStat(stat, path2, options));
       });
     }
     function sync(path2, options) {
-      return checkStat(fs.statSync(path2), path2, options);
+      return checkStat(fs2.statSync(path2), path2, options);
     }
   }
 });
@@ -125839,14 +125839,14 @@ var require_mode = __commonJS({
   "node_modules/isexe/mode.js"(exports, module) {
     module.exports = isexe;
     isexe.sync = sync;
-    var fs = __require("fs");
+    var fs2 = __require("fs");
     function isexe(path2, options, cb) {
-      fs.stat(path2, function(er, stat) {
+      fs2.stat(path2, function(er, stat) {
         cb(er, er ? false : checkStat(stat, options));
       });
     }
     function sync(path2, options) {
-      return checkStat(fs.statSync(path2), options);
+      return checkStat(fs2.statSync(path2), options);
     }
     function checkStat(stat, options) {
       return stat.isFile() && checkMode(stat, options);
@@ -125870,7 +125870,7 @@ var require_mode = __commonJS({
 // node_modules/isexe/index.js
 var require_isexe = __commonJS({
   "node_modules/isexe/index.js"(exports, module) {
-    var fs = __require("fs");
+    var fs2 = __require("fs");
     var core;
     if (process.platform === "win32" || global.TESTING_WINDOWS) {
       core = require_windows();
@@ -126134,16 +126134,16 @@ var require_shebang_command = __commonJS({
 var require_readShebang = __commonJS({
   "node_modules/cross-spawn/lib/util/readShebang.js"(exports, module) {
     "use strict";
-    var fs = __require("fs");
+    var fs2 = __require("fs");
     var shebangCommand = require_shebang_command();
     function readShebang(command) {
       const size = 150;
       const buffer = Buffer.alloc(size);
       let fd;
       try {
-        fd = fs.openSync(command, "r");
-        fs.readSync(fd, buffer, 0, size, 0);
-        fs.closeSync(fd);
+        fd = fs2.openSync(command, "r");
+        fs2.readSync(fd, buffer, 0, size, 0);
+        fs2.closeSync(fd);
       } catch (e) {
       }
       return shebangCommand(buffer.toString());
@@ -126296,6 +126296,7 @@ var XLSX = __toESM(require_xlsx(), 1);
 var import_jschardet = __toESM(require_jschardet(), 1);
 import path from "node:path";
 import crypto from "node:crypto";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 // node_modules/zod/v4/core/core.js
@@ -133792,6 +133793,11 @@ var initialComponents = [
   }
 ];
 
+// packages/mcp-gateway/src/db.ts
+import { PrismaClient } from "@prisma/client";
+var prisma = new PrismaClient();
+var db_default = prisma;
+
 // packages/mcp-gateway/src/handler.ts
 var __filename = fileURLToPath(import.meta.url);
 var __dirname = path.dirname(__filename);
@@ -133801,7 +133807,6 @@ async function getMcp() {
   if (mcpClient) return mcpClient;
   if (mcpConnecting) return mcpConnecting;
   const serverScript = path.resolve(process.cwd(), "packages/mcp-server/dist/index.js");
-  console.log("MCP Server Script path:", serverScript);
   const copiedEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
     if (typeof v === "string") copiedEnv[k] = v;
@@ -133834,29 +133839,9 @@ var authToken = getEnv("GATEWAY_AUTH_TOKEN");
 var jwtSecret = getEnv("GATEWAY_JWT_SECRET");
 var maxBodyBytes = Number(getEnv("MAX_BODY_BYTES") ?? "104857600");
 var rateLimitPerMinute = Number(getEnv("RATE_LIMIT_PER_MIN") ?? "120");
-var port = Number(process.env.PORT ?? 8787);
-var llmKeyLen = (getEnv("LLM_API_KEY") ?? "").length;
-var authMode = authToken ? "token" : jwtSecret ? "jwt" : "none";
-console.log(
-  JSON.stringify({
-    service: "mcp-gateway",
-    port,
-    authMode,
-    corsOrigins,
-    rateLimitPerMinute,
-    maxBodyBytes,
-    llm: {
-      baseUrl: getEnv("LLM_BASE_URL"),
-      model: getEnv("LLM_MODEL"),
-      apiKeyLen: llmKeyLen
-    }
-  })
-);
 function withCors(req, res) {
   let origin = req.headers.origin;
-  if (origin === "null") {
-    origin = void 0;
-  }
+  if (origin === "null") origin = void 0;
   const allowAll = corsOrigins.includes("*");
   if (allowAll || !origin) {
     res.setHeader("access-control-allow-origin", "*");
@@ -133947,122 +133932,62 @@ function allowRequest(key) {
   return true;
 }
 var components = /* @__PURE__ */ new Map();
-for (const entry of initialComponents) {
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  if (!components.has(entry.key)) {
-    const def = {
-      key: entry.key,
-      config: entry.config,
-      createdAt: now,
-      updatedAt: now
-    };
-    components.set(entry.key, def);
+var componentsInitialized = false;
+async function initComponents() {
+  if (componentsInitialized) return;
+  for (const entry of initialComponents) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    if (!components.has(entry.key)) {
+      components.set(entry.key, {
+        key: entry.key,
+        config: entry.config,
+        createdAt: now,
+        updatedAt: now
+      });
+    }
+  }
+  if (process.env.DATABASE_URL) {
+    try {
+      const dbConfigs = await db_default.componentConfig.findMany();
+      for (const dbCfg of dbConfigs) {
+        components.set(dbCfg.configKey, {
+          key: dbCfg.configKey,
+          config: {
+            ...dbCfg.props || {},
+            figma: {
+              ...dbCfg.props?.figma || {},
+              componentKey: dbCfg.figmaKey
+            },
+            variants: dbCfg.variants
+          },
+          createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+          updatedAt: dbCfg.updatedAt.toISOString()
+        });
+      }
+    } catch (e) {
+      console.error("Failed to load configs from database:", e);
+    }
+  }
+  componentsInitialized = true;
+}
+async function logCall(data) {
+  try {
+    if (!process.env.DATABASE_URL) return;
+    await db_default.callLog.create({
+      data: {
+        userId: data.userId,
+        action: data.action,
+        status: data.status,
+        latency: data.latency,
+        prompt: data.prompt,
+        llmResponse: data.llmResponse,
+        errorMsg: data.errorMsg
+      }
+    });
+  } catch (e) {
+    console.error("Failed to log call:", e);
   }
 }
-var adminPageHtml = `<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<title>\u7EC4\u4EF6\u7BA1\u7406\u540E\u53F0</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:16px;background:#0b1020;color:#e5e7eb}
-h1{font-size:20px;margin:0 0 12px}
-.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
-input,textarea,button{font:inherit}
-input,textarea{background:#020617;border:1px solid #1f2937;border-radius:4px;color:#e5e7eb;padding:6px 8px}
-textarea{width:100%;min-height:120px;resize:vertical}
-button{border:none;border-radius:4px;padding:6px 12px;background:#2563eb;color:#f9fafb;cursor:pointer}
-button.secondary{background:#111827}
-button.danger{background:#b91c1c}
-button:disabled{opacity:.6;cursor:default}
-table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
-th,td{border-bottom:1px solid #1f2937;padding:6px 8px;text-align:left;vertical-align:top}
-th{background:#020617}
-tr:hover td{background:#020617}
-.key-cell{font-family:Menlo,monospace;font-size:12px}
-.config-snippet{max-width:280px;white-space:pre-wrap;word-break:break-all}
-.status{margin-top:8px;font-size:12px;color:#9ca3af}
-.layout{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:12px}
-@media (max-width:900px){.layout{grid-template-columns:1fr}}
-</style>
-</head>
-<body>
-<h1>\u7EC4\u4EF6\u7BA1\u7406\u540E\u53F0</h1>
-<div class="toolbar">
-<button id="reload-btn" type="button">\u5237\u65B0\u5217\u8868</button>
-<span style="flex:1"></span>
-<label style="display:flex;align-items:center;gap:4px;font-size:12px;color:#9ca3af">
-Token:
-<input id="token-input" type="password" placeholder="\u53EF\u9009\uFF0C\u5982\u914D\u7F6E\u4E86 GATEWAY_AUTH_TOKEN" style="min-width:220px">
-</label>
-<button id="save-token-btn" type="button" class="secondary">\u4FDD\u5B58 Token</button>
-</div>
-<div class="layout">
-<div>
-<table>
-<thead>
-<tr>
-<th style="width:32%">Key</th>
-<th style="width:40%">\u914D\u7F6E\u6458\u8981</th>
-<th>\u65F6\u95F4</th>
-<th style="width:100px">\u64CD\u4F5C</th>
-</tr>
-</thead>
-<tbody id="components-body"></tbody>
-</table>
-</div>
-<div>
-<div style="margin-bottom:8px;font-size:13px">\u7F16\u8F91\u7EC4\u4EF6</div>
-<div style="display:flex;flex-direction:column;gap:6px">
-<input id="edit-key" placeholder="\u7EC4\u4EF6 key\uFF0C\u4F8B\u5982\uFF1ACell/NumberRight">
-<textarea id="edit-config" placeholder='\u7EC4\u4EF6\u914D\u7F6E JSON\uFF0C\u4F8B\u5982:
-{
-  "displayName": "\u6570\u5B57\u53F3\u5BF9\u9F50\u5355\u5143\u683C",
-  "group": "Cell",
-  "props": {
-    "cell_type": "number",
-    "cell_align": "right"
-  }
-}'></textarea>
-<div style="display:flex;gap:8px;justify-content:flex-end">
-<button id="create-update-btn" type="button">\u521B\u5EFA/\u66F4\u65B0\u7EC4\u4EF6</button>
-<button id="delete-btn" type="button" class="danger">\u5220\u9664\u5F53\u524D\u7EC4\u4EF6</button>
-</div>
-</div>
-<div id="status" class="status"></div>
-</div>
-</div>
-<script>
-var tokenStorageKey="mcp_gateway_token";
-var tokenInput=document.getElementById("token-input");
-var saveTokenBtn=document.getElementById("save-token-btn");
-var reloadBtn=document.getElementById("reload-btn");
-var bodyEl=document.getElementById("components-body");
-var editKey=document.getElementById("edit-key");
-var editConfig=document.getElementById("edit-config");
-var createUpdateBtn=document.getElementById("create-update-btn");
-var deleteBtn=document.getElementById("delete-btn");
-var statusEl=document.getElementById("status");
-function getToken(){try{return window.localStorage.getItem(tokenStorageKey)||"";}catch(e){return"";}}
-function setToken(v){try{window.localStorage.setItem(tokenStorageKey,v||"");}catch(e){}}
-function applyTokenToInput(){var t=getToken();if(tokenInput)tokenInput.value=t;}
-function setStatus(msg){if(statusEl)statusEl.textContent=msg||"";}
-function getAuthHeaders(){var t=tokenInput?tokenInput.value.trim():"";var h={};if(t)h.authorization="Bearer "+t;return h;}
-function formatConfigSnippet(obj){try{return JSON.stringify(obj); }catch(e){return String(obj);}}
-function renderList(items){if(!bodyEl)return;bodyEl.innerHTML="";if(!items||!items.length){var tr=document.createElement("tr");var td=document.createElement("td");td.colSpan=4;td.textContent="\u6682\u65E0\u7EC4\u4EF6\u5B9A\u4E49";td.style.color="#6b7280";tr.appendChild(td);bodyEl.appendChild(tr);return;}items.forEach(function(item){var tr=document.createElement("tr");var tdKey=document.createElement("td");tdKey.className="key-cell";tdKey.textContent=item.key;var tdCfg=document.createElement("td");tdCfg.className="config-snippet";tdCfg.textContent=formatConfigSnippet(item.config);var tdTime=document.createElement("td");tdTime.innerHTML="<div>\u521B\u5EFA: "+(item.createdAt||"")+"</div><div>\u66F4\u65B0: "+(item.updatedAt||"")+"</div>";tdTime.style.fontSize="11px";tdTime.style.color="#9ca3af";var tdOps=document.createElement("td");var editBtn=document.createElement("button");editBtn.type="button";editBtn.textContent="\u7F16\u8F91";editBtn.className="secondary";editBtn.onclick=function(){if(editKey)editKey.value=item.key;if(editConfig)editConfig.value=formatConfigSnippet(item.config);};var delBtn=document.createElement("button");delBtn.type="button";delBtn.textContent="\u5220\u9664";delBtn.className="danger";delBtn.style.marginLeft="4px";delBtn.onclick=function(){if(!confirm("\u786E\u5B9A\u5220\u9664\u7EC4\u4EF6 "+item.key+" ?"))return;deleteComponent(item.key);};tdOps.appendChild(editBtn);tdOps.appendChild(delBtn);tr.appendChild(tdKey);tr.appendChild(tdCfg);tr.appendChild(tdTime);tr.appendChild(tdOps);bodyEl.appendChild(tr);});}
-function loadComponents(){setStatus("\u52A0\u8F7D\u7EC4\u4EF6\u5217\u8868\u4E2D...");var headers=getAuthHeaders();fetch("/components",{headers:headers}).then(function(res){if(!res.ok){return res.json().catch(function(){return{}}).then(function(j){throw new Error(j&&j.error?j.error:res.statusText);});}return res.json();}).then(function(json){renderList(json.items||[]);setStatus("\u5DF2\u52A0\u8F7D\u7EC4\u4EF6 "+(json.items?json.items.length:0)+" \u4E2A");}).catch(function(err){setStatus("\u52A0\u8F7D\u5931\u8D25: "+err.message);});}
-function createOrUpdateComponent(){if(!editKey||!editConfig){return;}var key=editKey.value.trim();var raw=editConfig.value.trim();if(!key){setStatus("\u8BF7\u586B\u5199\u7EC4\u4EF6 key");return;}if(!raw){setStatus("\u8BF7\u586B\u5199\u914D\u7F6E JSON");return;}var cfg;try{cfg=JSON.parse(raw);}catch(e){setStatus("\u914D\u7F6E JSON \u89E3\u6790\u5931\u8D25: "+e.message);return;}setStatus("\u63D0\u4EA4\u4E2D...");var headers=getAuthHeaders();headers["content-type"]="application/json";fetch("/components",{method:"POST",headers:headers,body:JSON.stringify({key:key,config:cfg})}).then(function(res){return res.json().catch(function(){return{}}).then(function(json){if(!res.ok){throw new Error(json&&json.error?json.error:res.statusText);}return json;});}).then(function(json){setStatus("\u4FDD\u5B58\u6210\u529F: "+json.key);loadComponents();}).catch(function(err){setStatus("\u4FDD\u5B58\u5931\u8D25: "+err.message);});}
-function deleteComponent(key){var headers=getAuthHeaders();fetch("/components/"+encodeURIComponent(key),{method:"DELETE",headers:headers}).then(function(res){if(res.status===204){setStatus("\u5DF2\u5220\u9664\u7EC4\u4EF6 "+key);loadComponents();return;}return res.json().catch(function(){return{}}).then(function(json){throw new Error(json&&json.error?json.error:res.statusText);});}).catch(function(err){setStatus("\u5220\u9664\u5931\u8D25: "+err.message);});}
-if(saveTokenBtn&&tokenInput){saveTokenBtn.onclick=function(){setToken(tokenInput.value.trim());setStatus("Token \u5DF2\u4FDD\u5B58\uFF0C\u4EC5\u4FDD\u5B58\u5728\u672C\u5730\u6D4F\u89C8\u5668");};}
-if(reloadBtn){reloadBtn.onclick=function(){loadComponents();};}
-if(createUpdateBtn){createUpdateBtn.onclick=function(){createOrUpdateComponent();};}
-if(deleteBtn){deleteBtn.onclick=function(){if(!editKey)return;var key=editKey.value.trim();if(!key){setStatus("\u8BF7\u5148\u5728\u5DE6\u4FA7\u9009\u62E9\u7EC4\u4EF6\u6216\u586B\u5199 key");return;}if(!confirm("\u786E\u5B9A\u5220\u9664\u7EC4\u4EF6 "+key+" ?"))return;deleteComponent(key);};}
-applyTokenToInput();
-loadComponents();
-</script>
-</body>
-</html>`;
 function readJson(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -134091,8 +134016,10 @@ function readJson(req) {
     req.on("error", reject);
   });
 }
+var adminPageHtml = fs.readFileSync(path.resolve(__dirname, "../../src/index.ts"), "utf8").split("const adminPageHtml = `")[1].split("`;")[0];
 async function handle(req, res) {
   try {
+    await initComponents();
     if (!req.url) {
       sendJson(req, res, 400, { error: "missing_url" });
       return;
@@ -134106,16 +134033,45 @@ async function handle(req, res) {
     }
     const url = new URL(req.url, "http://localhost");
     if (req.method === "GET" && url.pathname === "/health") {
-      sendJson(req, res, 200, { ok: true, msg: "Handler reached" });
+      sendJson(req, res, 200, { ok: true });
       return;
     }
-    if (req.method === "GET" && (url.pathname === "/admin" || url.pathname === "/admin/components")) {
+    if ((req.method === "GET" || req.method === "HEAD") && (url.pathname === "/admin" || url.pathname === "/admin/components")) {
+      if (req.method === "HEAD") {
+        res.statusCode = 200;
+        res.setHeader("content-type", "text/html; charset=utf-8");
+        res.end();
+        return;
+      }
       sendHtml(req, res, 200, adminPageHtml);
       return;
     }
     const auth = authenticate(req);
     if (!auth.ok) {
       sendJson(req, res, auth.status, { error: auth.error });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/admin/stats") {
+      if (!process.env.DATABASE_URL) {
+        sendJson(req, res, 200, { totalCalls: 0, failCount: 0, avgLatency: 0, recentCalls: [], toolDistribution: {}, errorDistribution: [], message: "Database not configured" });
+        return;
+      }
+      try {
+        const totalCalls = await db_default.callLog.count();
+        const failCount = await db_default.callLog.count({ where: { status: "FAIL" } });
+        const avgLatencyResult = await db_default.callLog.aggregate({ _avg: { latency: true } });
+        const recentCalls = await db_default.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } });
+        const distribution = await db_default.callLog.groupBy({ by: ["action"], _count: { _all: true } });
+        const toolDistribution = distribution.reduce((acc, curr) => {
+          acc[curr.action] = curr._count._all;
+          return acc;
+        }, {});
+        const errorAgg = await db_default.callLog.groupBy({ where: { status: "FAIL", errorMsg: { not: null } }, by: ["errorMsg"], _count: { _all: true }, _max: { createdAt: true } });
+        const errorDistribution = errorAgg.map((curr) => ({ message: curr.errorMsg, count: curr._count._all, lastSeen: curr._max.createdAt })).sort((a, b) => b.count - a.count);
+        sendJson(req, res, 200, { totalCalls, failCount, avgLatency: Math.round(avgLatencyResult._avg.latency || 0), recentCalls, toolDistribution, errorDistribution });
+      } catch (e) {
+        sendJson(req, res, 500, { error: "Failed to fetch stats", message: e.message });
+      }
       return;
     }
     const rateKey = getClientKey(req, auth.subject);
@@ -134128,8 +134084,7 @@ async function handle(req, res) {
       try {
         body = await readJson(req);
       } catch (e) {
-        const msg = e?.message ? String(e.message) : String(e);
-        sendJson(req, res, msg === "request_body_too_large" ? 413 : 400, { error: msg });
+        sendJson(req, res, e?.message === "request_body_too_large" ? 413 : 400, { error: e?.message });
         return;
       }
       const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : "upload.xlsx";
@@ -134140,193 +134095,53 @@ async function handle(req, res) {
       }
       const commaIdx = data.indexOf(",");
       if (commaIdx >= 0) data = data.slice(commaIdx + 1);
-      let buf;
+      const startTime = Date.now();
       try {
-        buf = Buffer.from(data, "base64");
-      } catch (e) {
-        sendJson(req, res, 400, { error: "invalid_base64" });
-        return;
-      }
-      try {
+        const buf = Buffer.from(data, "base64");
         let wb;
-        const isCSV = name.toLowerCase().endsWith(".csv");
-        if (isCSV) {
+        if (name.toLowerCase().endsWith(".csv")) {
           const detected = import_jschardet.default.detect(buf);
           const encoding = detected.encoding === "GB2312" ? "GBK" : detected.encoding;
-          const cpMap = {
-            "UTF-8": 65001,
-            "GBK": 936,
-            "GB2312": 936,
-            "GB18030": 54936,
-            "windows-1252": 1252,
-            "UTF-16LE": 1200,
-            "UTF-16BE": 1201,
-            "Big5": 950,
-            "Shift_JIS": 932
-          };
-          const codepage = cpMap[encoding] || 65001;
-          wb = XLSX.read(buf, { type: "buffer", codepage });
+          wb = XLSX.read(buf, { type: "buffer", codepage: encoding === "GBK" ? 936 : 65001 });
         } else {
           wb = XLSX.read(buf, { type: "buffer" });
         }
-        const sheetName = wb.SheetNames[0];
-        if (!sheetName) {
-          sendJson(req, res, 400, { error: "empty_workbook" });
-          return;
-        }
-        const sheet = wb.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-        const cleanData = rows.map((row) => (Array.isArray(row) ? row : []).map((cell) => cell == null ? "" : String(cell).trim())).filter((row) => row.some((cell) => cell !== ""));
-        if (cleanData.length === 0) {
-          sendJson(req, res, 400, { error: "empty_table" });
-          return;
-        }
-        const headers = cleanData[0];
-        const allBody = cleanData.slice(1);
-        sendJson(req, res, 200, {
-          headers,
-          data: allBody,
-          rowCount: allBody.length,
-          colCount: headers.length,
-          sheetName
-        });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet);
+        await logCall({ action: "parse-excel", status: "OK", latency: Date.now() - startTime });
+        sendJson(req, res, 200, { rows });
       } catch (e) {
-        sendJson(req, res, 500, { error: "parse_failed", message: e?.message });
-      }
-      return;
-    }
-    if (req.method === "POST" && url.pathname === "/files/upload") {
-      let body;
-      try {
-        body = await readJson(req);
-      } catch (e) {
-        const msg = e?.message ? String(e.message) : String(e);
-        sendJson(req, res, msg === "request_body_too_large" ? 413 : 400, { error: msg });
-        return;
-      }
-      const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : "upload.png";
-      const type = typeof body?.type === "string" && body.type.trim() ? body.type.trim() : "application/octet-stream";
-      let data = typeof body?.data === "string" ? body.data.trim() : "";
-      if (!data) {
-        sendJson(req, res, 400, { error: "missing_data" });
-        return;
-      }
-      const commaIdx = data.indexOf(",");
-      if (commaIdx >= 0) data = data.slice(commaIdx + 1);
-      let buf;
-      try {
-        buf = Buffer.from(data, "base64");
-      } catch (e) {
-        const msg = e?.message ? String(e.message) : String(e);
-        sendJson(req, res, 400, { error: "invalid_base64", message: msg });
-        return;
-      }
-      const rawKey = getEnv("LLM_API_KEY");
-      if (!rawKey) {
-        sendJson(req, res, 500, { error: "missing_llm_api_key" });
-        return;
-      }
-      const apiKey = rawKey.trim();
-      const base = getEnv("LLM_BASE_URL");
-      let apiBase = "https://api.coze.cn";
-      if (base) {
-        try {
-          const u = new URL(base);
-          apiBase = u.origin;
-        } catch {
-        }
-      }
-      try {
-        const uint8 = new Uint8Array(buf);
-        const blob = new Blob([uint8], { type });
-        const form = new FormData();
-        form.append("file", blob, name);
-        const uploadUrl = new URL("/v1/files/upload", apiBase);
-        const upstream = await fetch(uploadUrl.toString(), {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey.replace(/^Bearer\s+/i, "")}`
-          },
-          body: form
-        });
-        const raw = await upstream.text();
-        let json;
-        try {
-          json = JSON.parse(raw);
-        } catch {
-          sendJson(req, res, 502, { error: "coze_not_json", body: raw.slice(0, 800) });
-          return;
-        }
-        if (!upstream.ok || typeof json?.code === "number" && json.code !== 0) {
-          const msg = typeof json?.msg === "string" ? json.msg : upstream.statusText;
-          sendJson(req, res, 502, { error: "coze_upload_failed", message: msg });
-          return;
-        }
-        sendJson(req, res, 200, json);
-      } catch (e) {
-        const msg = e?.message ? String(e.message) : String(e);
-        sendJson(req, res, 500, { error: "upload_proxy_error", message: msg });
+        await logCall({ action: "parse-excel", status: "FAIL", latency: Date.now() - startTime, errorMsg: e.message });
+        sendJson(req, res, 500, { error: "parse_failed", message: e.message });
       }
       return;
     }
     if (req.method === "GET" && url.pathname === "/components") {
-      const all = Array.from(components.values());
-      sendJson(req, res, 200, { items: all });
+      sendJson(req, res, 200, { items: Array.from(components.values()) });
       return;
     }
     if (req.method === "POST" && url.pathname === "/components") {
-      let body;
-      try {
-        body = await readJson(req);
-      } catch (e) {
-        const msg = e?.message ? String(e.message) : String(e);
-        sendJson(req, res, msg === "request_body_too_large" ? 413 : 400, { error: msg });
-        return;
-      }
-      const key = typeof body?.key === "string" ? body.key.trim() : "";
+      let body = await readJson(req);
+      const key = body?.key?.trim();
       if (!key) {
         sendJson(req, res, 400, { error: "missing_key" });
         return;
       }
-      const rawConfig = body?.config ?? body?.props ?? {};
-      if (typeof rawConfig !== "object" || rawConfig === null || Array.isArray(rawConfig)) {
-        sendJson(req, res, 400, { error: "invalid_config" });
-        return;
+      const figmaKey = body?.figmaKey?.trim() || "";
+      const variants = body?.variants || [];
+      const props = body?.props || {};
+      const displayName = body?.displayName || key;
+      if (process.env.DATABASE_URL) {
+        await db_default.componentConfig.upsert({
+          where: { configKey: key },
+          update: { displayName, figmaKey, variants, props, updatedAt: /* @__PURE__ */ new Date() },
+          create: { configKey: key, displayName, figmaKey, variants, props }
+        });
       }
-      const now = (/* @__PURE__ */ new Date()).toISOString();
-      const existing = components.get(key);
-      const createdAt = existing?.createdAt ?? now;
-      const def = {
-        key,
-        config: rawConfig,
-        createdAt,
-        updatedAt: now
-      };
+      const def = { key, config: { ...props, figma: { componentKey: figmaKey }, variants }, createdAt: (/* @__PURE__ */ new Date()).toISOString(), updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
       components.set(key, def);
-      sendJson(req, res, existing ? 200 : 201, def);
+      sendJson(req, res, 200, def);
       return;
-    }
-    const componentMatch = url.pathname.match(/^\/components\/([^/]+)$/);
-    if (componentMatch) {
-      const key = decodeURIComponent(componentMatch[1]);
-      if (req.method === "GET") {
-        const def = components.get(key);
-        if (!def) {
-          sendJson(req, res, 404, { error: "not_found" });
-          return;
-        }
-        sendJson(req, res, 200, def);
-        return;
-      }
-      if (req.method === "DELETE") {
-        const existed = components.delete(key);
-        if (!existed) {
-          sendJson(req, res, 404, { error: "not_found" });
-          return;
-        }
-        sendJson(req, res, 204, {});
-        return;
-      }
     }
     if (req.method === "GET" && url.pathname === "/tools") {
       const client = await getMcp();
@@ -134337,44 +134152,28 @@ async function handle(req, res) {
     const toolMatch = url.pathname.match(/^\/tools\/([^/]+)$/);
     if (req.method === "POST" && toolMatch) {
       const toolName = decodeURIComponent(toolMatch[1]);
-      let args = {};
-      try {
-        const body = await readJson(req);
-        args = body.args ?? body.arguments ?? {};
-      } catch (e) {
-        const msg = e?.message ? String(e.message) : String(e);
-        sendJson(req, res, msg === "request_body_too_large" ? 413 : 400, { error: msg });
-        return;
-      }
+      const body = await readJson(req);
+      const args = body.args ?? body.arguments ?? {};
+      const startTime = Date.now();
       try {
         const client = await getMcp();
-        const result = await client.request(
-          {
-            method: "tools/call",
-            params: {
-              name: toolName,
-              arguments: args
-            }
-          },
-          CallToolResultSchema,
-          { timeout: 3e5 }
-        );
-        const text = result.content.map((c) => c.type === "text" ? c.text : "").filter(Boolean).join("\n");
+        const result = await client.request({ method: "tools/call", params: { name: toolName, arguments: args } }, CallToolResultSchema, { timeout: 3e5 });
+        const text = result.content.map((c) => c.text || "").join("\n");
+        await logCall({ action: toolName, status: "OK", latency: Date.now() - startTime, prompt: JSON.stringify(args), llmResponse: result });
         sendJson(req, res, 200, { text, raw: result });
-        return;
       } catch (e) {
-        sendJson(req, res, 500, { error: e?.message ? String(e.message) : String(e) });
-        return;
+        await logCall({ action: toolName, status: "FAIL", latency: Date.now() - startTime, prompt: JSON.stringify(args), errorMsg: e.message });
+        sendJson(req, res, 500, { error: e.message });
       }
+      return;
     }
     sendJson(req, res, 404, { error: "not_found" });
   } catch (e) {
-    sendJson(req, res, 500, { error: "handler_crash", message: e?.message, stack: e?.stack });
+    sendJson(req, res, 500, { error: "handler_crash", message: e.message });
   }
 }
 export {
-  handle,
-  port
+  handle
 };
 /*! Bundled license information:
 

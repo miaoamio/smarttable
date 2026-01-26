@@ -14,11 +14,11 @@
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "engines": {
-    "node": "22.x"
+    "node": ">=22"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
-    "@prisma/client": "^6.19.2",
+    "@prisma/client": "^6.2.1",
     "zod": "^3.25.0"
   },
   "devDependencies": {
