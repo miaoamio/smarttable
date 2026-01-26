@@ -354,7 +354,8 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
 
   if (req.method === "OPTIONS") {
     withCors(req, res);
-    res.statusCode = 204;
+    res.statusCode = 200;
+    res.setHeader("content-length", "0");
     res.end();
     return;
   }

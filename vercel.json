@@ -25,6 +25,7 @@
     { "src": "/files/upload", "dest": "/api/gateway" },
     { "src": "/tools", "dest": "/api/gateway" },
     { "src": "/tools/.*", "dest": "/api/gateway" },
-    { "src": "/health", "dest": "/api/gateway" }
+    { "src": "/health", "dest": "/api/gateway" },
+    { "src": "/parse-excel", "dest": "/api/gateway" }
   ]
 }
