@@ -2122,7 +2122,8 @@ async function renderHeaderCell(
   
   cellFrame.appendChild(textNode);
 
-  // 4. Handle Icon
+  // 4. Handle Icon (Only if explicitly requested by user or AI)
+  // Default to NO icon unless iconType is present and meaningful
   if (iconType && iconComponent) {
     let iconInst: InstanceNode;
     if (iconComponent.type === "COMPONENT_SET") {
@@ -4388,7 +4389,7 @@ async function createTable(params: CreateTableOptions) {
             colType = "Avatar";
           }
           
-          const headerMode = colSpec?.header || "none";
+          // const headerMode = colSpec?.header || "none"; // REMOVED: Defined later
 
       const colFrame = figma.createFrame();
       colFrame.name = colTitle;
@@ -4414,6 +4415,11 @@ async function createTable(params: CreateTableOptions) {
       }
       
       const { component: iconComponent } = await resolveCellFactory(HEADER_ICON_COMPONENT_KEY);
+      
+      // Default behavior: DO NOT add any icons unless explicitly requested by user in the envelope
+      // If envelopeSchema.columns[c].header is missing, default to "none" (no icon)
+      // Only if the user/AI explicitly set headerMode to something else, we show it.
+      const headerMode = colSpec?.header || "none";
       const { filter, sort, search, info } = headerPropsFromMode(headerMode);
       
       let iconType: "Filter" | "Sort" | "Search" | "Info" | undefined;
@@ -4698,6 +4704,93 @@ async function setInstanceAlign(instance: InstanceNode, align: "left" | "center"
   }
 }
 
+// Helper function to align rows
+async function alignTableRows(table: FrameNode, rowIndex: number, sourceNodes: SceneNode[] = []) {
+    const cols = getColumnFrames(table);
+    
+    // Get default row height for this table
+    let defaultRowHeight = tableSwitchesState.rowHeight;
+    try {
+        const savedHeight = table.getPluginData("tableRowHeight");
+        if (savedHeight) {
+            defaultRowHeight = parseInt(savedHeight, 10) || tableSwitchesState.rowHeight;
+        }
+    } catch (e) {
+        return;
+    }
+
+    let maxHeight = defaultRowHeight;
+    
+    // First pass: find max height among changed nodes and natural heights of other line-break nodes
+    for (const col of cols) {
+        if (col.removed) continue;
+        if (rowIndex < col.children.length) {
+            const cell = col.children[rowIndex] as FrameNode | InstanceNode;
+            if (!cell || cell.removed) continue;
+            
+            // If this cell was specifically changed, respect its new height
+            if (sourceNodes.includes(cell)) {
+                if (cell.height > maxHeight) maxHeight = cell.height;
+            } else {
+                // If it's a line-break cell that wasn't changed, we should still respect its natural height
+                const isLineBreak = cell.getPluginData("textDisplayMode") === "lineBreak";
+                if (isLineBreak) {
+                    if ("layoutSizingVertical" in (cell as any)) {
+                        const oldSizing = (cell as any).layoutSizingVertical;
+                        // Temporarily set to HUG to measure natural height
+                        // Only if not explicitly FIXED by user (how to track? heuristics)
+                        // If it is currently FIXED, we assume it's intentional unless it's smaller than content?
+                        // Let's force HUG to check content height, then decide.
+                        
+                        (cell as any).layoutSizingVertical = "HUG";
+                        if (cell.height > maxHeight) maxHeight = cell.height;
+                        (cell as any).layoutSizingVertical = oldSizing;
+                    } else {
+                        if (cell.height > maxHeight) maxHeight = cell.height;
+                    }
+                }
+            }
+        }
+    }
+    
+    if (maxHeight <= 0) maxHeight = defaultRowHeight;
+
+    // Second pass: apply max height
+    for (const col of cols) {
+        if (col.removed) continue;
+        if (rowIndex < col.children.length) {
+            const cell = col.children[rowIndex] as FrameNode | InstanceNode;
+            if (!cell || cell.removed) continue;
+            const isLineBreak = cell.getPluginData("textDisplayMode") === "lineBreak";
+            
+            if (isLineBreak) {
+                // If it's the tallest cell (or close to it)
+                if (Math.abs(cell.height - maxHeight) <= 0.1) {
+                   // If it is HUG, keep it HUG.
+                   // If it is FIXED (manual resize), keep it FIXED.
+                   // Ensure we don't force HUG if it was manually resized to be tall.
+                   
+                   // One case: It was HUG, but now it's the tallest. 
+                   // If we leave it HUG, it stays tall. Correct.
+                   
+                   // Another case: It was FIXED (tall), and it's the tallest.
+                   // If we leave it FIXED, it stays tall. Correct.
+                } else {
+                    // If it's shorter than maxHeight, set to FIXED to align with row
+                    if ("layoutSizingVertical" in cell) (cell as any).layoutSizingVertical = "FIXED";
+                    try { cell.resize(cell.width, maxHeight); } catch (e) {}
+                }
+            } else {
+                // Normal cells: always FIXED
+                if ("layoutSizingVertical" in cell) (cell as any).layoutSizingVertical = "FIXED";
+                if (Math.abs(cell.height - maxHeight) > 0.1) {
+                    try { cell.resize(cell.width, maxHeight); } catch (e) {}
+                }
+            }
+        }
+    }
+}
+
 // Initialize listeners
 async function init() {
   console.log("Smart Table: Initializing...");
@@ -4796,12 +4889,16 @@ async function init() {
             if (column && !column.removed && column.type === "FRAME" && column.layoutMode === "VERTICAL") {
                 const table = column.parent;
                 if (table && !table.removed && table.type === "FRAME" && table.layoutMode === "HORIZONTAL" && isSmartTableFrame(table)) {
-                    // If text changed, we MUST ensure it's HUG temporarily to get its new natural height
-                    // BUT ONLY if it's actually in lineBreak mode. Ellipsis cells should NOT grow.
-                    const textDisplayMode = sceneNode.getPluginData("textDisplayMode");
-                    if (isTextProp && textDisplayMode === "lineBreak") {
-                        if ("layoutSizingVertical" in sceneNode && sceneNode.layoutSizingVertical !== "HUG") {
-                            sceneNode.layoutSizingVertical = "HUG";
+                    // For lineBreak cells, we MUST temporarily force HUG to let Figma recalculate the text height.
+                    // Otherwise, if it was previously FIXED, the height won't update when text wraps to a new line.
+                    // We only do this if it's a text change and the cell is in lineBreak mode.
+                    if (isTextProp) {
+                        const textDisplayMode = sceneNode.getPluginData("textDisplayMode");
+                        if (textDisplayMode === "lineBreak") {
+                            // Force HUG to update height based on new text content
+                            if ("layoutSizingVertical" in sceneNode && sceneNode.layoutSizingVertical !== "HUG") {
+                                sceneNode.layoutSizingVertical = "HUG";
+                            }
                         }
                     }
 
@@ -4833,77 +4930,7 @@ async function init() {
     if (cellsToSync.size > 0) {
         for (const { table, index, sourceNodes } of cellsToSync.values()) {
             if (table.removed) continue;
-            const cols = getColumnFrames(table);
-            
-            // Get default row height for this table
-            let defaultRowHeight = tableSwitchesState.rowHeight;
-            try {
-                const savedHeight = table.getPluginData("tableRowHeight");
-                if (savedHeight) {
-                    defaultRowHeight = parseInt(savedHeight, 10) || tableSwitchesState.rowHeight;
-                }
-            } catch (e) {
-                // Ignore if table is removed or plugin data access fails
-                continue;
-            }
-
-            let maxHeight = defaultRowHeight;
-            
-            // First pass: find max height among changed nodes and natural heights of other line-break nodes
-            for (const col of cols) {
-                if (col.removed) continue;
-                if (index < col.children.length) {
-                    const cell = col.children[index] as FrameNode | InstanceNode;
-                    if (!cell || cell.removed) continue;
-                    
-                    // If this cell was specifically changed, respect its new height
-                    if (sourceNodes.includes(cell)) {
-                        if (cell.height > maxHeight) maxHeight = cell.height;
-                    } else {
-                        // If it's a line-break cell that wasn't changed, we should still respect its natural height
-                        const isLineBreak = cell.getPluginData("textDisplayMode") === "lineBreak";
-                        if (isLineBreak) {
-                            if ("layoutSizingVertical" in (cell as any)) {
-                                const oldSizing = (cell as any).layoutSizingVertical;
-                                (cell as any).layoutSizingVertical = "HUG";
-                                if (cell.height > maxHeight) maxHeight = cell.height;
-                                (cell as any).layoutSizingVertical = oldSizing;
-                            } else {
-                                if (cell.height > maxHeight) maxHeight = cell.height;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            if (maxHeight <= 0) maxHeight = defaultRowHeight;
-
-            // Second pass: apply max height
-            for (const col of cols) {
-                if (col.removed) continue;
-                if (index < col.children.length) {
-                    const cell = col.children[index] as FrameNode | InstanceNode;
-                    if (!cell || cell.removed) continue;
-                    const isLineBreak = cell.getPluginData("textDisplayMode") === "lineBreak";
-                    
-                    if (isLineBreak) {
-                        // If it's the tallest cell (or close to it), keep it HUG so it can continue to grow
-                        if (Math.abs(cell.height - maxHeight) <= 0.1) {
-                            if ("layoutSizingVertical" in cell) cell.layoutSizingVertical = "HUG";
-                        } else {
-                            // If it's shorter than maxHeight, set to FIXED to align with row
-                            if ("layoutSizingVertical" in cell) cell.layoutSizingVertical = "FIXED";
-                            try { cell.resize(cell.width, maxHeight); } catch (e) {}
-                        }
-                    } else {
-                        // Normal cells: always FIXED
-                        if ("layoutSizingVertical" in cell) cell.layoutSizingVertical = "FIXED";
-                        if (Math.abs(cell.height - maxHeight) > 0.1) {
-                            try { cell.resize(cell.width, maxHeight); } catch (e) {}
-                        }
-                    }
-                }
-            }
+            await alignTableRows(table, index, sourceNodes);
         }
     }
   });
@@ -5687,21 +5714,30 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
         figma.notify("请选中一个作为模板的单元格");
         return;
       }
-      const sourceCell = figma.currentPage.selection[0];
+      // If selection is inside a cell (e.g. text node), we need to find the cell frame first.
+      // A cell is a direct child of a column frame.
+      let sourceCell = figma.currentPage.selection[0] as SceneNode;
+      const columnFrame = findColumnFrame(sourceCell);
       
-      // Support both Instances and our custom Frame-based cells
-      const cellTypeData = sourceCell.getPluginData("cellType");
-      const cellType = cellTypeData as ColumnType;
-      const isCustomCell = sourceCell.type === "FRAME" && cellTypeData !== "";
-      if (sourceCell.type !== "INSTANCE" && !isCustomCell) {
-        figma.notify("选中的不是有效的单元格");
+      if (!columnFrame) {
+        figma.notify("请选中表格中的单元格或元素");
         return;
       }
-
-      const columnFrame = findColumnFrame(sourceCell);
-      if (!columnFrame) {
-        figma.notify("未找到列容器");
-        return;
+      
+      // If the selected node is not a direct child of columnFrame, traverse up to find the cell
+      if (sourceCell.parent !== columnFrame) {
+         let cur = sourceCell;
+         while (cur.parent && cur.parent !== columnFrame) {
+            cur = cur.parent as SceneNode;
+         }
+         // Now cur should be the direct child of columnFrame (the cell)
+         if (cur.parent === columnFrame) {
+            sourceCell = cur;
+         } else {
+            // Should not happen if findColumnFrame works correctly
+            figma.notify("无法定位所属单元格");
+            return;
+         }
       }
 
       const table = findTableFrameFromNode(columnFrame);
@@ -5754,6 +5790,9 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
               target.remove();
               
               updateCount++;
+              
+              // Sync row height
+              await alignTableRows(table, i, [newCell]);
             } catch (e) {
               console.error("Failed to clone/replace cell at index " + i, e);
             }
