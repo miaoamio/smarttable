@@ -129,6 +129,23 @@ function parseBearer(req) {
     return m ? m[1].trim() : undefined;
 }
 function authenticate(req) {
+    // 1. Check for Basic Auth (Traditional browser popup login)
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith("Basic ")) {
+        try {
+            const credentials = Buffer.from(authHeader.split(" ")[1], "base64").toString();
+            const [user, pass] = credentials.split(":");
+            const adminUser = process.env.ADMIN_USER || "admin";
+            const adminPass = process.env.ADMIN_PASSWORD || "ved@123";
+            if (user === adminUser && pass === adminPass) {
+                return { ok: true, subject: "admin" };
+            }
+        }
+        catch (e) {
+            // ignore decode errors
+        }
+    }
+    // 2. Check for Token/JWT (Existing logic for plugin/API)
     if (!authToken && !jwtSecret)
         return { ok: true, subject: "anonymous" };
     const token = parseBearer(req);
@@ -301,10 +318,6 @@ tr:last-child td{border-bottom:none}
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2ZM12 4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20C7.58172 20 4 16.4183 4 12C4 7.58172 7.58172 4 12 4ZM11 7V11H7V13H11V17H13V13H17V11H13V7H11Z" fill="currentColor"/></svg>
     Figma AI Gateway Admin
   </h1>
-  <div class="toolbar">
-    <input id="token-input" type="password" placeholder="Access Token" style="width:180px">
-    <button id="save-token-btn" class="primary">验证</button>
-  </div>
 </header>
 
 <div class="container">
@@ -423,9 +436,6 @@ tr:last-child td{border-bottom:none}
 </div>
 
 <script>
-var tokenStorageKey="mcp_gateway_token";
-var tokenInput=document.getElementById("token-input");
-var saveTokenBtn=document.getElementById("save-token-btn");
 var reloadBtn=document.getElementById("reload-btn");
 var bodyEl=document.getElementById("components-body");
 var logsBody=document.getElementById("logs-body");
@@ -452,22 +462,24 @@ document.querySelectorAll(".tab").forEach(tab => {
   };
 });
 
-function getToken(){try{return window.localStorage.getItem(tokenStorageKey)||"";}catch(e){return"";}}
-function setToken(v){try{window.localStorage.setItem(tokenStorageKey,v||"");}catch(e){}}
-function applyTokenToInput(){var t=getToken();if(tokenInput)tokenInput.value=t;}
 function setStatus(msg, type){
   if(!statusEl) return;
   statusEl.textContent=msg||"";
   statusEl.className = "status-msg " + (type === "error" ? "status-error" : "status-success");
   statusEl.classList.toggle("hidden", !msg);
 }
-function getAuthHeaders(){var t=tokenInput?tokenInput.value.trim():"";var h={};if(t)h.authorization="Bearer "+t;return h;}
 
 function loadStats() {
-  var headers = getAuthHeaders();
-  fetch("/admin/stats", {headers: headers})
-    .then(res => res.json())
+  fetch("/admin/stats")
+    .then(res => {
+      if(res.status === 401) {
+        window.location.reload();
+        return;
+      }
+      return res.json();
+    })
     .then(data => {
+      if(!data) return;
       if(data.error) { setStatus(data.error, "error"); return; }
       
       renderLogs(data.recentCalls || []);
@@ -567,8 +579,14 @@ window.editItem = function(key, config) {
 };
 
 function loadComponents(){
-  var headers=getAuthHeaders();
-  fetch("/components",{headers:headers}).then(res => res.json()).then(json => {
+  fetch("/components").then(res => {
+    if(res.status === 401) {
+      window.location.reload();
+      return;
+    }
+    return res.json();
+  }).then(json => {
+    if(!json) return;
     renderList(json.items||[]);
   });
 }
@@ -578,24 +596,16 @@ function createOrUpdateComponent(){
   var figmaKey=editFigmaKey.value.trim();
   var variantsRaw=editVariants.value.trim();
   var configRaw=editConfig.value.trim();
-  
   if(!key || !configRaw) return;
-  
   try{
     var cfg=JSON.parse(configRaw);
-    var variants = variantsRaw ? JSON.parse(variantsRaw) : [];
-    
-    // Merge back into config
-    cfg.variants = variants;
+    cfg.variants = variantsRaw ? JSON.parse(variantsRaw) : [];
     if (figmaKey) {
       cfg.figma = cfg.figma || {};
       cfg.figma.componentKey = figmaKey;
     }
-
     setStatus("Saving...");
-    var headers=getAuthHeaders();
-    headers["content-type"]="application/json";
-    fetch("/components",{method:"POST",headers:headers,body:JSON.stringify({key:key,config:cfg})})
+    fetch("/components",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key:key,config:cfg})})
       .then(res => res.json())
       .then(() => { setStatus("Saved successfully"); loadComponents(); });
   }catch(e){ setStatus("Invalid JSON: "+e.message, "error"); }
@@ -604,8 +614,7 @@ function createOrUpdateComponent(){
 function deleteComponent(){
   var key=editKey.value.trim();
   if(!key || !confirm("Delete this component?")) return;
-  var headers=getAuthHeaders();
-  fetch("/components/"+encodeURIComponent(key),{method:"DELETE",headers:headers}).then(() => {
+  fetch("/components/"+encodeURIComponent(key),{method:"DELETE"}).then(() => {
     setStatus("Deleted successfully");
     loadComponents();
     editKey.value = "";
@@ -613,12 +622,9 @@ function deleteComponent(){
   });
 }
 
-saveTokenBtn.onclick=function(){setToken(tokenInput.value.trim()); setStatus("Token updated"); loadStats();};
 reloadBtn.onclick=loadComponents;
 createUpdateBtn.onclick=createOrUpdateComponent;
 deleteBtn.onclick=deleteComponent;
-
-applyTokenToInput();
 loadStats();
 </script>
 </body>
@@ -690,6 +696,14 @@ const server = http.createServer(async (req, res) => {
         return;
     }
     if ((req.method === "GET" || req.method === "HEAD") && (url.pathname === "/admin" || url.pathname === "/admin/components")) {
+        const auth = authenticate(req);
+        if (!auth.ok) {
+            res.statusCode = 401;
+            res.setHeader("WWW-Authenticate", 'Basic realm="Figma AI Admin"');
+            res.setHeader("Content-Type", "text/plain; charset=utf-8");
+            res.end("Unauthorized");
+            return;
+        }
         if (req.method === "HEAD") {
             res.statusCode = 200;
             res.setHeader("content-type", "text/html; charset=utf-8");

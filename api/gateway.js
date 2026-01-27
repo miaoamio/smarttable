@@ -133901,6 +133901,19 @@ function parseBearer(req) {
   return m ? m[1].trim() : void 0;
 }
 function authenticate(req) {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Basic ")) {
+    try {
+      const credentials = Buffer.from(authHeader.split(" ")[1], "base64").toString();
+      const [user, pass] = credentials.split(":");
+      const adminUser = process.env.ADMIN_USER || "admin";
+      const adminPass = process.env.ADMIN_PASSWORD || "ved@123";
+      if (user === adminUser && pass === adminPass) {
+        return { ok: true, subject: "admin" };
+      }
+    } catch (e) {
+    }
+  }
   if (!authToken && !jwtSecret) return { ok: true, subject: "anonymous" };
   const token = parseBearer(req);
   if (!token) return { ok: false, status: 401, error: "missing_authorization" };
@@ -134086,10 +134099,6 @@ tr:last-child td{border-bottom:none}
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2ZM12 4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20C7.58172 20 4 16.4183 4 12C4 7.58172 7.58172 4 12 4ZM11 7V11H7V13H11V17H13V13H17V11H13V7H11Z" fill="currentColor"/></svg>
     Figma AI Gateway Admin
   </h1>
-  <div class="toolbar">
-    <input id="token-input" type="password" placeholder="Access Token" style="width:180px">
-    <button id="save-token-btn" class="primary">\u9A8C\u8BC1</button>
-  </div>
 </header>
 
 <div class="container">
@@ -134208,9 +134217,6 @@ tr:last-child td{border-bottom:none}
 </div>
 
 <script>
-var tokenStorageKey="mcp_gateway_token";
-var tokenInput=document.getElementById("token-input");
-var saveTokenBtn=document.getElementById("save-token-btn");
 var reloadBtn=document.getElementById("reload-btn");
 var bodyEl=document.getElementById("components-body");
 var logsBody=document.getElementById("logs-body");
@@ -134237,22 +134243,24 @@ document.querySelectorAll(".tab").forEach(tab => {
   };
 });
 
-function getToken(){try{return window.localStorage.getItem(tokenStorageKey)||"";}catch(e){return"";}}
-function setToken(v){try{window.localStorage.setItem(tokenStorageKey,v||"");}catch(e){}}
-function applyTokenToInput(){var t=getToken();if(tokenInput)tokenInput.value=t;}
 function setStatus(msg, type){
   if(!statusEl) return;
   statusEl.textContent=msg||"";
   statusEl.className = "status-msg " + (type === "error" ? "status-error" : "status-success");
   statusEl.classList.toggle("hidden", !msg);
 }
-function getAuthHeaders(){var t=tokenInput?tokenInput.value.trim():"";var h={};if(t)h.authorization="Bearer "+t;return h;}
 
 function loadStats() {
-  var headers = getAuthHeaders();
-  fetch("/admin/stats", {headers: headers})
-    .then(res => res.json())
+  fetch("/admin/stats")
+    .then(res => {
+      if(res.status === 401) {
+        window.location.reload(); // Trigger popup if session expired
+        return;
+      }
+      return res.json();
+    })
     .then(data => {
+      if(!data) return;
       if(data.error) { setStatus(data.error, "error"); return; }
       document.getElementById("stat-total").textContent = data.totalCalls || 0;
       document.getElementById("stat-fails").textContent = data.failCount || 0;
@@ -134278,7 +134286,79 @@ function loadStats() {
       \`).join("");
     });
 }
-applyTokenToInput();
+
+function loadComponents(){
+  fetch("/components").then(res => {
+    if(res.status === 401) {
+      window.location.reload();
+      return;
+    }
+    return res.json();
+  }).then(json => {
+    if(!json) return;
+    renderList(json.items||[]);
+  });
+}
+
+function renderList(items){
+  if(!bodyEl)return;
+  bodyEl.innerHTML="";
+  items.forEach(function(item){
+    var tr=document.createElement("tr");
+    tr.innerHTML = \`
+      <td class="key-cell">\${item.key}</td>
+      <td style="text-align:right">
+        <button class="secondary" style="padding:4px 10px;font-size:12px" onclick="editItem('\${item.key}', \${JSON.stringify(item.config).replace(/"/g, '&quot;')})">Edit</button>
+      </td>
+    \`;
+    bodyEl.appendChild(tr);
+  });
+}
+
+window.editItem = function(key, config) {
+  editKey.value = key;
+  editFigmaKey.value = config.figma?.componentKey || "";
+  editVariants.value = JSON.stringify(config.variants || [], null, 2);
+  const displayConfig = {...config};
+  delete displayConfig.variants;
+  editConfig.value = JSON.stringify(displayConfig, null, 2);
+  document.getElementById("configs-section").scrollIntoView({behavior: "smooth"});
+};
+
+function createOrUpdateComponent(){
+  var key=editKey.value.trim();
+  var figmaKey=editFigmaKey.value.trim();
+  var variantsRaw=editVariants.value.trim();
+  var configRaw=editConfig.value.trim();
+  if(!key || !configRaw) return;
+  try{
+    var cfg=JSON.parse(configRaw);
+    cfg.variants = variantsRaw ? JSON.parse(variantsRaw) : [];
+    if (figmaKey) {
+      cfg.figma = cfg.figma || {};
+      cfg.figma.componentKey = figmaKey;
+    }
+    setStatus("Saving...");
+    fetch("/components",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key:key,props:cfg})})
+      .then(res => res.json())
+      .then(() => { setStatus("Saved successfully"); loadComponents(); });
+  }catch(e){ setStatus("Invalid JSON: "+e.message, "error"); }
+}
+
+function deleteComponent(){
+  var key=editKey.value.trim();
+  if(!key || !confirm("Delete this component?")) return;
+  fetch("/components/"+encodeURIComponent(key),{method:"DELETE"}).then(() => {
+    setStatus("Deleted successfully");
+    loadComponents();
+    editKey.value = "";
+    editConfig.value = "";
+  });
+}
+
+reloadBtn.onclick=loadComponents;
+createUpdateBtn.onclick=createOrUpdateComponent;
+deleteBtn.onclick=deleteComponent;
 loadStats();
 </script>
 </body>
@@ -134299,6 +134379,14 @@ async function handle(req, res) {
       return;
     }
     if ((req.method === "GET" || req.method === "HEAD") && (url.pathname === "/admin" || url.pathname === "/admin/components")) {
+      const auth2 = authenticate(req);
+      if (!auth2.ok) {
+        res.statusCode = 401;
+        res.setHeader("WWW-Authenticate", 'Basic realm="Figma AI Admin"');
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.end("Unauthorized");
+        return;
+      }
       if (req.method === "HEAD") {
         res.statusCode = 200;
         res.setHeader("content-type", "text/html; charset=utf-8");
@@ -134387,6 +134475,103 @@ async function handle(req, res) {
       } catch (e) {
         await logCall({ action: "parse-excel", status: "FAIL", latency: Date.now() - startTime, errorMsg: e.message });
         sendJson(req, res, 500, { error: "parse_failed", message: e.message });
+      }
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/files/upload") {
+      let body;
+      try {
+        body = await readJson(req);
+      } catch (e) {
+        const msg = e?.message ? String(e.message) : String(e);
+        sendJson(req, res, msg === "request_body_too_large" ? 413 : 400, { error: msg });
+        return;
+      }
+      const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : "upload.png";
+      const type = typeof body?.type === "string" && body.type.trim() ? body.type.trim() : "application/octet-stream";
+      let data = typeof body?.data === "string" ? body.data.trim() : "";
+      if (!data) {
+        sendJson(req, res, 400, { error: "missing_data" });
+        return;
+      }
+      const commaIdx = data.indexOf(",");
+      if (commaIdx >= 0) data = data.slice(commaIdx + 1);
+      const startTime = Date.now();
+      let buf;
+      try {
+        buf = Buffer.from(data, "base64");
+      } catch (e) {
+        const msg = e?.message ? String(e.message) : String(e);
+        await logCall({
+          action: "FILE_UPLOAD",
+          status: "FAIL",
+          latency: Date.now() - startTime,
+          errorMsg: `Invalid Base64: ${msg}`
+        });
+        sendJson(req, res, 400, { error: "invalid_base64", message: msg });
+        return;
+      }
+      const rawKey = getEnv("LLM_API_KEY");
+      if (!rawKey) {
+        await logCall({
+          action: "FILE_UPLOAD",
+          status: "FAIL",
+          latency: Date.now() - startTime,
+          errorMsg: "Missing LLM_API_KEY"
+        });
+        sendJson(req, res, 500, { error: "missing_llm_api_key" });
+        return;
+      }
+      const apiKey = rawKey.trim();
+      const base = getEnv("LLM_BASE_URL");
+      let apiBase = "https://api.coze.cn";
+      if (base) {
+        try {
+          const u = new URL(base);
+          apiBase = u.origin;
+        } catch {
+        }
+      }
+      try {
+        const uint8 = new Uint8Array(buf);
+        const blob = new Blob([uint8], { type });
+        const form = new FormData();
+        form.append("file", blob, name);
+        const uploadUrl = new URL("/v1/files/upload", apiBase);
+        const upstream = await fetch(uploadUrl.toString(), {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${apiKey.replace(/^Bearer\s+/i, "")}`
+          },
+          body: form
+        });
+        const raw = await upstream.text();
+        let json;
+        try {
+          json = JSON.parse(raw);
+        } catch {
+          throw new Error(`Upstream returned non-JSON: ${raw.slice(0, 100)}`);
+        }
+        if (!upstream.ok || typeof json?.code === "number" && json.code !== 0) {
+          const msg = typeof json?.msg === "string" ? json.msg : upstream.statusText;
+          throw new Error(msg);
+        }
+        await logCall({
+          action: "FILE_UPLOAD",
+          status: "SUCCESS",
+          latency: Date.now() - startTime,
+          prompt: `File: ${name}, Type: ${type}, Size: ${buf.length}`
+        });
+        sendJson(req, res, 200, json);
+      } catch (e) {
+        const msg = e?.message ? String(e.message) : String(e);
+        await logCall({
+          action: "FILE_UPLOAD",
+          status: "FAIL",
+          latency: Date.now() - startTime,
+          errorMsg: msg
+        });
+        sendJson(req, res, 500, { error: "upload_proxy_error", message: msg });
       }
       return;
     }
