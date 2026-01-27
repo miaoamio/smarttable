@@ -5722,123 +5722,45 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
           return;
         }
 
-        // Apply content replication for all cell types
+        // Simply clone the source cell and replace all other cells in the column
         const children = columnFrame.children;
         const headerOffset = await getHeaderOffset(columnFrame);
-        
         let updateCount = 0;
-        let sourceValue = "";
         
-        // Extract source value for custom cells
-        if (isCustomCell && cellType) {
-           sourceValue = sourceCell.getPluginData("cellValue") || extractTextFromNode(sourceCell);
-        }
-
-        // If it's a custom cell type, we prefer using applyColumnTypeToColumn 
-        // to ensure data preservation (it extracts text and renders new UI)
-        if (isCustomCell && cellType) {
-          // Temporarily override the column cell type to ensure it renders correctly
-          // But applyColumnTypeToColumn usually just changes type, doesn't copy content.
-          // We need to implement content copying.
+        // Use a loop that is safe against array modification (though we are replacing items in place)
+        // We iterate from headerOffset to end
+        for (let i = headerOffset; i < children.length; i++) {
+          const target = children[i];
           
-          // Re-render all cells in column with source content
-          const customRenderer = CUSTOM_CELL_REGISTRY[cellType];
+          // Skip the source cell itself to avoid removing it
+          if (target.id === sourceCell.id) continue;
           
-          // Resolve components
-          let context: any = {};
-          // ... (Component resolution logic similar to set_cell_type) ...
-          // To avoid code duplication, we can try to reuse existing logic or just basic resolution
-          // For now, let's just resolve what we need based on cellType
-          if (cellType === "Tag") {
-            const { component: tagComponent } = await resolveCellFactory(TAG_COMPONENT_KEY);
-            const { component: counterComponent } = await resolveCellFactory(TAG_COUNTER_COMPONENT_KEY);
-            context = { tagComponent, counterComponent: counterComponent || tagComponent };
-          } else if (cellType === "Avatar") {
-            const { component: avatarComponent } = await resolveCellFactory(AVATAR_COMPONENT_KEY);
-            context = { avatarComponent, overrideDisplayValue: sourceValue };
-          } else if (cellType === "ActionText") {
-            const { component: moreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
-            context = { moreIconComponent };
-          } else if (cellType === "ActionIcon") {
-            const { component: editIconComponent } = await resolveCellFactory(EDIT_ICON_COMPONENT_KEY);
-            const { component: deleteIconComponent } = await resolveCellFactory(DELETE_ICON_COMPONENT_KEY);
-            const { component: actionMoreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
-            context = { editIconComponent, deleteIconComponent, actionMoreIconComponent };
-          } else if (cellType === "Input") {
-            const { component: inputComponent } = await resolveCellFactory(INPUT_COMPONENT_KEY);
-            context = { inputComponent };
-          } else if (cellType === "Select") {
-            const { component: selectComponent } = await resolveCellFactory(SELECT_COMPONENT_KEY);
-            context = { selectComponent };
-          } else if (cellType === "State") {
-            const { component: stateComponent } = await resolveCellFactory(STATE_COMPONENT_KEY);
-            context = { stateComponent };
-          }
-
-          if (customRenderer) {
-             // We need to iterate and replace content
-             for (let i = headerOffset; i < children.length; i++) {
-                const target = children[i];
-                if (target === sourceCell) continue;
-                
-                if (target.type === "FRAME" && target.getPluginData("cellType") === cellType) {
-                   // Just re-render content
-                   await customRenderer(target as FrameNode, sourceValue, context);
-                   // Update plugin data
-                   target.setPluginData("cellValue", sourceValue);
-                   updateCount++;
-                } else if (target.type === "FRAME" || target.type === "INSTANCE") {
-                   // Different type, need to replace frame?
-                   // Actually applyColumnTypeToColumn handles type change, but not content replication.
-                   // Here we assume column already has mixed content or we want to force it.
-                   // For simplicity, let's assume we are just updating content if type matches, 
-                   // or we rely on the user to have set the column type first.
-                   // But the user expectation is "Apply to column" -> Copy everything.
-                   
-                   // So we should replace the cell frame.
-                   const newCell = createCustomCellFrame(`${cellType} Cell`, cellType);
-                   columnFrame.insertChild(i, newCell);
-                   // Copy size
-                   newCell.layoutSizingHorizontal = "FILL";
-                   newCell.layoutSizingVertical = "FIXED";
-                   newCell.resize(columnFrame.width, tableSwitchesState.rowHeight);
-                   
-                   await customRenderer(newCell, sourceValue, context);
-                   newCell.setPluginData("cellValue", sourceValue);
-                   target.remove();
-                   updateCount++;
-                }
-             }
-          }
-          
-          figma.notify(`已将内容应用到 ${updateCount} 个单元格`);
-        } else {
-          // For standard instances, clone and replace
-          for (let i = headerOffset; i < children.length; i++) {
-            const target = children[i];
-            if (target === sourceCell) continue;
-
-            if (target.type === "INSTANCE" || target.type === "FRAME") {
-              try {
-                const newCell = sourceCell.clone();
-                columnFrame.insertChild(i, newCell);
-                target.remove();
-                
-                // Ensure layout properties are correct
-                if ("layoutSizingHorizontal" in newCell) {
-                  (newCell as any).layoutSizingHorizontal = "FILL";
-                }
-                // Ensure text/content is synced if it's an instance
-                // clone() should preserve overrides, so text should be correct.
-                
-                updateCount++;
-              } catch (e) {
-                console.error("Failed to clone/replace cell", e);
+          if (target.type === "FRAME" || target.type === "INSTANCE") {
+            try {
+              const newCell = sourceCell.clone();
+              
+              // Insert at the same position
+              columnFrame.insertChild(i, newCell);
+              
+              // Ensure layout properties are correct
+              if ("layoutSizingHorizontal" in newCell) {
+                (newCell as any).layoutSizingHorizontal = "FILL";
               }
+              // Reset height to fixed or hug? Usually fixed for table rows unless variable height
+              // But clone() should preserve the height mode of the source.
+              // If source is auto-height (HUG), newCell will be too.
+              
+              // Remove the old cell
+              target.remove();
+              
+              updateCount++;
+            } catch (e) {
+              console.error("Failed to clone/replace cell at index " + i, e);
             }
           }
-          figma.notify(`已将内容应用到 ${updateCount} 个单元格`);
         }
+        
+        figma.notify(`已将内容应用到 ${updateCount} 个单元格`);
       } finally {
         if (container) container.locked = originalLocked;
       }
