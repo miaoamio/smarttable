@@ -63,23 +63,24 @@ const maxBodyBytes = Number(getEnv("MAX_BODY_BYTES") ?? "104857600"); // 100MB d
 const rateLimitPerMinute = Number(getEnv("RATE_LIMIT_PER_MIN") ?? "120");
 
 function withCors(req: http.IncomingMessage, res: http.ServerResponse) {
-  let origin = req.headers.origin;
-  // Handle 'null' origin (common in local file or some plugin environments)
-  if (origin === "null") {
-    res.setHeader("access-control-allow-origin", "*");
-  } else {
-    const allowAll = corsOrigins.includes("*");
-    if (allowAll || !origin) {
-      res.setHeader("access-control-allow-origin", "*");
-    } else if (origin && corsOrigins.includes(origin as string)) {
+  const origin = req.headers.origin;
+  const allowAll = corsOrigins.includes("*");
+  
+  if (origin && origin !== "null") {
+    if (allowAll || corsOrigins.includes(origin)) {
       res.setHeader("access-control-allow-origin", origin);
-      res.setHeader("vary", "origin");
+      res.setHeader("access-control-allow-credentials", "true");
+      res.setHeader("vary", "Origin");
+    } else {
+      res.setHeader("access-control-allow-origin", "null");
     }
+  } else {
+    res.setHeader("access-control-allow-origin", "*");
   }
 
-  res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS,DELETE");
-  res.setHeader("access-control-allow-headers", "content-type, authorization, x-requested-with");
-  res.setHeader("access-control-max-age", "86400"); // 24 hours
+  res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS, DELETE");
+  res.setHeader("access-control-allow-headers", "Content-Type, Authorization, X-Requested-With");
+  res.setHeader("access-control-max-age", "86400");
 }
 
 function sendJson(req: http.IncomingMessage, res: http.ServerResponse, status: number, body: unknown) {
@@ -93,6 +94,7 @@ function sendHtml(req: http.IncomingMessage, res: http.ServerResponse, status: n
   withCors(req, res);
   res.statusCode = status;
   res.setHeader("content-type", "text/html; charset=utf-8");
+  res.setHeader("cache-control", "no-store, no-cache, must-revalidate");
   res.end(body);
 }
 
@@ -204,47 +206,56 @@ type ComponentDefinition = {
 
 const components = new Map<string, ComponentDefinition>();
 let componentsInitialized = false;
+let initPromise: Promise<void> | null = null;
 
 async function initComponents() {
-  if (componentsInitialized) return;
+  if (initPromise) return initPromise;
   
-  // Fallback for initialComponents
-  for (const entry of initialComponents) {
-    const now = new Date().toISOString();
-    if (!components.has(entry.key)) {
-      components.set(entry.key, {
-        key: entry.key,
-        config: entry.config as Record<string, unknown>,
-        createdAt: now,
-        updatedAt: now
-      });
-    }
-  }
-
-  // Load from DB if available
-  if (process.env.DATABASE_URL) {
-    try {
-      const dbConfigs = await (prisma.componentConfig as any).findMany();
-      for (const dbCfg of dbConfigs) {
-        components.set(dbCfg.configKey, {
-          key: dbCfg.configKey,
-          config: {
-            ...((dbCfg.props as any) || {}),
-            figma: {
-              ...((dbCfg.props as any)?.figma || {}),
-              componentKey: dbCfg.figmaKey
-            },
-            variants: dbCfg.variants
-          },
-          createdAt: new Date().toISOString(),
-          updatedAt: dbCfg.updatedAt.toISOString()
+  initPromise = (async () => {
+    if (componentsInitialized) return;
+    
+    // Fallback for initialComponents
+    for (const entry of initialComponents) {
+      const now = new Date().toISOString();
+      if (!components.has(entry.key)) {
+        components.set(entry.key, {
+          key: entry.key,
+          config: entry.config as Record<string, unknown>,
+          createdAt: now,
+          updatedAt: now
         });
       }
-    } catch (e) {
-      console.error("Failed to load configs from database:", e);
     }
-  }
-  componentsInitialized = true;
+
+    // Load from DB if available
+    if (process.env.DATABASE_URL) {
+      try {
+        console.log("Loading component configs from database...");
+        const dbConfigs = await (prisma.componentConfig as any).findMany();
+        console.log(`Loaded ${dbConfigs.length} configs from database.`);
+        for (const dbCfg of dbConfigs) {
+          components.set(dbCfg.configKey, {
+            key: dbCfg.configKey,
+            config: {
+              ...((dbCfg.props as any) || {}),
+              figma: {
+                ...((dbCfg.props as any)?.figma || {}),
+                componentKey: dbCfg.figmaKey
+              },
+              variants: dbCfg.variants
+            },
+            createdAt: new Date().toISOString(),
+            updatedAt: dbCfg.updatedAt.toISOString()
+          });
+        }
+      } catch (e) {
+        console.error("Failed to load configs from database:", e);
+      }
+    }
+    componentsInitialized = true;
+  })();
+
+  return initPromise;
 }
 
 async function logCall(data: {
@@ -544,7 +555,10 @@ function loadStats() {
         window.location.reload();
         return;
       }
-      return res.json();
+      return res.json().catch(err => {
+        console.error("Failed to parse JSON:", err);
+        throw new Error("Invalid JSON response from server");
+      });
     })
     .then(data => {
       if(!data) return;
@@ -566,6 +580,10 @@ function loadStats() {
       const total = data.totalCalls || 0;
       const rate = total > 0 ? (((total - data.failCount) / total) * 100).toFixed(1) : "100";
       document.getElementById("stat-rate").textContent = rate + "%";
+    })
+    .catch(err => {
+      console.error("Fetch stats failed:", err);
+      setStatus("Failed to load stats: " + err.message, "error");
     });
 }
 
@@ -706,6 +724,9 @@ loadStats();
 
 export async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   try {
+    const url = new URL(req.url || "/", "http://localhost");
+    const pathName = url.pathname.replace(/\/$/, "") || "/";
+
     if (req.method === "OPTIONS") {
       withCors(req, res);
       res.statusCode = 200;
@@ -714,51 +735,43 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
-    await initComponents();
-
-    const url = new URL(req.url || "/", "http://localhost");
-
-    if (req.method === "GET" && url.pathname === "/health") {
+    if (req.method === "GET" && pathName === "/health") {
       sendJson(req, res, 200, { ok: true });
       return;
     }
 
-    if (url.pathname === "/log") {
+    if (pathName === "/log" && req.method === "POST") {
       withCors(req, res);
-      if (req.method === "OPTIONS") {
-        res.statusCode = 200;
-        res.end();
+      let body: any;
+      try { body = await readJson(req); } catch (e: any) {
+        sendJson(req, res, 400, { error: "invalid_body" });
         return;
       }
-      if (req.method === "POST") {
-        let body: any;
-        try { body = await readJson(req); } catch (e: any) {
-          sendJson(req, res, 400, { error: "invalid_body" });
-          return;
-        }
-        const { userId, action, status, latency, errorMsg, prompt, llmResponse } = body;
-        if (!action) { sendJson(req, res, 400, { error: "missing_action" }); return; }
-        
-        await logCall({
-          userId: userId || "anonymous",
-          action,
-          status: status || "OK",
-          latency: Number(latency) || 0,
-          errorMsg,
-          prompt: typeof prompt === 'string' ? prompt : JSON.stringify(prompt),
-          llmResponse
-        });
-        sendJson(req, res, 200, { ok: true });
-        return;
-      }
+      const { userId, action, status, latency, errorMsg, prompt, llmResponse } = body;
+      if (!action) { sendJson(req, res, 400, { error: "missing_action" }); return; }
+      
+      console.log(`Received log: action=${action}, status=${status}, latency=${latency}, userId=${userId}`);
+
+      await logCall({
+        userId: userId || "anonymous",
+        action,
+        status: status || "OK",
+        latency: Number(latency) || 0,
+        errorMsg,
+        prompt: typeof prompt === 'string' ? prompt : (prompt ? JSON.stringify(prompt) : undefined),
+        llmResponse: llmResponse ? (typeof llmResponse === 'string' ? llmResponse : JSON.stringify(llmResponse)) : undefined
+      });
+      sendJson(req, res, 200, { ok: true });
+      return;
     }
 
-    if ((req.method === "GET" || req.method === "HEAD") && (url.pathname === "/admin" || url.pathname === "/admin/components")) {
+    if ((req.method === "GET" || req.method === "HEAD") && (pathName === "/admin" || pathName === "/admin/components")) {
       const auth = authenticate(req);
       if (!auth.ok) {
+        withCors(req, res);
         res.statusCode = 401;
-        res.setHeader("WWW-Authenticate", 'Basic realm="Figma AI Admin"');
-        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.setHeader("WWW-Authenticate", 'Basic realm="VED UI Agent Admin"');
+        res.setHeader("content-type", "text/plain; charset=utf-8");
         res.end("Unauthorized");
         return;
       }
@@ -769,9 +782,12 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
         res.end();
         return;
       }
-      // Note: In Vercel, reading from index.ts might fail if it's not bundled.
-      // For now, we'll hardcode a simple loader or use the existing HTML from index.ts if bundled correctly.
-      // But a better way is to move the HTML to a shared constant or file.
+
+      if (pathName === "/admin/components") {
+        sendHtml(req, res, 200, adminPageHtml.replace('data-target="stats-section">', 'data-target="stats-section" class="tab">').replace('data-target="configs-section">', 'data-target="configs-section" class="tab active">').replace('id="stats-section">', 'id="stats-section" class="hidden">').replace('id="configs-section" class="hidden">', 'id="configs-section">'));
+        return;
+      }
+
       sendHtml(req, res, 200, adminPageHtml);
       return;
     }
@@ -782,8 +798,9 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
-    if (req.method === "GET" && url.pathname === "/admin/stats") {
+    if (req.method === "GET" && pathName === "/admin/stats") {
       if (!process.env.DATABASE_URL) {
+        console.warn("DATABASE_URL not set, returning empty stats");
         sendJson(req, res, 200, { 
           totalCalls: 0, 
           failCount: 0, 
@@ -802,14 +819,15 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
         return;
       }
       try {
+        console.log("Fetching stats from database...");
         const [
           totalCalls,
           failCount,
           avgLatencyResult,
           recentCalls,
           distribution,
-          errorAgg,
-          userGroups,
+          errorList,
+          userCount,
           launchCount,
           createStats,
           modifyStats
@@ -818,35 +836,43 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
           prisma.callLog.count({ where: { status: "FAIL" } }),
           prisma.callLog.aggregate({ _avg: { latency: true } }),
           prisma.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } }),
-          prisma.callLog.groupBy({ by: ['action'], _count: { _all: true } }),
-          prisma.callLog.groupBy({ where: { status: "FAIL", errorMsg: { not: null } }, by: ['errorMsg'], _count: { _all: true }, _max: { createdAt: true } }),
-          prisma.callLog.groupBy({ by: ['userId'] }),
-          prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }),
-          prisma.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }),
-          prisma.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } })
-        ]);
+          prisma.callLog.groupBy({ by: ["action"], _count: { _all: true } }),
+          prisma.callLog.groupBy({ 
+            where: { status: "FAIL", errorMsg: { not: null } }, 
+            by: ["errorMsg"], 
+            _count: { _all: true }, 
+            _max: { createdAt: true } 
+          }),
+          prisma.callLog.groupBy({ by: ["userId"] }).then((r: any[]) => r.length),
+           prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }),
+           prisma.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }),
+           prisma.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } })
+         ]);
 
-        const toolDistribution = (distribution as any[]).reduce((acc: any, curr: any) => { acc[curr.action] = curr._count._all; return acc; }, {});
-        const errorDistribution = (errorAgg as any[]).map((curr: any) => ({ message: curr.errorMsg, count: curr._count._all, lastSeen: curr._max.createdAt })).sort((a: any, b: any) => b.count - a.count);
-        const userCount = userGroups.length;
+         console.log("Stats fetched successfully.");
+          const errorDistribution = (errorList as any[]).map((curr: any) => ({ 
+            message: curr.errorMsg, 
+            count: curr._count._all, 
+            lastSeen: curr._max.createdAt 
+          })).sort((a: any, b: any) => b.count - a.count);
 
-        sendJson(req, res, 200, { 
-          totalCalls, 
-          failCount, 
-          avgLatency: Math.round((avgLatencyResult as any)._avg.latency || 0), 
-          recentCalls, 
-          toolDistribution, 
-          errorDistribution,
-          userCount,
-          launchCount,
-          createCount: (createStats as any)._count._all,
-          avgCreateTime: Math.round((createStats as any)._avg.latency || 0),
-          modifyCount: (modifyStats as any)._count._all,
-          avgModifyTime: Math.round((modifyStats as any)._avg.latency || 0)
-        });
+          sendJson(req, res, 200, {
+            totalCalls,
+            failCount,
+            avgLatency: Math.round(avgLatencyResult._avg.latency || 0),
+            recentCalls,
+            toolDistribution: Object.fromEntries(distribution.map((d: any) => [d.action, d._count._all])),
+            errorDistribution,
+            userCount,
+            launchCount,
+            createCount: createStats._count._all,
+            avgCreateTime: Math.round(createStats._avg.latency || 0),
+            modifyCount: modifyStats._count._all,
+            avgModifyTime: Math.round(modifyStats._avg.latency || 0)
+          });
       } catch (e: any) {
-        console.error("Stats error:", e);
-        sendJson(req, res, 500, { error: "Failed to fetch stats", message: e.message });
+        console.error("Failed to fetch stats:", e);
+        sendJson(req, res, 500, { error: "db_error", message: e.message });
       }
       return;
     }
@@ -857,7 +883,7 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
-    if (req.method === "POST" && url.pathname === "/parse-excel") {
+    if (req.method === "POST" && pathName === "/parse-excel") {
       let body: any;
       try { body = await readJson(req); } catch (e: any) {
         sendJson(req, res, e?.message === "request_body_too_large" ? 413 : 400, { error: e?.message });
@@ -906,7 +932,7 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
-    if (req.method === "POST" && url.pathname === "/files/upload") {
+    if (req.method === "POST" && pathName === "/files/upload") {
       let body: any;
       try {
         body = await readJson(req);
@@ -1015,12 +1041,14 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
-    if (req.method === "GET" && url.pathname === "/components") {
+    if (req.method === "GET" && pathName === "/components") {
+      await initComponents();
       sendJson(req, res, 200, { items: Array.from(components.values()) });
       return;
     }
 
-    if (req.method === "POST" && url.pathname === "/components") {
+    if (req.method === "POST" && pathName === "/components") {
+      await initComponents();
       let body: any = await readJson(req);
       const key = body?.key?.trim();
       if (!key) { sendJson(req, res, 400, { error: "missing_key" }); return; }
@@ -1042,8 +1070,9 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
-    const componentMatch = url.pathname.match(/^\/components\/([^/]+)$/);
+    const componentMatch = pathName.match(/^\/components\/([^/]+)$/);
     if (componentMatch) {
+      await initComponents();
       const key = decodeURIComponent(componentMatch[1]);
       if (req.method === "GET") {
         const def = components.get(key);
@@ -1062,14 +1091,14 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
       }
     }
 
-    if (req.method === "GET" && url.pathname === "/tools") {
+    if (req.method === "GET" && pathName === "/tools") {
       const client = await getMcp();
       const tools = await client.request({ method: "tools/list" }, ListToolsResultSchema);
       sendJson(req, res, 200, tools);
       return;
     }
 
-    const toolMatch = url.pathname.match(/^\/tools\/([^/]+)$/);
+    const toolMatch = pathName.match(/^\/tools\/([^/]+)$/);
     if (req.method === "POST" && toolMatch) {
       const toolName = decodeURIComponent(toolMatch[1]);
       const body = (await readJson(req)) as any;
@@ -1090,6 +1119,7 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
 
     sendJson(req, res, 404, { error: "not_found" });
   } catch (e: any) {
+    console.error("[Gateway Error]", e);
     sendJson(req, res, 500, { error: "handler_crash", message: e.message });
   }
 }

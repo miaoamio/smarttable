@@ -133836,20 +133836,21 @@ var jwtSecret = getEnv("GATEWAY_JWT_SECRET");
 var maxBodyBytes = Number(getEnv("MAX_BODY_BYTES") ?? "104857600");
 var rateLimitPerMinute = Number(getEnv("RATE_LIMIT_PER_MIN") ?? "120");
 function withCors(req, res) {
-  let origin = req.headers.origin;
-  if (origin === "null") {
-    res.setHeader("access-control-allow-origin", "*");
-  } else {
-    const allowAll = corsOrigins.includes("*");
-    if (allowAll || !origin) {
-      res.setHeader("access-control-allow-origin", "*");
-    } else if (origin && corsOrigins.includes(origin)) {
+  const origin = req.headers.origin;
+  const allowAll = corsOrigins.includes("*");
+  if (origin && origin !== "null") {
+    if (allowAll || corsOrigins.includes(origin)) {
       res.setHeader("access-control-allow-origin", origin);
-      res.setHeader("vary", "origin");
+      res.setHeader("access-control-allow-credentials", "true");
+      res.setHeader("vary", "Origin");
+    } else {
+      res.setHeader("access-control-allow-origin", "null");
     }
+  } else {
+    res.setHeader("access-control-allow-origin", "*");
   }
-  res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS,DELETE");
-  res.setHeader("access-control-allow-headers", "content-type, authorization, x-requested-with");
+  res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS, DELETE");
+  res.setHeader("access-control-allow-headers", "Content-Type, Authorization, X-Requested-With");
   res.setHeader("access-control-max-age", "86400");
 }
 function sendJson(req, res, status, body) {
@@ -133862,6 +133863,7 @@ function sendHtml(req, res, status, body) {
   withCors(req, res);
   res.statusCode = status;
   res.setHeader("content-type", "text/html; charset=utf-8");
+  res.setHeader("cache-control", "no-store, no-cache, must-revalidate");
   res.end(body);
 }
 function base64UrlDecode(input) {
@@ -133946,42 +133948,49 @@ function allowRequest(key) {
 }
 var components = /* @__PURE__ */ new Map();
 var componentsInitialized = false;
+var initPromise = null;
 async function initComponents() {
-  if (componentsInitialized) return;
-  for (const entry of initialComponents) {
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    if (!components.has(entry.key)) {
-      components.set(entry.key, {
-        key: entry.key,
-        config: entry.config,
-        createdAt: now,
-        updatedAt: now
-      });
-    }
-  }
-  if (process.env.DATABASE_URL) {
-    try {
-      const dbConfigs = await db_default.componentConfig.findMany();
-      for (const dbCfg of dbConfigs) {
-        components.set(dbCfg.configKey, {
-          key: dbCfg.configKey,
-          config: {
-            ...dbCfg.props || {},
-            figma: {
-              ...dbCfg.props?.figma || {},
-              componentKey: dbCfg.figmaKey
-            },
-            variants: dbCfg.variants
-          },
-          createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-          updatedAt: dbCfg.updatedAt.toISOString()
+  if (initPromise) return initPromise;
+  initPromise = (async () => {
+    if (componentsInitialized) return;
+    for (const entry of initialComponents) {
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      if (!components.has(entry.key)) {
+        components.set(entry.key, {
+          key: entry.key,
+          config: entry.config,
+          createdAt: now,
+          updatedAt: now
         });
       }
-    } catch (e) {
-      console.error("Failed to load configs from database:", e);
     }
-  }
-  componentsInitialized = true;
+    if (process.env.DATABASE_URL) {
+      try {
+        console.log("Loading component configs from database...");
+        const dbConfigs = await db_default.componentConfig.findMany();
+        console.log(`Loaded ${dbConfigs.length} configs from database.`);
+        for (const dbCfg of dbConfigs) {
+          components.set(dbCfg.configKey, {
+            key: dbCfg.configKey,
+            config: {
+              ...dbCfg.props || {},
+              figma: {
+                ...dbCfg.props?.figma || {},
+                componentKey: dbCfg.figmaKey
+              },
+              variants: dbCfg.variants
+            },
+            createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+            updatedAt: dbCfg.updatedAt.toISOString()
+          });
+        }
+      } catch (e) {
+        console.error("Failed to load configs from database:", e);
+      }
+    }
+    componentsInitialized = true;
+  })();
+  return initPromise;
 }
 async function logCall(data) {
   try {
@@ -134270,7 +134279,10 @@ function loadStats() {
         window.location.reload();
         return;
       }
-      return res.json();
+      return res.json().catch(err => {
+        console.error("Failed to parse JSON:", err);
+        throw new Error("Invalid JSON response from server");
+      });
     })
     .then(data => {
       if(!data) return;
@@ -134292,6 +134304,10 @@ function loadStats() {
       const total = data.totalCalls || 0;
       const rate = total > 0 ? (((total - data.failCount) / total) * 100).toFixed(1) : "100";
       document.getElementById("stat-rate").textContent = rate + "%";
+    })
+    .catch(err => {
+      console.error("Fetch stats failed:", err);
+      setStatus("Failed to load stats: " + err.message, "error");
     });
 }
 
@@ -134427,6 +134443,8 @@ loadStats();
 </html>`;
 async function handle(req, res) {
   try {
+    const url = new URL(req.url || "/", "http://localhost");
+    const pathName = url.pathname.replace(/\/$/, "") || "/";
     if (req.method === "OPTIONS") {
       withCors(req, res);
       res.statusCode = 200;
@@ -134434,13 +134452,12 @@ async function handle(req, res) {
       res.end();
       return;
     }
-    await initComponents();
-    const url = new URL(req.url || "/", "http://localhost");
-    if (req.method === "GET" && url.pathname === "/health") {
+    if (req.method === "GET" && pathName === "/health") {
       sendJson(req, res, 200, { ok: true });
       return;
     }
-    if (req.method === "POST" && url.pathname === "/log") {
+    if (pathName === "/log" && req.method === "POST") {
+      withCors(req, res);
       let body;
       try {
         body = await readJson(req);
@@ -134453,24 +134470,26 @@ async function handle(req, res) {
         sendJson(req, res, 400, { error: "missing_action" });
         return;
       }
+      console.log(`Received log: action=${action}, status=${status}, latency=${latency}, userId=${userId}`);
       await logCall({
         userId: userId || "anonymous",
         action,
         status: status || "OK",
         latency: Number(latency) || 0,
         errorMsg,
-        prompt: typeof prompt === "string" ? prompt : JSON.stringify(prompt),
-        llmResponse
+        prompt: typeof prompt === "string" ? prompt : prompt ? JSON.stringify(prompt) : void 0,
+        llmResponse: llmResponse ? typeof llmResponse === "string" ? llmResponse : JSON.stringify(llmResponse) : void 0
       });
       sendJson(req, res, 200, { ok: true });
       return;
     }
-    if ((req.method === "GET" || req.method === "HEAD") && (url.pathname === "/admin" || url.pathname === "/admin/components")) {
+    if ((req.method === "GET" || req.method === "HEAD") && (pathName === "/admin" || pathName === "/admin/components")) {
       const auth2 = authenticate(req);
       if (!auth2.ok) {
+        withCors(req, res);
         res.statusCode = 401;
-        res.setHeader("WWW-Authenticate", 'Basic realm="Figma AI Admin"');
-        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.setHeader("WWW-Authenticate", 'Basic realm="VED UI Agent Admin"');
+        res.setHeader("content-type", "text/plain; charset=utf-8");
         res.end("Unauthorized");
         return;
       }
@@ -134478,6 +134497,10 @@ async function handle(req, res) {
         res.statusCode = 200;
         res.setHeader("content-type", "text/html; charset=utf-8");
         res.end();
+        return;
+      }
+      if (pathName === "/admin/components") {
+        sendHtml(req, res, 200, adminPageHtml.replace('data-target="stats-section">', 'data-target="stats-section" class="tab">').replace('data-target="configs-section">', 'data-target="configs-section" class="tab active">').replace('id="stats-section">', 'id="stats-section" class="hidden">').replace('id="configs-section" class="hidden">', 'id="configs-section">'));
         return;
       }
       sendHtml(req, res, 200, adminPageHtml);
@@ -134488,8 +134511,9 @@ async function handle(req, res) {
       sendJson(req, res, auth.status, { error: auth.error });
       return;
     }
-    if (req.method === "GET" && url.pathname === "/admin/stats") {
+    if (req.method === "GET" && pathName === "/admin/stats") {
       if (!process.env.DATABASE_URL) {
+        console.warn("DATABASE_URL not set, returning empty stats");
         sendJson(req, res, 200, {
           totalCalls: 0,
           failCount: 0,
@@ -134508,36 +134532,47 @@ async function handle(req, res) {
         return;
       }
       try {
-        const totalCalls = await db_default.callLog.count();
-        const failCount = await db_default.callLog.count({ where: { status: "FAIL" } });
-        const avgLatencyResult = await db_default.callLog.aggregate({ _avg: { latency: true } });
-        const recentCalls = await db_default.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } });
-        const distribution = await db_default.callLog.groupBy({ by: ["action"], _count: { _all: true } });
-        const toolDistribution = distribution.reduce((acc, curr) => {
-          acc[curr.action] = curr._count._all;
-          return acc;
-        }, {});
-        const errorAgg = await db_default.callLog.groupBy({ where: { status: "FAIL", errorMsg: { not: null } }, by: ["errorMsg"], _count: { _all: true }, _max: { createdAt: true } });
-        const errorDistribution = errorAgg.map((curr) => ({ message: curr.errorMsg, count: curr._count._all, lastSeen: curr._max.createdAt })).sort((a, b) => b.count - a.count);
-        const userCountResult = await db_default.$queryRaw`SELECT COUNT(DISTINCT "userId") as count FROM "CallLog"`;
-        const userCount = Number(userCountResult[0]?.count || 0);
-        const launchCount = await db_default.callLog.count({ where: { action: "PLUGIN_LAUNCH" } });
-        const createStats = await db_default.callLog.aggregate({
-          where: { action: "CREATE_TABLE", status: "OK" },
-          _avg: { latency: true },
-          _count: { _all: true }
-        });
-        const modifyStats = await db_default.callLog.aggregate({
-          where: { action: "MODIFY_TABLE", status: "OK" },
-          _avg: { latency: true },
-          _count: { _all: true }
-        });
+        console.log("Fetching stats from database...");
+        const [
+          totalCalls,
+          failCount,
+          avgLatencyResult,
+          recentCalls,
+          distribution,
+          errorList,
+          userCount,
+          launchCount,
+          createStats,
+          modifyStats
+        ] = await Promise.all([
+          db_default.callLog.count(),
+          db_default.callLog.count({ where: { status: "FAIL" } }),
+          db_default.callLog.aggregate({ _avg: { latency: true } }),
+          db_default.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } }),
+          db_default.callLog.groupBy({ by: ["action"], _count: { _all: true } }),
+          db_default.callLog.groupBy({
+            where: { status: "FAIL", errorMsg: { not: null } },
+            by: ["errorMsg"],
+            _count: { _all: true },
+            _max: { createdAt: true }
+          }),
+          db_default.callLog.groupBy({ by: ["userId"] }).then((r) => r.length),
+          db_default.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }),
+          db_default.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }),
+          db_default.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } })
+        ]);
+        console.log("Stats fetched successfully.");
+        const errorDistribution = errorList.map((curr) => ({
+          message: curr.errorMsg,
+          count: curr._count._all,
+          lastSeen: curr._max.createdAt
+        })).sort((a, b) => b.count - a.count);
         sendJson(req, res, 200, {
           totalCalls,
           failCount,
           avgLatency: Math.round(avgLatencyResult._avg.latency || 0),
           recentCalls,
-          toolDistribution,
+          toolDistribution: Object.fromEntries(distribution.map((d) => [d.action, d._count._all])),
           errorDistribution,
           userCount,
           launchCount,
@@ -134547,8 +134582,8 @@ async function handle(req, res) {
           avgModifyTime: Math.round(modifyStats._avg.latency || 0)
         });
       } catch (e) {
-        console.error("Stats error:", e);
-        sendJson(req, res, 500, { error: "Failed to fetch stats", message: e.message });
+        console.error("Failed to fetch stats:", e);
+        sendJson(req, res, 500, { error: "db_error", message: e.message });
       }
       return;
     }
@@ -134557,7 +134592,7 @@ async function handle(req, res) {
       sendJson(req, res, 429, { error: "rate_limited" });
       return;
     }
-    if (req.method === "POST" && url.pathname === "/parse-excel") {
+    if (req.method === "POST" && pathName === "/parse-excel") {
       let body;
       try {
         body = await readJson(req);
@@ -134606,7 +134641,7 @@ async function handle(req, res) {
       }
       return;
     }
-    if (req.method === "POST" && url.pathname === "/files/upload") {
+    if (req.method === "POST" && pathName === "/files/upload") {
       let body;
       try {
         body = await readJson(req);
@@ -134703,11 +134738,13 @@ async function handle(req, res) {
       }
       return;
     }
-    if (req.method === "GET" && url.pathname === "/components") {
+    if (req.method === "GET" && pathName === "/components") {
+      await initComponents();
       sendJson(req, res, 200, { items: Array.from(components.values()) });
       return;
     }
-    if (req.method === "POST" && url.pathname === "/components") {
+    if (req.method === "POST" && pathName === "/components") {
+      await initComponents();
       let body = await readJson(req);
       const key = body?.key?.trim();
       if (!key) {
@@ -134730,8 +134767,9 @@ async function handle(req, res) {
       sendJson(req, res, 200, def);
       return;
     }
-    const componentMatch = url.pathname.match(/^\/components\/([^/]+)$/);
+    const componentMatch = pathName.match(/^\/components\/([^/]+)$/);
     if (componentMatch) {
+      await initComponents();
       const key = decodeURIComponent(componentMatch[1]);
       if (req.method === "GET") {
         const def = components.get(key);
@@ -134758,13 +134796,13 @@ async function handle(req, res) {
         return;
       }
     }
-    if (req.method === "GET" && url.pathname === "/tools") {
+    if (req.method === "GET" && pathName === "/tools") {
       const client = await getMcp();
       const tools = await client.request({ method: "tools/list" }, ListToolsResultSchema);
       sendJson(req, res, 200, tools);
       return;
     }
-    const toolMatch = url.pathname.match(/^\/tools\/([^/]+)$/);
+    const toolMatch = pathName.match(/^\/tools\/([^/]+)$/);
     if (req.method === "POST" && toolMatch) {
       const toolName = decodeURIComponent(toolMatch[1]);
       const body = await readJson(req);
@@ -134784,6 +134822,7 @@ async function handle(req, res) {
     }
     sendJson(req, res, 404, { error: "not_found" });
   } catch (e) {
+    console.error("[Gateway Error]", e);
     sendJson(req, res, 500, { error: "handler_crash", message: e.message });
   }
 }
