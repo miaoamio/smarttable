@@ -4653,9 +4653,24 @@ async function init() {
   }
 
   figma.showUI(__html__, { width: 398, height: 507, themeColors: true });
-   console.log("Smart Table: UI shown");
+  console.log("Smart Table: UI shown");
 
-   postSelection();
+  // Log plugin launch
+  const userId = figma.currentUser?.id || "anonymous";
+  figma.ui.postMessage({ 
+    type: "log", 
+    action: "PLUGIN_LAUNCH", 
+    userId 
+  });
+  
+  // Also pass userId to UI for subsequent logs
+  figma.ui.postMessage({
+    type: "selection",
+    count: figma.currentPage.selection.length,
+    pluginData: { userId }
+  } as any);
+
+  postSelection();
 
    figma.on("selectionchange", () => {
     postSelection();

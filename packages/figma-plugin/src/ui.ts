@@ -147,6 +147,7 @@ let latestSelectionLabel: string | null = null;
 let latestSelectionCell: { row: number; col: number } | null = null;
 let latestSelectionColumn: number | null = null;
 let hasSelection = false;
+let currentUserId = "anonymous";
 let currentRequestSeq = 0;
 let currentLoadingButton: HTMLButtonElement | null = null;
 
@@ -1213,6 +1214,8 @@ function parseEnvelopeFromText(raw: string): AiTableEnvelope {
 
 
 async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButtonElement) {
+  const startTime = Date.now();
+  const action = isEdit ? "MODIFY_TABLE" : "CREATE_TABLE";
   const requestId = ++currentRequestSeq;
   const DEFAULT_GATEWAY = process.env.NODE_ENV === "production" 
     ? "https://smartable-nine.vercel.app" 
@@ -1293,6 +1296,9 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
     if (requestId !== currentRequestSeq) {
       return;
     }
+
+    // Log success
+    sendLog(action, { duration: Date.now() - startTime });
 
     try {
       json = JSON.parse(rawText);
@@ -1380,6 +1386,9 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
       return;
     }
     const msg = `AI 生成失败: ${e?.message ? String(e.message) : String(e)}`;
+    // Log failure
+    sendLog(action, { duration: Date.now() - startTime, error: msg });
+    
     setOutput(msg);
     showAlert("error", msg);
     setLoading(btn, false);
@@ -1891,6 +1900,10 @@ window.onmessage = (event) => {
     if (msg.pluginData && msg.pluginData.textDisplayMode && textDisplayModeSelect) {
       textDisplayModeSelect.value = msg.pluginData.textDisplayMode;
     }
+
+    if (msg.pluginData && msg.pluginData.userId) {
+      currentUserId = msg.pluginData.userId;
+    }
     
     if (pluginDataOutput) {
       if (msg.pluginData && Object.keys(msg.pluginData).length > 0) {
@@ -1936,8 +1949,53 @@ window.onmessage = (event) => {
     if (loadingOverlay) loadingOverlay.classList.remove("hidden");
   } else if (msg.type === "processing_end") {
     if (loadingOverlay) loadingOverlay.classList.add("hidden");
+  } else if (msg.type === "log") {
+    sendLog(msg.action, {
+      userId: msg.userId,
+      duration: msg.duration,
+      error: msg.error,
+      ...msg.metadata
+    });
   }
 };
+
+async function sendLog(action: string, metadata: any = {}) {
+  const DEFAULT_GATEWAY = process.env.NODE_ENV === "production" 
+    ? "https://smartable-nine.vercel.app" 
+    : "http://localhost:8787";
+  
+  const gatewayUrlInput = document.getElementById("gateway-url") as HTMLInputElement;
+  const gatewayTokenInput = document.getElementById("gateway-token") as HTMLInputElement;
+  
+  const gatewayUrl = gatewayUrlInput?.value?.trim() || DEFAULT_GATEWAY;
+  const gatewayToken = gatewayTokenInput?.value?.trim() ?? "";
+
+  const logData = {
+    action,
+    userId: metadata.userId || currentUserId || "unknown",
+    latency: metadata.duration || 0,
+    status: metadata.error ? "FAIL" : "OK",
+    errorMsg: metadata.error,
+    metadata: {
+      ...metadata,
+      pluginVersion: "1.0.0",
+      platform: "figma"
+    }
+  };
+
+  try {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (gatewayToken) headers.authorization = `Bearer ${gatewayToken.replace(/^Bearer\s+/i, "")}`;
+
+    await fetch(`${gatewayUrl.replace(/\/$/, "")}/log`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(logData)
+    });
+  } catch (e) {
+    console.error("Failed to send log:", e);
+  }
+}
   // Start initialization immediately
   setupExcelUpload();
   loadCellTypeOptions();

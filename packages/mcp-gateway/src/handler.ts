@@ -538,10 +538,16 @@ function loadStats() {
     .then(data => {
       if(!data) return;
       if(data.error) { setStatus(data.error, "error"); return; }
-      document.getElementById("stat-total").textContent = data.totalCalls || 0;
+      document.getElementById("stat-users").textContent = data.userCount || 0;
+      document.getElementById("stat-launches").textContent = data.launchCount || 0;
+      document.getElementById("stat-create-count").textContent = data.createCount || 0;
+      document.getElementById("stat-create-time").textContent = (data.avgCreateTime || 0) + "ms";
+      document.getElementById("stat-modify-count").textContent = data.modifyCount || 0;
+      document.getElementById("stat-modify-time").textContent = (data.avgModifyTime || 0) + "ms";
       document.getElementById("stat-fails").textContent = data.failCount || 0;
-      document.getElementById("stat-latency").textContent = (data.avgLatency || 0) + "ms";
-      const rate = data.totalCalls > 0 ? (((data.totalCalls - data.failCount) / data.totalCalls) * 100).toFixed(1) : "100";
+      
+      const total = data.totalCalls || 0;
+      const rate = total > 0 ? (((total - data.failCount) / total) * 100).toFixed(1) : "100";
       document.getElementById("stat-rate").textContent = rate + "%";
       
       logsBody.innerHTML = (data.recentCalls || []).map(log => \`
@@ -703,10 +709,64 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
         const errorAgg = await prisma.callLog.groupBy({ where: { status: "FAIL", errorMsg: { not: null } }, by: ['errorMsg'], _count: { _all: true }, _max: { createdAt: true } });
         const errorDistribution = errorAgg.map((curr: any) => ({ message: curr.errorMsg, count: curr._count._all, lastSeen: curr._max.createdAt })).sort((a: any, b: any) => b.count - a.count);
 
-        sendJson(req, res, 200, { totalCalls, failCount, avgLatency: Math.round(avgLatencyResult._avg.latency || 0), recentCalls, toolDistribution, errorDistribution });
+        // New statistics
+        const userCountResult = await prisma.$queryRaw`SELECT COUNT(DISTINCT "userId") as count FROM "CallLog"`;
+        const userCount = Number((userCountResult as any)[0]?.count || 0);
+        
+        const launchCount = await prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } });
+        
+        const createStats = await prisma.callLog.aggregate({
+          where: { action: "CREATE_TABLE", status: "OK" },
+          _avg: { latency: true },
+          _count: { _all: true }
+        });
+        
+        const modifyStats = await prisma.callLog.aggregate({
+          where: { action: "MODIFY_TABLE", status: "OK" },
+          _avg: { latency: true },
+          _count: { _all: true }
+        });
+
+        sendJson(req, res, 200, { 
+          totalCalls, 
+          failCount, 
+          avgLatency: Math.round(avgLatencyResult._avg.latency || 0), 
+          recentCalls, 
+          toolDistribution, 
+          errorDistribution,
+          userCount,
+          launchCount,
+          createCount: createStats._count._all,
+          avgCreateTime: Math.round(createStats._avg.latency || 0),
+          modifyCount: modifyStats._count._all,
+          avgModifyTime: Math.round(modifyStats._avg.latency || 0)
+        });
       } catch (e: any) {
+        console.error("Stats error:", e);
         sendJson(req, res, 500, { error: "Failed to fetch stats", message: e.message });
       }
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/log") {
+      let body: any;
+      try { body = await readJson(req); } catch (e: any) {
+        sendJson(req, res, 400, { error: "invalid_body" });
+        return;
+      }
+      const { userId, action, status, latency, errorMsg, prompt, llmResponse } = body;
+      if (!action) { sendJson(req, res, 400, { error: "missing_action" }); return; }
+      
+      await logCall({
+        userId: userId || "anonymous",
+        action,
+        status: status || "OK",
+        latency: Number(latency) || 0,
+        errorMsg,
+        prompt: typeof prompt === 'string' ? prompt : JSON.stringify(prompt),
+        llmResponse
+      });
+      sendJson(req, res, 200, { ok: true });
       return;
     }
 

@@ -183,4 +183,5 @@ export type PluginToUiMessage =
   | { type: "processing_end" }
   | { type: "figma_tokens"; tokens: any }
   | { type: "error"; message: string }
-  | { type: "status"; message: string };
+  | { type: "status"; message: string }
+  | { type: "log"; action: string; userId: string; metadata?: any; duration?: number; error?: string };
