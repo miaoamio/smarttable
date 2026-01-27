@@ -723,26 +723,34 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
-    if (req.method === "POST" && url.pathname === "/log") {
-      let body: any;
-      try { body = await readJson(req); } catch (e: any) {
-        sendJson(req, res, 400, { error: "invalid_body" });
+    if (url.pathname === "/log") {
+      withCors(req, res);
+      if (req.method === "OPTIONS") {
+        res.statusCode = 200;
+        res.end();
         return;
       }
-      const { userId, action, status, latency, errorMsg, prompt, llmResponse } = body;
-      if (!action) { sendJson(req, res, 400, { error: "missing_action" }); return; }
-      
-      await logCall({
-        userId: userId || "anonymous",
-        action,
-        status: status || "OK",
-        latency: Number(latency) || 0,
-        errorMsg,
-        prompt: typeof prompt === 'string' ? prompt : JSON.stringify(prompt),
-        llmResponse
-      });
-      sendJson(req, res, 200, { ok: true });
-      return;
+      if (req.method === "POST") {
+        let body: any;
+        try { body = await readJson(req); } catch (e: any) {
+          sendJson(req, res, 400, { error: "invalid_body" });
+          return;
+        }
+        const { userId, action, status, latency, errorMsg, prompt, llmResponse } = body;
+        if (!action) { sendJson(req, res, 400, { error: "missing_action" }); return; }
+        
+        await logCall({
+          userId: userId || "anonymous",
+          action,
+          status: status || "OK",
+          latency: Number(latency) || 0,
+          errorMsg,
+          prompt: typeof prompt === 'string' ? prompt : JSON.stringify(prompt),
+          llmResponse
+        });
+        sendJson(req, res, 200, { ok: true });
+        return;
+      }
     }
 
     if ((req.method === "GET" || req.method === "HEAD") && (url.pathname === "/admin" || url.pathname === "/admin/components")) {
