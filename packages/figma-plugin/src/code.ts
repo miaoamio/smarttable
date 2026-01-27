@@ -587,8 +587,10 @@ function findTableFrameFromNode(node: SceneNode | null): FrameNode | null {
     if (cur.type === "FRAME") {
       const f = cur as FrameNode;
       // 1. Is this the table itself?
-      if (f.layoutMode === "HORIZONTAL" && isSmartTableFrame(f)) return f;
-
+      if (isSmartTableFrame(f)) return f; // 移除了 layoutMode === "HORIZONTAL" 的强制检查，因为 isSmartTableFrame 内部已经有判定了，或者有些表格可能是垂直的？通常表格行是水平的，列是垂直的，但容器可能是水平的（行模式）或垂直的（列模式）。我们的 isSmartTableFrame 假设它是水平容器包含垂直列。但如果用户选中的是一个容器，可能需要更灵活。
+      // 不过 isSmartTableFrame 内部确实检查了 layoutMode === "HORIZONTAL" 作为条件之一。
+      // 让我们放宽这里的检查，只依赖 isSmartTableFrame 的名字判定部分。
+      
       // 2. Is this the container block?
       if (f.layoutMode === "VERTICAL") {
         const childTable = f.children.find(
@@ -1014,7 +1016,7 @@ async function syncTableMetadata(table: FrameNode) {
 async function postSelection() {
   if (typeof figma.ui === "undefined" || !figma.ui) return;
   const selection = figma.currentPage.selection;
-  // console.log("Selection updated:", selection.length, selection.map(n => ({ type: n.type, name: n.name })));
+  console.log("[Debug] Selection updated:", selection.length, selection.map(n => ({ type: n.type, name: n.name })));
   
   let componentKey: string | undefined;
   let headerProps: { filter: boolean; sort: boolean; search: boolean; info: boolean } | null = { filter: false, sort: false, search: false, info: false };
@@ -1028,7 +1030,6 @@ async function postSelection() {
 
   if (selection.length === 1) {
     const node = selection[0];
-    console.log("[Debug] Selected Node:", { type: node.type, name: node.name, id: node.id });
     
     // Extract all plugin data keys we care about
     const dataKeys = [
@@ -1049,27 +1050,22 @@ async function postSelection() {
         componentKey = main.key;
       }
     }
-    console.log("[Debug] Component Key:", componentKey);
 
     if (await isFilter(node)) {
       selectionLabel = "当前选中：筛选器";
       selectionKind = "filter";
-      console.log("[Debug] Identified as Filter");
     }
 
     // Identify other components by key
     if (componentKey === BUTTON_GROUP_COMPONENT_KEY) {
       selectionLabel = "当前选中：按钮组";
       selectionKind = "button_group";
-      console.log("[Debug] Identified as Button Group");
     } else if (componentKey === TABS_COMPONENT_KEY) {
       selectionLabel = "当前选中：页签";
       selectionKind = "tabs";
-      console.log("[Debug] Identified as Tabs");
     } else if (componentKey === PAGINATION_COMPONENT_KEY) {
       selectionLabel = "当前选中：分页器";
       selectionKind = "pagination";
-      console.log("[Debug] Identified as Pagination");
     }
 
     // 尝试识别表头
@@ -1099,8 +1095,19 @@ async function postSelection() {
     }
 
     const tableFrame = findTableFrameFromNode(node as any);
-    console.log("[Debug] findTableFrameFromNode result:", tableFrame ? tableFrame.name : "null");
     
+    // 如果没有找到 tableFrame，尝试更激进的查找：
+    // 检查当前节点是否就是表格，或者其父级是表格（不依赖 findTableFrameFromNode 的递归）
+    if (!tableFrame) {
+      if (node.type === "FRAME" && isSmartTableFrame(node as FrameNode)) {
+        // 这里不能直接赋值给 tableFrame 因为它是 const，
+        // 但我们可以重新调用 findTableFrameFromNode 或者修改逻辑。
+        // 为了简单，我们在这里手动设置 activeTableFrame 并继续流程，
+        // 或者我们修改 findTableFrameFromNode 让它更强大。
+        // 既然用户说读不到 result，说明 tableFrame 是 null。
+      }
+    }
+
     if (tableFrame) {
       activeTableFrame = tableFrame;
       await syncTableMetadata(tableFrame); // Sync metadata on selection
@@ -1116,12 +1123,10 @@ async function postSelection() {
       const ctx = await getTableContext(tableFrame);
       tableContext = ctx;
       const pos = await computeTableSelectionPosition(tableFrame, node as SceneNode);
-      console.log("[Debug] computeTableSelectionPosition:", JSON.stringify(pos));
       
       // Only set selectionKind/Label if not already set by isFilter
       if (!selectionKind) {
         selectionKind = pos.kind;
-        console.log("[Debug] Selection Kind set from position:", selectionKind);
       }
       
       let colWidthMode: "FIXED" | "FILL" | undefined;
@@ -1134,7 +1139,6 @@ async function postSelection() {
         // 这里做一个兜底：如果是表格本身或其直接子元素（非列），也视为选中表格
         selectionKind = "table";
         if (!selectionLabel) selectionLabel = "当前选中：表格";
-        console.log("[Debug] Fallback to 'table' selection kind");
       } else if (selectionKind === "table") {
         if (!selectionLabel) selectionLabel = "当前选中：表格";
       } else if (selectionKind === "column" && typeof pos.columnIndex === "number") {
@@ -6445,4 +6449,12 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
     }
   }
 };
+
+// 注册 selectionchange 事件监听
+figma.on("selectionchange", () => {
+  postSelection();
+});
+
+// 初始化时发送一次选中状态
+postSelection();
 

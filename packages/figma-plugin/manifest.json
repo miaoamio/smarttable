@@ -8,6 +8,9 @@
   "editorType": [
     "figma"
   ],
+  "permissions": [
+    "currentuser"
+  ],
   "networkAccess": {
     "allowedDomains": [
       "http://localhost:8787",

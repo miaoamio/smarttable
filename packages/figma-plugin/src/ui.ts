@@ -1848,12 +1848,6 @@ window.onmessage = (event) => {
   if (!msg) return;
 
   if (msg.type === "selection") {
-    console.log("[Debug] UI Received selection message:", {
-      kind: msg.selectionKind,
-      isSmartTable: msg.isSmartTable,
-      label: msg.selectionLabel,
-      tableContext: !!msg.tableContext
-    });
     latestTableContext = msg.tableContext ?? null;
     hasSelection = !!msg.selectionKind;
     updateAiTabLabel(hasSelection);
