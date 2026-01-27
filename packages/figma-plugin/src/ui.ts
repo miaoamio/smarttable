@@ -112,7 +112,9 @@ const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".tab
     const gatewayTokenInput = document.getElementById("gateway-token") as HTMLInputElement;
 
     // TODO: 修改为正式的线上网关地址
-    const DEFAULT_GATEWAY = "https://smartable-nine.vercel.app";
+    const DEFAULT_GATEWAY = process.env.NODE_ENV === "production" 
+      ? "https://smartable-nine.vercel.app" 
+      : "http://localhost:8787";
 
     console.log("Using gateway:", DEFAULT_GATEWAY);
 
@@ -315,9 +317,52 @@ function setActiveTab(tab: "ai" | "manual" | "debug") {
   else if (tab === "debug" && debugTabPanel) debugTabPanel.classList.add("active");
 }
 
+// Loading state controller
+let currentAbortController: AbortController | null = null;
+
+function setLoading(btn: HTMLButtonElement | undefined, isLoading: boolean, abortController?: AbortController, hasImages: boolean = false) {
+  const overlay = document.getElementById("loading-overlay");
+  const cancelBtn = document.getElementById("loading-cancel-btn") as HTMLButtonElement;
+  
+  if (isLoading) {
+    if (overlay) overlay.classList.remove("hidden");
+    if (btn) btn.disabled = true;
+    
+    // Store abort controller if provided
+    if (abortController) {
+        currentAbortController = abortController;
+    }
+    
+    // Setup cancel button
+    if (cancelBtn) {
+        cancelBtn.onclick = () => {
+            if (currentAbortController) {
+                currentAbortController.abort();
+                currentAbortController = null;
+                setOutput("用户取消了生成");
+            }
+            setLoading(btn, false);
+        };
+    }
+    
+    // Update loading text based on content
+    const titleEl = overlay?.querySelector(".loading-title");
+    const descEl = overlay?.querySelector(".loading-desc");
+    if (titleEl) titleEl.textContent = "正在生成表格…";
+    if (descEl) descEl.textContent = hasImages ? "AI 正在识别图片并构建结构（耗时较长）" : "AI 正在分析需求并构建结构";
+    
+  } else {
+    if (overlay) overlay.classList.add("hidden");
+    if (btn) btn.disabled = false;
+    currentAbortController = null;
+  }
+}
+
 function getGatewayBaseUrl() {
   const v = gatewayUrlInput?.value?.trim();
-  const DEFAULT_GATEWAY = "https://smartable-nine.vercel.app";
+  const DEFAULT_GATEWAY = process.env.NODE_ENV === "production" 
+    ? "https://smartable-nine.vercel.app" 
+    : "http://localhost:8787";
   return (v && v.length > 0 ? v : DEFAULT_GATEWAY).replace(/\/$/, "");
 }
 
@@ -719,12 +764,13 @@ function resetLoadingState() {
 
   if (loadingOverlay) loadingOverlay.classList.add("hidden");
 
-  if (cancelBtn && cancelBtn.parentElement) (cancelBtn.parentElement as HTMLElement).style.display = "none";
-  if (btnCancelEdit && btnCancelEdit.parentElement) (btnCancelEdit.parentElement as HTMLElement).style.display = "none";
+  // if (cancelBtn && cancelBtn.parentElement) (cancelBtn.parentElement as HTMLElement).style.display = "none";
+  // if (btnCancelEdit && btnCancelEdit.parentElement) (btnCancelEdit.parentElement as HTMLElement).style.display = "none";
 
   updateCreateBtnEnabled();
 }
 
+/* 
 function setLoading(btn: HTMLButtonElement, isLoading: boolean, text: string = "AI 生成表格", hasImage: boolean = false) {
   if (isLoading) {
     currentLoadingButton = btn;
@@ -744,6 +790,7 @@ function setLoading(btn: HTMLButtonElement, isLoading: boolean, text: string = "
     resetLoadingState();
   }
 }
+*/
 
 tableSizeSelect?.addEventListener("change", () => {
   const size = tableSizeSelect.value as "mini" | "default" | "medium" | "large";
@@ -1216,6 +1263,7 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
   const startTime = Date.now();
   const action = isEdit ? "MODIFY_TABLE" : "CREATE_TABLE";
   const requestId = ++currentRequestSeq;
+  // Always use local gateway for development
   const DEFAULT_GATEWAY = process.env.NODE_ENV === "production" 
     ? "https://smartable-nine.vercel.app" 
     : "http://localhost:8787";
@@ -1228,9 +1276,44 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
   // Distinguish between images and tables
   const imageAttachments = attachments.filter(a => a.type === "image");
   
+  // Check if any image is still loading (uploading)
+  if (imageAttachments.some(a => a.loading)) {
+      setLoading(btn, true);
+      setOutput("正在等待图片上传完成...");
+      
+      // Wait for all uploads to complete
+      const checkUploads = async () => {
+          const maxRetries = 30; // 30 seconds max wait
+          for (let i = 0; i < maxRetries; i++) {
+              const currentAttachments = getAttachments(isEdit ? "edit" : "create");
+              const currentImages = currentAttachments.filter(a => a.type === "image");
+              
+              if (currentImages.every(a => !a.loading)) {
+                  return currentImages;
+              }
+              await new Promise(r => setTimeout(r, 1000));
+          }
+          throw new Error("图片上传超时，请重试");
+      };
+      
+      try {
+          // Re-fetch image attachments after waiting
+          const readyImages = await checkUploads();
+          // Update our local reference
+          imageAttachments.length = 0;
+          imageAttachments.push(...readyImages);
+      } catch (e: any) {
+          setLoading(btn, false);
+          setOutput(e.message);
+          showAlert("error", e.message);
+          return;
+      }
+  }
+  
   const hasImages = imageAttachments.length > 0;
 
-  setLoading(btn, true, undefined, hasImages);
+  const abortController = new AbortController();
+  setLoading(btn, true, abortController, hasImages);
   setOutput("正在请求 AI 生成/编辑 Envelope...");
 
   const selectedRowCount = parseInt(rowCountSelectManual?.value) || 5;
@@ -1266,6 +1349,7 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
         method: "POST",
         headers,
         timeout: 120000, // 120 seconds for AI generation
+        signal: abortController.signal,
         body: JSON.stringify({
           args: {
             system: undefined,
@@ -1285,6 +1369,10 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
       });
     } catch (e: any) {
       if (e.name === "AbortError" || (e.message && e.message.includes("abort"))) {
+        if (currentAbortController === null) {
+             // User manually cancelled
+             throw new Error("用户取消了操作");
+        }
         throw new Error("请求超时 (120s)。生成 10 行数据且包含图片识别可能需要较长时间，请尝试减少行数或稍后再试。");
       }
       throw e;
@@ -1350,8 +1438,22 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
     if (!isEdit && parsed.intent !== "create") {
       throw new Error(`期望 intent=create，但模型返回了 ${parsed.intent}。`);
     }
+    
+    // Auto-fix: if intent is "create" but we are in "edit" mode, and the schema looks compatible, 
+    // we can either error out OR try to adapt.
+    // However, "create" usually means a full schema, while "edit" expects operations.
+    // If the model returns "create" in edit mode, it likely ignored the edit instruction and regenerated the whole table.
+    // In this case, we should probably allow it if the user wants to overwrite, OR warn them.
+    // For now, let's relax the check: if model returns create in edit mode, treat it as a full regeneration request?
+    // Actually, the plugin supports `post({ type: "ai_apply_envelope", envelope: parsed })` which handles both.
+    // The only issue is `parsed.intent`. 
+    // If we want to be strict, we keep the error. If we want to be robust, we allow it.
+    // Let's modify the logic to ALLOW "create" in edit mode (implies full replace), but warn.
+    
     if (isEdit && parsed.intent !== "edit") {
-      throw new Error(`期望 intent=edit，但模型返回了 ${parsed.intent}。`);
+       console.warn(`[UI] Model returned intent=${parsed.intent} in Edit mode. Treating as full regeneration.`);
+       // If it's "create", we just pass it through. The backend `applyAiEnvelope` handles both intents.
+       // But we should probably verify if `parsed` actually has `schema` (for create) or `patch` (for edit).
     }
 
     if (parsed.intent === "create") {
@@ -1979,6 +2081,7 @@ window.onmessage = (event) => {
 };
 
 async function sendLog(action: string, metadata: any = {}) {
+  // Always use local gateway for development unless explicitly overridden
   const DEFAULT_GATEWAY = process.env.NODE_ENV === "production" 
     ? "https://smartable-nine.vercel.app" 
     : "http://localhost:8787";

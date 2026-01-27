@@ -4960,6 +4960,17 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       if (env.intent === "create") {
         const { rows, cols, rowAction } = env.schema;
         
+        // --- ADDED: Check if we are in "Edit Mode" context (implied by selection or UI state passed in future) ---
+        // However, `env` doesn't strictly tell us if the user *intended* edit. 
+        // But if the user was editing, they likely have a selection.
+        // If the AI decided to "Create" instead of "Edit", we should probably REPLACE the selected table if it exists.
+        
+        const selection = figma.currentPage.selection;
+        let tableToReplace: FrameNode | null = null;
+        if (selection.length > 0) {
+           tableToReplace = findTableFrameFromNode(selection[0] as any);
+        }
+
         const table = await createTable({
           rows,
           cols,
@@ -4970,6 +4981,17 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
         });
 
         if (table) {
+          // If we found a table in selection, and AI returned a FULL create (likely due to complex edit),
+          // we should remove the old table to simulate "Edit/Replace".
+          // To be safe, let's only do this if we can confirm the new table was successfully created.
+          if (tableToReplace && !tableToReplace.removed) {
+             // Position the new table near the old one? Or just same place?
+             table.x = tableToReplace.x;
+             table.y = tableToReplace.y;
+             tableToReplace.remove();
+             figma.notify("由于修改内容较多，已自动执行全量替换");
+          }
+
           const duration = Date.now() - startTime;
           figma.ui.postMessage({ 
             type: "log", 

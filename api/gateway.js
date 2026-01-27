@@ -134170,54 +134170,54 @@ tr:last-child td{border-bottom:none}
   <div id="stats-section">
     <div class="stats-grid">
       <div class="stat-item">
-        <div class="stat-label">Total Users</div>
+        <div class="stat-label">\u603B\u7528\u6237\u6570</div>
         <div id="stat-users" class="stat-value">-</div>
       </div>
       <div class="stat-item">
-        <div class="stat-label">Plugin Launches</div>
+        <div class="stat-label">\u63D2\u4EF6\u542F\u52A8\u6B21\u6570</div>
         <div id="stat-launches" class="stat-value">-</div>
       </div>
       <div class="stat-item">
-        <div class="stat-label">Create Table</div>
+        <div class="stat-label">\u8868\u683C\u751F\u6210\u6B21\u6570</div>
         <div id="stat-create-count" class="stat-value">-</div>
       </div>
       <div class="stat-item">
-        <div class="stat-label">Avg Create Time</div>
+        <div class="stat-label">\u5E73\u5747\u751F\u6210\u8017\u65F6</div>
         <div id="stat-create-time" class="stat-value">-</div>
       </div>
       <div class="stat-item">
-        <div class="stat-label">Modify Table</div>
+        <div class="stat-label">\u8868\u683C\u4FEE\u6539\u6B21\u6570</div>
         <div id="stat-modify-count" class="stat-value">-</div>
       </div>
       <div class="stat-item">
-        <div class="stat-label">Avg Modify Time</div>
+        <div class="stat-label">\u5E73\u5747\u4FEE\u6539\u8017\u65F6</div>
         <div id="stat-modify-time" class="stat-value">-</div>
       </div>
       <div class="stat-item">
-        <div class="stat-label">Failures</div>
+        <div class="stat-label">\u5931\u8D25\u6B21\u6570</div>
         <div id="stat-fails" class="stat-value" style="color:var(--danger-color)">-</div>
       </div>
       <div class="stat-item">
-        <div class="stat-label">Success Rate</div>
+        <div class="stat-label">\u6210\u529F\u7387</div>
         <div id="stat-rate" class="stat-value">-</div>
       </div>
     </div>
 
     <div class="layout">
       <div class="card">
-        <div style="font-weight:600;margin-bottom:20px;font-size:15px">Feature Distribution</div>
+        <div style="font-weight:600;margin-bottom:20px;font-size:15px">\u529F\u80FD\u4F7F\u7528\u5206\u5E03</div>
         <div id="distribution-container"></div>
       </div>
       <div class="card">
-        <div style="font-weight:600;margin-bottom:20px;font-size:15px">Recent Activity</div>
+        <div style="font-weight:600;margin-bottom:20px;font-size:15px">\u8FD1\u671F\u6D3B\u52A8\u65E5\u5FD7</div>
         <div style="overflow-x:auto">
           <table>
             <thead>
               <tr>
-                <th>Time</th>
-                <th>Action</th>
-                <th>Status</th>
-                <th>Latency</th>
+                <th>\u65F6\u95F4</th>
+                <th>\u64CD\u4F5C</th>
+                <th>\u72B6\u6001</th>
+                <th>\u8017\u65F6</th>
               </tr>
             </thead>
             <tbody id="logs-body"></tbody>
@@ -134227,14 +134227,14 @@ tr:last-child td{border-bottom:none}
     </div>
 
     <div class="card" id="error-agg-card" style="margin-top:24px">
-      <div style="font-weight:600;margin-bottom:20px;font-size:15px">Aggregated Errors</div>
+      <div style="font-weight:600;margin-bottom:20px;font-size:15px">\u9519\u8BEF\u805A\u5408\u5206\u6790</div>
       <div style="overflow-x:auto">
         <table>
           <thead>
             <tr>
-              <th>Error Message</th>
-              <th style="width:80px">Count</th>
-              <th style="width:150px">Last Seen</th>
+              <th>\u9519\u8BEF\u4FE1\u606F</th>
+              <th style="width:80px">\u6B21\u6570</th>
+              <th style="width:150px">\u6700\u8FD1\u53D1\u751F</th>
             </tr>
           </thead>
           <tbody id="errors-body"></tbody>
@@ -134404,6 +134404,12 @@ function loadStats() {
       if(!data) return;
       if(data.error) { setStatus(data.error, "error"); return; }
       
+      if(data.message === "Database not configured") {
+        setStatus("\u8B66\u544A\uFF1A\u672A\u68C0\u6D4B\u5230\u6570\u636E\u5E93\u8FDE\u63A5\uFF0C\u7EDF\u8BA1\u6570\u636E\u5C06\u4E0D\u53EF\u7528\u3002", "error");
+      } else {
+        setStatus("\u6570\u636E\u5E93\u8FDE\u63A5\u6B63\u5E38", "success");
+      }
+      
       renderLogs(data.recentCalls || []);
       renderDistribution(data.toolDistribution || {});
       renderErrors(data.errorDistribution || []);
@@ -134431,7 +134437,7 @@ function renderErrors(errors) {
   if(!errorsBody) return;
   errorsBody.innerHTML = "";
   if(errors.length === 0) {
-    errorsBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-secondary);padding:20px">No errors recorded</td></tr>';
+    errorsBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-secondary);padding:20px">\u6682\u65E0\u9519\u8BEF\u8BB0\u5F55</td></tr>';
     return;
   }
   errors.forEach(err => {

@@ -29,9 +29,13 @@ export function distributePrompt(
   const imageAttachments = attachments.filter((a) => a.type === "image");
   const tableAttachments = attachments.filter((a) => a.type === "table");
 
+  // STRICT RULE: Only treat as "Edit" if isEdit is true AND we have valid tableContext.
+  // If user clicked "Edit" but selected nothing (or non-table), we fallback to "Create".
+  const effectiveIsEdit = isEdit && !!tableContext;
+
   // 1. 场景判定与基础指令
   let scenarioInstruction = "";
-  if (!isEdit) {
+  if (!effectiveIsEdit) {
     scenarioInstruction = `# 任务：创建新表格 (Intent: Create)
 请根据用户输入和参考资料，设计一个全新的表格。`;
   } else {
@@ -70,7 +74,7 @@ export function distributePrompt(
   }
 
   // 3.3 当前表格状态 (Current State - for Edit intent)
-  if (isEdit && tableContext) {
+  if (effectiveIsEdit && tableContext) {
     let contextToProvide = tableContext;
     // 优化：根据选中类型过滤 Context，减少 Token 干扰
     if (selectionKind === "filter") {

@@ -421,54 +421,54 @@ tr:last-child td{border-bottom:none}
   <div id="stats-section">
     <div class="stats-grid">
       <div class="stat-item">
-        <div class="stat-label">Total Users</div>
+        <div class="stat-label">总用户数</div>
         <div id="stat-users" class="stat-value">-</div>
       </div>
       <div class="stat-item">
-        <div class="stat-label">Plugin Launches</div>
+        <div class="stat-label">插件启动次数</div>
         <div id="stat-launches" class="stat-value">-</div>
       </div>
       <div class="stat-item">
-        <div class="stat-label">Create Table</div>
+        <div class="stat-label">表格生成次数</div>
         <div id="stat-create-count" class="stat-value">-</div>
       </div>
       <div class="stat-item">
-        <div class="stat-label">Avg Create Time</div>
+        <div class="stat-label">平均生成耗时</div>
         <div id="stat-create-time" class="stat-value">-</div>
       </div>
       <div class="stat-item">
-        <div class="stat-label">Modify Table</div>
+        <div class="stat-label">表格修改次数</div>
         <div id="stat-modify-count" class="stat-value">-</div>
       </div>
       <div class="stat-item">
-        <div class="stat-label">Avg Modify Time</div>
+        <div class="stat-label">平均修改耗时</div>
         <div id="stat-modify-time" class="stat-value">-</div>
       </div>
       <div class="stat-item">
-        <div class="stat-label">Failures</div>
+        <div class="stat-label">失败次数</div>
         <div id="stat-fails" class="stat-value" style="color:var(--danger-color)">-</div>
       </div>
       <div class="stat-item">
-        <div class="stat-label">Success Rate</div>
+        <div class="stat-label">成功率</div>
         <div id="stat-rate" class="stat-value">-</div>
       </div>
     </div>
 
     <div class="layout">
       <div class="card">
-        <div style="font-weight:600;margin-bottom:20px;font-size:15px">Feature Distribution</div>
+        <div style="font-weight:600;margin-bottom:20px;font-size:15px">功能使用分布</div>
         <div id="distribution-container"></div>
       </div>
       <div class="card">
-        <div style="font-weight:600;margin-bottom:20px;font-size:15px">Recent Activity</div>
+        <div style="font-weight:600;margin-bottom:20px;font-size:15px">近期活动日志</div>
         <div style="overflow-x:auto">
           <table>
             <thead>
               <tr>
-                <th>Time</th>
-                <th>Action</th>
-                <th>Status</th>
-                <th>Latency</th>
+                <th>时间</th>
+                <th>操作</th>
+                <th>状态</th>
+                <th>耗时</th>
               </tr>
             </thead>
             <tbody id="logs-body"></tbody>
@@ -478,14 +478,14 @@ tr:last-child td{border-bottom:none}
     </div>
 
     <div class="card" id="error-agg-card" style="margin-top:24px">
-      <div style="font-weight:600;margin-bottom:20px;font-size:15px">Aggregated Errors</div>
+      <div style="font-weight:600;margin-bottom:20px;font-size:15px">错误聚合分析</div>
       <div style="overflow-x:auto">
         <table>
           <thead>
             <tr>
-              <th>Error Message</th>
-              <th style="width:80px">Count</th>
-              <th style="width:150px">Last Seen</th>
+              <th>错误信息</th>
+              <th style="width:80px">次数</th>
+              <th style="width:150px">最近发生</th>
             </tr>
           </thead>
           <tbody id="errors-body"></tbody>
@@ -655,6 +655,12 @@ function loadStats() {
       if(!data) return;
       if(data.error) { setStatus(data.error, "error"); return; }
       
+      if(data.message === "Database not configured") {
+        setStatus("警告：未检测到数据库连接，统计数据将不可用。", "error");
+      } else {
+        setStatus("数据库连接正常", "success");
+      }
+      
       renderLogs(data.recentCalls || []);
       renderDistribution(data.toolDistribution || {});
       renderErrors(data.errorDistribution || []);
@@ -682,7 +688,7 @@ function renderErrors(errors) {
   if(!errorsBody) return;
   errorsBody.innerHTML = "";
   if(errors.length === 0) {
-    errorsBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-secondary);padding:20px">No errors recorded</td></tr>';
+    errorsBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-secondary);padding:20px">暂无错误记录</td></tr>';
     return;
   }
   errors.forEach(err => {
