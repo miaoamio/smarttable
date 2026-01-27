@@ -86,15 +86,21 @@ const manualEmptyPanel = document.getElementById("manual-empty-panel");
 const manualEditPanel = document.getElementById("manual-edit-panel");
 const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".tab"));
 
-    // 默认隐藏开发模式标签，仅在开发环境显示
+    // 默认隐藏开发模式标签和面板，仅在开发环境显示
     const debugTabBtn = tabButtons.find(btn => btn.dataset.tab === "debug");
-    console.log("Debug tab button found:", !!debugTabBtn, "NODE_ENV:", process.env.NODE_ENV);
-    if (debugTabBtn) {
-      if (process.env.NODE_ENV === "production") {
-        debugTabBtn.style.display = "none";
-      } else {
-        debugTabBtn.style.display = ""; // 移除 inline style，使用 CSS 默认显示
-      }
+    
+    console.log("Environment check:", {
+      NODE_ENV: process.env.NODE_ENV,
+      hasDebugBtn: !!debugTabBtn,
+      hasDebugPanel: !!debugTabPanel
+    });
+
+    if (process.env.NODE_ENV === "production") {
+      if (debugTabBtn) debugTabBtn.style.display = "none";
+      if (debugTabPanel) debugTabPanel.style.display = "none";
+    } else {
+      if (debugTabBtn) debugTabBtn.style.display = "";
+      // 面板的显示由 setActiveTab 控制，这里不需要强制显示
     }
 
     console.log(`Found ${tabButtons.length} tab buttons.`);

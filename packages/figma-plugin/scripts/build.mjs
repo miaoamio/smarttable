@@ -48,9 +48,14 @@ async function buildOnce() {
   let uiHtmlTemplate = await fs.readFile(path.join(srcDir, "ui.html"), "utf8");
   const isProduction = process.env.NODE_ENV === "production";
 
-  // If production, remove the debug tab from the template
+  // If production, remove the debug tab and panel from the template
   if (isProduction) {
-    uiHtmlTemplate = uiHtmlTemplate.replace(/<button class="tab" data-tab="debug">开发模式<\/button>/g, '');
+    // More robust regex to handle whitespace and attribute order for the tab button
+    uiHtmlTemplate = uiHtmlTemplate.replace(/<button[^>]*data-tab="debug"[^>]*>.*?<\/button>/g, '');
+    // Remove the debug panel as well
+    uiHtmlTemplate = uiHtmlTemplate.replace(/<div[^>]*id="tab-debug"[^>]*>[\s\S]*?<\/div>\s*<!--\s*\/tab-debug\s*-->/g, '');
+    // Fallback if no comment marker
+    uiHtmlTemplate = uiHtmlTemplate.replace(/<div[^>]*id="tab-debug"[^>]*>[\s\S]*?<\/div>/g, '');
   }
 
   // Read XLSX library content
