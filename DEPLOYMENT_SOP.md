@@ -4,20 +4,23 @@
 
 ## 1. 核心失败原因总结
 
-在多次尝试中，部署失败主要归结为以下四个技术难点：
+在多次尝试中，部署失败主要归结为以下几个技术难点：
 
-1.  **Monorepo 依赖孤岛**：Vercel 的 Serverless Functions 默认不包含 Monorepo 中其他 Workspace 的代码。如果直接引用 `packages/` 下的代码，运行时会报错 `Module Not Found`。
-2.  **构建环境路径冲突**：在 Vercel 容器中，直接运行 `tsc` 可能会因为 `npx` 缓存或环境变量问题找不到命令，或者错误地使用了全局安装的旧版本 `tsc`。
-3.  **Node.js 运行时 Bug**：Node.js 20.x 版本的 npm 在处理复杂的 Workspace 安装时，偶尔会触发 `Exit handler never called!` 错误，导致构建中断。
-4.  **入口文件不匹配**：Vercel 默认期望 API 路由在 `api/` 目录下，但 TypeScript 源码需要编译和打包后才能运行。
+1.  **Monorepo 依赖孤岛**：Vercel 的 Serverless Functions 默认不包含 Monorepo 中其他 Workspace 的代码。
+2.  **Prisma 运行时丢失**：Prisma 需要二进制查询引擎文件，如果直接打包进 JS 文件，运行时会找不到生成的 Client。必须在打包时将其设为 `external`，并在构建流程中手动运行 `prisma generate`。
+3.  **语法错误 (TS1160)**：在 `handler.ts` 中硬编码大型 HTML 模板时，如果内部 JavaScript 包含未转义的反引号 (`` ` ``)，会导致模板字符串提前闭合，引发“Unterminated template literal”构建错误。
+4.  **请求体体积限制**：默认的 1MB 限制无法处理较大的 Excel 文件（Base64 编码会增加 33% 体积）。
+5.  **CORS 预检失败**：浏览器发出的 `OPTIONS` 请求如果未得到 200 响应或没有正确的 CORS 头（特别是 Origin 为 `null` 时），会导致跨域失败。
+6.  **Node.js 版本不匹配**：Vercel 设置与 `package.json` 中的 `engines` 冲突。
 
 ## 2. 正确的部署架构
 
 为了解决上述问题，我们采用了以下架构：
 
-*   **Bundling (打包)**：使用 `esbuild` 将所有依赖和子包代码打包进一个单文件 `api/gateway.js`。
-*   **Explicit Paths (显式路径)**：在子包的 `scripts` 中使用指向根目录的绝对路径调用工具。
-*   **Version Pinning (版本锁定)**：强制使用 Node.js 22+ 环境。
+*   **Bundling (打包)**：使用 `esbuild` 将代码打包进 `api/gateway.js`，但**排除** `@prisma/client` 等二进制相关库。
+*   **Prisma Pre-build**：在构建命令中加入 `prisma generate`。
+*   **Unified Body Limit**：统一将请求体限制提升至 100MB。
+*   **Hardcoded Assets**：将管理后台 HTML 静态资源硬编码在 `handler.ts` 中，避免 Serverless 环境下的文件读取路径问题。
 
 ## 3. 正确部署步骤
 
@@ -26,23 +29,32 @@
 确保根目录的 [package.json](package.json) 包含以下关键配置：
 ```json
 {
-  "type": "module",
-  "engines": {
-    "node": ">=22"
+  "dependencies": {
+    "@prisma/client": "6.2.1"
+  },
+  "devDependencies": {
+    "prisma": "6.2.1"
   },
   "scripts": {
-    "build": "npm run build -w packages/mcp-server -w packages/mcp-gateway && node scripts/bundle-gateway.mjs"
+    "build": "prisma generate --schema=packages/mcp-gateway/prisma/schema.prisma && npm run build -w packages/mcp-server -w packages/mcp-gateway && node scripts/bundle-gateway.mjs"
   }
 }
 ```
 
 ### 第二步：子包构建命令规范
 
-子包（如 `packages/mcp-server`）的 [package.json](packages/mcp-server/package.json) 必须显式引用根目录的 `tsc`：
+子包（如 `packages/mcp-gateway`）的 [package.json](packages/mcp-gateway/package.json) 必须显式引用根目录的 `tsc`：
 ```json
 "scripts": {
   "build": "../../node_modules/.bin/tsc -p tsconfig.json"
 }
+```
+
+### 第三步：打包脚本优化 (bundle-gateway.mjs)
+
+确保 `esbuild` 配置中 `external` 包含 Prisma：
+```javascript
+external: ['node:*', 'canvas', 'jsdom', '@prisma/client', '.prisma/client'],
 ```
 
 ### 第三步：Vercel 项目设置

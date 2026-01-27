@@ -553,7 +553,7 @@ applyTokenToInput();
 loadStats();
 </script>
 </body>
-</html>\`;
+</html>`;
 
 export async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   try {
@@ -567,7 +567,7 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
 
     await initComponents();
 
-    const url = new URL(req.url, "http://localhost");
+    const url = new URL(req.url || "/", "http://localhost");
 
     if (req.method === "GET" && url.pathname === "/health") {
       sendJson(req, res, 200, { ok: true });

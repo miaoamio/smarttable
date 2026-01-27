@@ -1,6 +1,5 @@
 import path from "node:path";
 import crypto from "node:crypto";
-import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as XLSX from "xlsx";
 import jschardet from "jschardet";
@@ -62,18 +61,23 @@ const maxBodyBytes = Number(getEnv("MAX_BODY_BYTES") ?? "104857600"); // 100MB d
 const rateLimitPerMinute = Number(getEnv("RATE_LIMIT_PER_MIN") ?? "120");
 function withCors(req, res) {
     let origin = req.headers.origin;
-    if (origin === "null")
-        origin = undefined;
-    const allowAll = corsOrigins.includes("*");
-    if (allowAll || !origin) {
+    // Handle 'null' origin (common in local file or some plugin environments)
+    if (origin === "null") {
         res.setHeader("access-control-allow-origin", "*");
     }
-    else if (origin && corsOrigins.includes(origin)) {
-        res.setHeader("access-control-allow-origin", origin);
-        res.setHeader("vary", "origin");
+    else {
+        const allowAll = corsOrigins.includes("*");
+        if (allowAll || !origin) {
+            res.setHeader("access-control-allow-origin", "*");
+        }
+        else if (origin && corsOrigins.includes(origin)) {
+            res.setHeader("access-control-allow-origin", origin);
+            res.setHeader("vary", "origin");
+        }
     }
     res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS,DELETE");
     res.setHeader("access-control-allow-headers", "content-type, authorization, x-requested-with");
+    res.setHeader("access-control-max-age", "86400"); // 24 hours
 }
 function sendJson(req, res, status, body) {
     withCors(req, res);
@@ -257,16 +261,272 @@ function readJson(req) {
         req.on("error", reject);
     });
 }
-const adminPageHtml = fs.readFileSync(path.resolve(__dirname, "../../src/index.ts"), "utf8")
-    .split("const adminPageHtml = `")[1]
-    .split("`;")[0];
+const adminPageHtml = `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Figma AI 插件管理后台</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  --bg-color: #ffffff;
+  --secondary-bg: #f7f7f8;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --border-color: #e5e7eb;
+  --accent-color: #10a37f; /* OpenAI green */
+  --accent-hover: #1a7f64;
+  --danger-color: #ef4444;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;margin:0;padding:0;background:var(--secondary-bg);color:var(--text-primary);line-height:1.5}
+.header{background:var(--bg-color);border-bottom:1px solid var(--border-color);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.header h1{font-size:16px;font-weight:600;margin:0;display:flex;align-items:center;gap:10px}
+.header h1 svg{color:var(--accent-color)}
+.container{max-width:1100px;margin:32px auto;padding:0 24px}
+.tabs{display:flex;gap:24px;margin-bottom:32px;border-bottom:1px solid var(--border-color)}
+.tab{padding:8px 4px 12px;cursor:pointer;font-size:14px;color:var(--text-secondary);font-weight:500;border-bottom:2px solid transparent;transition:all 0.2s}
+.tab.active{color:var(--text-primary);border-bottom-color:var(--text-primary)}
+.tab:hover:not(.active){color:var(--text-primary)}
+.toolbar{display:flex;gap:12px;align-items:center}
+input,textarea,button{font:inherit;outline:none}
+input,textarea{background:var(--bg-color);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);padding:8px 12px;font-size:14px;transition:border-color 0.2s}
+input:focus,textarea:focus{border-color:var(--accent-color)}
+textarea{width:100%;min-height:200px;resize:vertical;font-family:Menlo,monospace;font-size:13px}
+button{border:1px solid transparent;border-radius:8px;padding:8px 16px;font-size:14px;font-weight:500;cursor:pointer;transition:all 0.2s;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+button.primary{background:var(--text-primary);color:white}
+button.primary:hover{background:#374151}
+button.secondary{background:var(--bg-color);border-color:var(--border-color);color:var(--text-primary)}
+button.secondary:hover{background:var(--secondary-bg)}
+button.danger{background:white;border-color:#fee2e2;color:var(--danger-color)}
+button.danger:hover{background:#fef2f2}
+button:disabled{opacity:.5;cursor:not-allowed}
+.card{background:var(--bg-color);border:1px solid var(--border-color);border-radius:12px;padding:24px;margin-bottom:24px;box-shadow:0 1px 2px rgba(0,0,0,0.05)}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:32px}
+.stat-item{background:var(--bg-color);padding:20px;border-radius:12px;border:1px solid var(--border-color);box-shadow:0 1px 2px rgba(0,0,0,0.05)}
+.stat-label{font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em}
+.stat-value{font-size:28px;font-weight:700;color:var(--text-primary);margin-top:8px}
+table{width:100%;border-collapse:separate;border-spacing:0;margin-top:8px}
+th,td{padding:12px 16px;text-align:left;font-size:14px;border-bottom:1px solid var(--border-color)}
+th{background:var(--secondary-bg);color:var(--text-secondary);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.05em}
+tr:last-child td{border-bottom:none}
+.key-cell{font-family:Menlo,monospace;font-size:13px;font-weight:600;color:var(--accent-color)}
+.config-snippet{max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--text-secondary);font-family:Menlo,monospace}
+.tag{padding:2px 8px;border-radius:9999px;font-size:12px;font-weight:500}
+.tag-success{background:#d1fae5;color:#065f46}
+.tag-fail{background:#fee2e2;color:#991b1b}
+.layout{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.8fr);gap:24px}
+@media (max-width:900px){.layout{grid-template-columns:1fr}}
+.hidden{display:none}
+.status-msg{margin-top:12px;font-size:13px;padding:8px 12px;border-radius:6px}
+.status-success{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
+.status-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+</style>
+</head>
+<body>
+<header class="header">
+  <h1>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2ZM12 4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20C7.58172 20 4 16.4183 4 12C4 7.58172 7.58172 4 12 4ZM11 7V11H7V13H11V17H13V13H17V11H13V7H11Z" fill="currentColor"/></svg>
+    Figma AI Gateway Admin
+  </h1>
+  <div class="toolbar">
+    <input id="token-input" type="password" placeholder="Access Token" style="width:180px">
+    <button id="save-token-btn" class="primary">验证</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="tabs">
+    <div class="tab active" data-target="stats-section">运行统计</div>
+    <div class="tab" data-target="configs-section">组件配置</div>
+  </div>
+
+  <div id="stats-section">
+    <div class="stats-grid">
+      <div class="stat-item">
+        <div class="stat-label">Total Calls</div>
+        <div id="stat-total" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Failures</div>
+        <div id="stat-fails" class="stat-value" style="color:var(--danger-color)">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Avg Latency</div>
+        <div id="stat-latency" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Success Rate</div>
+        <div id="stat-rate" class="stat-value">-</div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="card">
+        <div style="font-weight:600;margin-bottom:20px;font-size:15px">Feature Distribution</div>
+        <div id="distribution-container"></div>
+      </div>
+      <div class="card">
+        <div style="font-weight:600;margin-bottom:20px;font-size:15px">Recent Activity</div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Status</th>
+                <th>Latency</th>
+              </tr>
+            </thead>
+            <tbody id="logs-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="error-agg-card" style="margin-top:24px">
+      <div style="font-weight:600;margin-bottom:20px;font-size:15px">Aggregated Errors</div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Error Message</th>
+              <th style="width:80px">Count</th>
+              <th style="width:150px">Last Seen</th>
+            </tr>
+          </thead>
+          <tbody id="errors-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="configs-section" class="hidden">
+    <div class="layout">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <div style="font-weight:600;font-size:15px">Registered Components</div>
+          <button id="reload-btn" class="secondary" style="padding:4px 10px;font-size:12px">Refresh</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="components-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div style="font-weight:600;margin-bottom:20px;font-size:15px">Edit Configuration</div>
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <div>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Component Key</label>
+            <input id="edit-key" style="width:100%;box-sizing:border-box" placeholder="e.g. Cell/Tag">
+          </div>
+          <div>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Figma Component Key</label>
+            <input id="edit-figma-key" style="width:100%;box-sizing:border-box" placeholder="Unique Figma Key">
+          </div>
+          <div>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Display States (Variants - JSON)</label>
+            <textarea id="edit-variants" spellcheck="false" style="min-height:100px" placeholder='[ { "property": "value" }, ... ]'></textarea>
+          </div>
+          <div>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Configuration (Props - JSON)</label>
+            <textarea id="edit-config" spellcheck="false" style="min-height:150px" placeholder='{ "displayName": "...", "props": { ... } }'></textarea>
+          </div>
+          <div style="display:flex;gap:12px;justify-content:flex-end">
+            <button id="delete-btn" class="danger">Delete</button>
+            <button id="create-update-btn" class="primary">Save Changes</button>
+          </div>
+          <div id="status" class="status-msg hidden"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+var tokenStorageKey="mcp_gateway_token";
+var tokenInput=document.getElementById("token-input");
+var saveTokenBtn=document.getElementById("save-token-btn");
+var reloadBtn=document.getElementById("reload-btn");
+var bodyEl=document.getElementById("components-body");
+var logsBody=document.getElementById("logs-body");
+var errorsBody=document.getElementById("errors-body");
+var editKey=document.getElementById("edit-key");
+var editFigmaKey=document.getElementById("edit-figma-key");
+var editVariants=document.getElementById("edit-variants");
+var editConfig=document.getElementById("edit-config");
+var createUpdateBtn=document.getElementById("create-update-btn");
+var deleteBtn=document.getElementById("delete-btn");
+var statusEl=document.getElementById("status");
+
+// Tabs logic
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.onclick = function() {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    this.classList.add("active");
+    const target = this.getAttribute("data-target");
+    document.getElementById("stats-section").classList.add("hidden");
+    document.getElementById("configs-section").classList.add("hidden");
+    document.getElementById(target).classList.remove("hidden");
+    if(target === "stats-section") loadStats();
+    if(target === "configs-section") loadComponents();
+  };
+});
+
+function getToken(){try{return window.localStorage.getItem(tokenStorageKey)||"";}catch(e){return"";}}
+function setToken(v){try{window.localStorage.setItem(tokenStorageKey,v||"");}catch(e){}}
+function applyTokenToInput(){var t=getToken();if(tokenInput)tokenInput.value=t;}
+function setStatus(msg, type){
+  if(!statusEl) return;
+  statusEl.textContent=msg||"";
+  statusEl.className = "status-msg " + (type === "error" ? "status-error" : "status-success");
+  statusEl.classList.toggle("hidden", !msg);
+}
+function getAuthHeaders(){var t=tokenInput?tokenInput.value.trim():"";var h={};if(t)h.authorization="Bearer "+t;return h;}
+
+function loadStats() {
+  var headers = getAuthHeaders();
+  fetch("/admin/stats", {headers: headers})
+    .then(res => res.json())
+    .then(data => {
+      if(data.error) { setStatus(data.error, "error"); return; }
+      document.getElementById("stat-total").textContent = data.totalCalls || 0;
+      document.getElementById("stat-fails").textContent = data.failCount || 0;
+      document.getElementById("stat-latency").textContent = (data.avgLatency || 0) + "ms";
+      const rate = data.totalCalls > 0 ? (((data.totalCalls - data.failCount) / data.totalCalls) * 100).toFixed(1) : "100";
+      document.getElementById("stat-rate").textContent = rate + "%";
+      
+      logsBody.innerHTML = (data.recentCalls || []).map(log => \`
+        <tr>
+          <td style="font-size:12px;color:var(--text-secondary)">\${new Date(log.createdAt).toLocaleString()}</td>
+          <td class="key-cell">\${log.action}</td>
+          <td><span class="tag \${log.status === 'OK' ? 'tag-success' : 'tag-fail'}">\${log.status}</span></td>
+          <td>\${log.latency}ms</td>
+        </tr>
+      \`).join("");
+
+      errorsBody.innerHTML = (data.errorDistribution || []).map(err => \`
+        <tr>
+          <td style="color:var(--danger-color);font-size:13px">\${err.message}</td>
+          <td style="font-weight:600">\${err.count}</td>
+          <td style="font-size:12px;color:var(--text-secondary)">\${new Date(err.lastSeen).toLocaleString()}</td>
+        </tr>
+      \`).join("");
+    });
+}
+applyTokenToInput();
+loadStats();
+</script>
+</body>
+</html>`;
 export async function handle(req, res) {
     try {
-        await initComponents();
-        if (!req.url) {
-            sendJson(req, res, 400, { error: "missing_url" });
-            return;
-        }
         if (req.method === "OPTIONS") {
             withCors(req, res);
             res.statusCode = 200;
@@ -274,7 +534,8 @@ export async function handle(req, res) {
             res.end();
             return;
         }
-        const url = new URL(req.url, "http://localhost");
+        await initComponents();
+        const url = new URL(req.url || "/", "http://localhost");
         if (req.method === "GET" && url.pathname === "/health") {
             sendJson(req, res, 200, { ok: true });
             return;
@@ -310,7 +571,7 @@ export async function handle(req, res) {
                 const distribution = await prisma.callLog.groupBy({ by: ['action'], _count: { _all: true } });
                 const toolDistribution = distribution.reduce((acc, curr) => { acc[curr.action] = curr._count._all; return acc; }, {});
                 const errorAgg = await prisma.callLog.groupBy({ where: { status: "FAIL", errorMsg: { not: null } }, by: ['errorMsg'], _count: { _all: true }, _max: { createdAt: true } });
-                const errorDistribution = errorAgg.map(curr => ({ message: curr.errorMsg, count: curr._count._all, lastSeen: curr._max.createdAt })).sort((a, b) => b.count - a.count);
+                const errorDistribution = errorAgg.map((curr) => ({ message: curr.errorMsg, count: curr._count._all, lastSeen: curr._max.createdAt })).sort((a, b) => b.count - a.count);
                 sendJson(req, res, 200, { totalCalls, failCount, avgLatency: Math.round(avgLatencyResult._avg.latency || 0), recentCalls, toolDistribution, errorDistribution });
             }
             catch (e) {
