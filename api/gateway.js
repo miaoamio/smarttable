@@ -5167,9 +5167,9 @@ var require_xlsx = __commonJS({
           }
           return o;
         }
-        var fs2;
+        var fs;
         function get_fs() {
-          return fs2 || (fs2 = __require("fs"));
+          return fs || (fs = __require("fs"));
         }
         function parse3(file, options) {
           if (file[0] == 80 && file[1] == 75) return parse_zip2(file, options);
@@ -5445,7 +5445,7 @@ var require_xlsx = __commonJS({
         }
         function read_file(filename2, options) {
           get_fs();
-          return parse3(fs2.readFileSync(filename2), options);
+          return parse3(fs.readFileSync(filename2), options);
         }
         function read2(blob, options) {
           var type = options && options.type;
@@ -5771,7 +5771,7 @@ var require_xlsx = __commonJS({
         function write_file(cfb, filename2, options) {
           get_fs();
           var o = _write(cfb, options);
-          fs2.writeFileSync(filename2, o);
+          fs.writeFileSync(filename2, o);
         }
         function a2s2(o) {
           var out = new Array(o.length);
@@ -5783,7 +5783,7 @@ var require_xlsx = __commonJS({
           switch (options && options.type || "buffer") {
             case "file":
               get_fs();
-              fs2.writeFileSync(options.filename, o);
+              fs.writeFileSync(options.filename, o);
               return o;
             case "binary":
               return typeof o == "string" ? o : a2s2(o);
@@ -32773,7 +32773,7 @@ var require_xlsx = __commonJS({
         return out;
       }
       var qreg = /"/g;
-      function make_csv_row(sheet, r, R, cols, fs2, rs, FS, o) {
+      function make_csv_row(sheet, r, R, cols, fs, rs, FS, o) {
         var isempty = true;
         var row = [], txt = "", rr = encode_row(R);
         for (var C = r.s.c; C <= r.e.c; ++C) {
@@ -32783,7 +32783,7 @@ var require_xlsx = __commonJS({
           else if (val.v != null) {
             isempty = false;
             txt = "" + (o.rawNumbers && val.t == "n" ? val.v : format_cell(val, null, o));
-            for (var i = 0, cc = 0; i !== txt.length; ++i) if ((cc = txt.charCodeAt(i)) === fs2 || cc === rs || cc === 34 || o.forceQuotes) {
+            for (var i = 0, cc = 0; i !== txt.length; ++i) if ((cc = txt.charCodeAt(i)) === fs || cc === rs || cc === 34 || o.forceQuotes) {
               txt = '"' + txt.replace(qreg, '""') + '"';
               break;
             }
@@ -32803,7 +32803,7 @@ var require_xlsx = __commonJS({
         var o = opts == null ? {} : opts;
         if (sheet == null || sheet["!ref"] == null) return "";
         var r = safe_decode_range(sheet["!ref"]);
-        var FS = o.FS !== void 0 ? o.FS : ",", fs2 = FS.charCodeAt(0);
+        var FS = o.FS !== void 0 ? o.FS : ",", fs = FS.charCodeAt(0);
         var RS = o.RS !== void 0 ? o.RS : "\n", rs = RS.charCodeAt(0);
         var endregex = new RegExp((FS == "|" ? "\\|" : FS) + "+$");
         var row = "", cols = [];
@@ -32814,7 +32814,7 @@ var require_xlsx = __commonJS({
         var w = 0;
         for (var R = r.s.r; R <= r.e.r; ++R) {
           if ((rowinfo[R] || {}).hidden) continue;
-          row = make_csv_row(sheet, r, R, cols, fs2, rs, FS, o);
+          row = make_csv_row(sheet, r, R, cols, fs, rs, FS, o);
           if (row == null) {
             continue;
           }
@@ -33086,7 +33086,7 @@ var require_xlsx = __commonJS({
           return stream;
         }
         var r = safe_decode_range(sheet["!ref"]);
-        var FS = o.FS !== void 0 ? o.FS : ",", fs2 = FS.charCodeAt(0);
+        var FS = o.FS !== void 0 ? o.FS : ",", fs = FS.charCodeAt(0);
         var RS = o.RS !== void 0 ? o.RS : "\n", rs = RS.charCodeAt(0);
         var endregex = new RegExp((FS == "|" ? "\\|" : FS) + "+$");
         var row = "", cols = [];
@@ -33104,7 +33104,7 @@ var require_xlsx = __commonJS({
           while (R <= r.e.r) {
             ++R;
             if ((rowinfo[R - 1] || {}).hidden) continue;
-            row = make_csv_row(sheet, r, R - 1, cols, fs2, rs, FS, o);
+            row = make_csv_row(sheet, r, R - 1, cols, fs, rs, FS, o);
             if (row != null) {
               if (o.strip) row = row.replace(endregex, "");
               if (row || o.blankrows !== false) return stream.push((w++ ? RS : "") + row);
@@ -125781,12 +125781,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs2, exportName) {
+    function addFormats(ajv, list, fs, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs2[f]);
+        ajv.addFormat(f, fs[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -125799,7 +125799,7 @@ var require_windows = __commonJS({
   "node_modules/isexe/windows.js"(exports, module) {
     module.exports = isexe;
     isexe.sync = sync;
-    var fs2 = __require("fs");
+    var fs = __require("fs");
     function checkPathExt(path2, options) {
       var pathext = options.pathExt !== void 0 ? options.pathExt : process.env.PATHEXT;
       if (!pathext) {
@@ -125824,12 +125824,12 @@ var require_windows = __commonJS({
       return checkPathExt(path2, options);
     }
     function isexe(path2, options, cb) {
-      fs2.stat(path2, function(er, stat) {
+      fs.stat(path2, function(er, stat) {
         cb(er, er ? false : checkStat(stat, path2, options));
       });
     }
     function sync(path2, options) {
-      return checkStat(fs2.statSync(path2), path2, options);
+      return checkStat(fs.statSync(path2), path2, options);
     }
   }
 });
@@ -125839,14 +125839,14 @@ var require_mode = __commonJS({
   "node_modules/isexe/mode.js"(exports, module) {
     module.exports = isexe;
     isexe.sync = sync;
-    var fs2 = __require("fs");
+    var fs = __require("fs");
     function isexe(path2, options, cb) {
-      fs2.stat(path2, function(er, stat) {
+      fs.stat(path2, function(er, stat) {
         cb(er, er ? false : checkStat(stat, options));
       });
     }
     function sync(path2, options) {
-      return checkStat(fs2.statSync(path2), options);
+      return checkStat(fs.statSync(path2), options);
     }
     function checkStat(stat, options) {
       return stat.isFile() && checkMode(stat, options);
@@ -125870,7 +125870,7 @@ var require_mode = __commonJS({
 // node_modules/isexe/index.js
 var require_isexe = __commonJS({
   "node_modules/isexe/index.js"(exports, module) {
-    var fs2 = __require("fs");
+    var fs = __require("fs");
     var core;
     if (process.platform === "win32" || global.TESTING_WINDOWS) {
       core = require_windows();
@@ -126134,16 +126134,16 @@ var require_shebang_command = __commonJS({
 var require_readShebang = __commonJS({
   "node_modules/cross-spawn/lib/util/readShebang.js"(exports, module) {
     "use strict";
-    var fs2 = __require("fs");
+    var fs = __require("fs");
     var shebangCommand = require_shebang_command();
     function readShebang(command) {
       const size = 150;
       const buffer = Buffer.alloc(size);
       let fd;
       try {
-        fd = fs2.openSync(command, "r");
-        fs2.readSync(fd, buffer, 0, size, 0);
-        fs2.closeSync(fd);
+        fd = fs.openSync(command, "r");
+        fs.readSync(fd, buffer, 0, size, 0);
+        fs.closeSync(fd);
       } catch (e) {
       }
       return shebangCommand(buffer.toString());
@@ -126296,7 +126296,6 @@ var XLSX = __toESM(require_xlsx(), 1);
 var import_jschardet = __toESM(require_jschardet(), 1);
 import path from "node:path";
 import crypto from "node:crypto";
-import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 // node_modules/zod/v4/core/core.js
@@ -133841,16 +133840,20 @@ var maxBodyBytes = Number(getEnv("MAX_BODY_BYTES") ?? "104857600");
 var rateLimitPerMinute = Number(getEnv("RATE_LIMIT_PER_MIN") ?? "120");
 function withCors(req, res) {
   let origin = req.headers.origin;
-  if (origin === "null") origin = void 0;
-  const allowAll = corsOrigins.includes("*");
-  if (allowAll || !origin) {
+  if (origin === "null") {
     res.setHeader("access-control-allow-origin", "*");
-  } else if (origin && corsOrigins.includes(origin)) {
-    res.setHeader("access-control-allow-origin", origin);
-    res.setHeader("vary", "origin");
+  } else {
+    const allowAll = corsOrigins.includes("*");
+    if (allowAll || !origin) {
+      res.setHeader("access-control-allow-origin", "*");
+    } else if (origin && corsOrigins.includes(origin)) {
+      res.setHeader("access-control-allow-origin", origin);
+      res.setHeader("vary", "origin");
+    }
   }
   res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS,DELETE");
   res.setHeader("access-control-allow-headers", "content-type, authorization, x-requested-with");
+  res.setHeader("access-control-max-age", "86400");
 }
 function sendJson(req, res, status, body) {
   withCors(req, res);
@@ -134016,14 +134019,272 @@ function readJson(req) {
     req.on("error", reject);
   });
 }
-var adminPageHtml = fs.readFileSync(path.resolve(__dirname, "../../src/index.ts"), "utf8").split("const adminPageHtml = `")[1].split("`;")[0];
+var adminPageHtml = `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Figma AI \u63D2\u4EF6\u7BA1\u7406\u540E\u53F0</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  --bg-color: #ffffff;
+  --secondary-bg: #f7f7f8;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --border-color: #e5e7eb;
+  --accent-color: #10a37f; /* OpenAI green */
+  --accent-hover: #1a7f64;
+  --danger-color: #ef4444;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;margin:0;padding:0;background:var(--secondary-bg);color:var(--text-primary);line-height:1.5}
+.header{background:var(--bg-color);border-bottom:1px solid var(--border-color);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.header h1{font-size:16px;font-weight:600;margin:0;display:flex;align-items:center;gap:10px}
+.header h1 svg{color:var(--accent-color)}
+.container{max-width:1100px;margin:32px auto;padding:0 24px}
+.tabs{display:flex;gap:24px;margin-bottom:32px;border-bottom:1px solid var(--border-color)}
+.tab{padding:8px 4px 12px;cursor:pointer;font-size:14px;color:var(--text-secondary);font-weight:500;border-bottom:2px solid transparent;transition:all 0.2s}
+.tab.active{color:var(--text-primary);border-bottom-color:var(--text-primary)}
+.tab:hover:not(.active){color:var(--text-primary)}
+.toolbar{display:flex;gap:12px;align-items:center}
+input,textarea,button{font:inherit;outline:none}
+input,textarea{background:var(--bg-color);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);padding:8px 12px;font-size:14px;transition:border-color 0.2s}
+input:focus,textarea:focus{border-color:var(--accent-color)}
+textarea{width:100%;min-height:200px;resize:vertical;font-family:Menlo,monospace;font-size:13px}
+button{border:1px solid transparent;border-radius:8px;padding:8px 16px;font-size:14px;font-weight:500;cursor:pointer;transition:all 0.2s;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+button.primary{background:var(--text-primary);color:white}
+button.primary:hover{background:#374151}
+button.secondary{background:var(--bg-color);border-color:var(--border-color);color:var(--text-primary)}
+button.secondary:hover{background:var(--secondary-bg)}
+button.danger{background:white;border-color:#fee2e2;color:var(--danger-color)}
+button.danger:hover{background:#fef2f2}
+button:disabled{opacity:.5;cursor:not-allowed}
+.card{background:var(--bg-color);border:1px solid var(--border-color);border-radius:12px;padding:24px;margin-bottom:24px;box-shadow:0 1px 2px rgba(0,0,0,0.05)}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:32px}
+.stat-item{background:var(--bg-color);padding:20px;border-radius:12px;border:1px solid var(--border-color);box-shadow:0 1px 2px rgba(0,0,0,0.05)}
+.stat-label{font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em}
+.stat-value{font-size:28px;font-weight:700;color:var(--text-primary);margin-top:8px}
+table{width:100%;border-collapse:separate;border-spacing:0;margin-top:8px}
+th,td{padding:12px 16px;text-align:left;font-size:14px;border-bottom:1px solid var(--border-color)}
+th{background:var(--secondary-bg);color:var(--text-secondary);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.05em}
+tr:last-child td{border-bottom:none}
+.key-cell{font-family:Menlo,monospace;font-size:13px;font-weight:600;color:var(--accent-color)}
+.config-snippet{max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--text-secondary);font-family:Menlo,monospace}
+.tag{padding:2px 8px;border-radius:9999px;font-size:12px;font-weight:500}
+.tag-success{background:#d1fae5;color:#065f46}
+.tag-fail{background:#fee2e2;color:#991b1b}
+.layout{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.8fr);gap:24px}
+@media (max-width:900px){.layout{grid-template-columns:1fr}}
+.hidden{display:none}
+.status-msg{margin-top:12px;font-size:13px;padding:8px 12px;border-radius:6px}
+.status-success{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
+.status-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+</style>
+</head>
+<body>
+<header class="header">
+  <h1>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2ZM12 4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20C7.58172 20 4 16.4183 4 12C4 7.58172 7.58172 4 12 4ZM11 7V11H7V13H11V17H13V13H17V11H13V7H11Z" fill="currentColor"/></svg>
+    Figma AI Gateway Admin
+  </h1>
+  <div class="toolbar">
+    <input id="token-input" type="password" placeholder="Access Token" style="width:180px">
+    <button id="save-token-btn" class="primary">\u9A8C\u8BC1</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="tabs">
+    <div class="tab active" data-target="stats-section">\u8FD0\u884C\u7EDF\u8BA1</div>
+    <div class="tab" data-target="configs-section">\u7EC4\u4EF6\u914D\u7F6E</div>
+  </div>
+
+  <div id="stats-section">
+    <div class="stats-grid">
+      <div class="stat-item">
+        <div class="stat-label">Total Calls</div>
+        <div id="stat-total" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Failures</div>
+        <div id="stat-fails" class="stat-value" style="color:var(--danger-color)">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Avg Latency</div>
+        <div id="stat-latency" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Success Rate</div>
+        <div id="stat-rate" class="stat-value">-</div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="card">
+        <div style="font-weight:600;margin-bottom:20px;font-size:15px">Feature Distribution</div>
+        <div id="distribution-container"></div>
+      </div>
+      <div class="card">
+        <div style="font-weight:600;margin-bottom:20px;font-size:15px">Recent Activity</div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Status</th>
+                <th>Latency</th>
+              </tr>
+            </thead>
+            <tbody id="logs-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="error-agg-card" style="margin-top:24px">
+      <div style="font-weight:600;margin-bottom:20px;font-size:15px">Aggregated Errors</div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Error Message</th>
+              <th style="width:80px">Count</th>
+              <th style="width:150px">Last Seen</th>
+            </tr>
+          </thead>
+          <tbody id="errors-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="configs-section" class="hidden">
+    <div class="layout">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <div style="font-weight:600;font-size:15px">Registered Components</div>
+          <button id="reload-btn" class="secondary" style="padding:4px 10px;font-size:12px">Refresh</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="components-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div style="font-weight:600;margin-bottom:20px;font-size:15px">Edit Configuration</div>
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <div>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Component Key</label>
+            <input id="edit-key" style="width:100%;box-sizing:border-box" placeholder="e.g. Cell/Tag">
+          </div>
+          <div>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Figma Component Key</label>
+            <input id="edit-figma-key" style="width:100%;box-sizing:border-box" placeholder="Unique Figma Key">
+          </div>
+          <div>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Display States (Variants - JSON)</label>
+            <textarea id="edit-variants" spellcheck="false" style="min-height:100px" placeholder='[ { "property": "value" }, ... ]'></textarea>
+          </div>
+          <div>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Configuration (Props - JSON)</label>
+            <textarea id="edit-config" spellcheck="false" style="min-height:150px" placeholder='{ "displayName": "...", "props": { ... } }'></textarea>
+          </div>
+          <div style="display:flex;gap:12px;justify-content:flex-end">
+            <button id="delete-btn" class="danger">Delete</button>
+            <button id="create-update-btn" class="primary">Save Changes</button>
+          </div>
+          <div id="status" class="status-msg hidden"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+var tokenStorageKey="mcp_gateway_token";
+var tokenInput=document.getElementById("token-input");
+var saveTokenBtn=document.getElementById("save-token-btn");
+var reloadBtn=document.getElementById("reload-btn");
+var bodyEl=document.getElementById("components-body");
+var logsBody=document.getElementById("logs-body");
+var errorsBody=document.getElementById("errors-body");
+var editKey=document.getElementById("edit-key");
+var editFigmaKey=document.getElementById("edit-figma-key");
+var editVariants=document.getElementById("edit-variants");
+var editConfig=document.getElementById("edit-config");
+var createUpdateBtn=document.getElementById("create-update-btn");
+var deleteBtn=document.getElementById("delete-btn");
+var statusEl=document.getElementById("status");
+
+// Tabs logic
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.onclick = function() {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    this.classList.add("active");
+    const target = this.getAttribute("data-target");
+    document.getElementById("stats-section").classList.add("hidden");
+    document.getElementById("configs-section").classList.add("hidden");
+    document.getElementById(target).classList.remove("hidden");
+    if(target === "stats-section") loadStats();
+    if(target === "configs-section") loadComponents();
+  };
+});
+
+function getToken(){try{return window.localStorage.getItem(tokenStorageKey)||"";}catch(e){return"";}}
+function setToken(v){try{window.localStorage.setItem(tokenStorageKey,v||"");}catch(e){}}
+function applyTokenToInput(){var t=getToken();if(tokenInput)tokenInput.value=t;}
+function setStatus(msg, type){
+  if(!statusEl) return;
+  statusEl.textContent=msg||"";
+  statusEl.className = "status-msg " + (type === "error" ? "status-error" : "status-success");
+  statusEl.classList.toggle("hidden", !msg);
+}
+function getAuthHeaders(){var t=tokenInput?tokenInput.value.trim():"";var h={};if(t)h.authorization="Bearer "+t;return h;}
+
+function loadStats() {
+  var headers = getAuthHeaders();
+  fetch("/admin/stats", {headers: headers})
+    .then(res => res.json())
+    .then(data => {
+      if(data.error) { setStatus(data.error, "error"); return; }
+      document.getElementById("stat-total").textContent = data.totalCalls || 0;
+      document.getElementById("stat-fails").textContent = data.failCount || 0;
+      document.getElementById("stat-latency").textContent = (data.avgLatency || 0) + "ms";
+      const rate = data.totalCalls > 0 ? (((data.totalCalls - data.failCount) / data.totalCalls) * 100).toFixed(1) : "100";
+      document.getElementById("stat-rate").textContent = rate + "%";
+      
+      logsBody.innerHTML = (data.recentCalls || []).map(log => \`
+        <tr>
+          <td style="font-size:12px;color:var(--text-secondary)">\${new Date(log.createdAt).toLocaleString()}</td>
+          <td class="key-cell">\${log.action}</td>
+          <td><span class="tag \${log.status === 'OK' ? 'tag-success' : 'tag-fail'}">\${log.status}</span></td>
+          <td>\${log.latency}ms</td>
+        </tr>
+      \`).join("");
+
+      errorsBody.innerHTML = (data.errorDistribution || []).map(err => \`
+        <tr>
+          <td style="color:var(--danger-color);font-size:13px">\${err.message}</td>
+          <td style="font-weight:600">\${err.count}</td>
+          <td style="font-size:12px;color:var(--text-secondary)">\${new Date(err.lastSeen).toLocaleString()}</td>
+        </tr>
+      \`).join("");
+    });
+}
+applyTokenToInput();
+loadStats();
+</script>
+</body>
+</html>`;
 async function handle(req, res) {
   try {
-    await initComponents();
-    if (!req.url) {
-      sendJson(req, res, 400, { error: "missing_url" });
-      return;
-    }
     if (req.method === "OPTIONS") {
       withCors(req, res);
       res.statusCode = 200;
@@ -134031,7 +134292,8 @@ async function handle(req, res) {
       res.end();
       return;
     }
-    const url = new URL(req.url, "http://localhost");
+    await initComponents();
+    const url = new URL(req.url || "/", "http://localhost");
     if (req.method === "GET" && url.pathname === "/health") {
       sendJson(req, res, 200, { ok: true });
       return;
@@ -134088,16 +134350,16 @@ async function handle(req, res) {
         return;
       }
       const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : "upload.xlsx";
-      let data = typeof body?.data === "string" ? body.data.trim() : "";
-      if (!data) {
+      let base64Data = typeof body?.data === "string" ? body.data.trim() : "";
+      if (!base64Data) {
         sendJson(req, res, 400, { error: "missing_data" });
         return;
       }
-      const commaIdx = data.indexOf(",");
-      if (commaIdx >= 0) data = data.slice(commaIdx + 1);
+      const commaIdx = base64Data.indexOf(",");
+      if (commaIdx >= 0) base64Data = base64Data.slice(commaIdx + 1);
       const startTime = Date.now();
       try {
-        const buf = Buffer.from(data, "base64");
+        const buf = Buffer.from(base64Data, "base64");
         let wb;
         if (name.toLowerCase().endsWith(".csv")) {
           const detected = import_jschardet.default.detect(buf);
@@ -134107,9 +134369,21 @@ async function handle(req, res) {
           wb = XLSX.read(buf, { type: "buffer" });
         }
         const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet);
+        const allData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        let headers = [];
+        let data = [];
+        if (allData.length > 0) {
+          headers = allData[0].map((h) => String(h || ""));
+          data = allData.slice(1);
+        }
         await logCall({ action: "parse-excel", status: "OK", latency: Date.now() - startTime });
-        sendJson(req, res, 200, { rows });
+        sendJson(req, res, 200, {
+          headers,
+          data,
+          rowCount: data.length,
+          colCount: headers.length,
+          sheetName: wb.SheetNames[0]
+        });
       } catch (e) {
         await logCall({ action: "parse-excel", status: "FAIL", latency: Date.now() - startTime, errorMsg: e.message });
         sendJson(req, res, 500, { error: "parse_failed", message: e.message });
