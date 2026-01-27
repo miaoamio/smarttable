@@ -92,6 +92,7 @@ ${contextSection}
 
 ## 执行要求 (Execution Requirements)
 - 生成正好 ${rowCount} 行数据。
+- **表头元素控制**：除非用户明确要求（如“添加筛选”、“支持排序”）或参考图片中明显存在，否则表头 header 属性默认保持为空或 "none"，不要主动添加 filter/sort/info 图标。
 - 必须保持语言一致性（中文需求输出中文，英文需求输出英文）。
 - 只输出纯 JSON 对象。
 `.trim();

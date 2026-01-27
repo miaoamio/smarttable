@@ -2614,35 +2614,41 @@ async function applyColumnTypeToColumn(table: FrameNode, colIndex: number, type:
   // --- NEW: Convert Header to Custom Frame if needed ---
   if (offset > 0) {
     const headerNode = col.children[0];
-    const headerText = extractTextFromNode(headerNode);
-    const { component: iconComponent } = await resolveCellFactory(HEADER_ICON_COMPONENT_KEY);
     
-    let headerFrame: FrameNode;
-    if (headerNode.type === "FRAME" && headerNode.getPluginData("cellType") === "Header") {
-      headerFrame = headerNode as FrameNode;
+    // Check if headerNode is valid before accessing properties
+    if (!headerNode || headerNode.removed) {
+        console.warn("Skipping header conversion: headerNode is missing or removed");
     } else {
-      headerFrame = createCustomCellFrame(headerNode.name, "Header");
-      col.insertChild(0, headerFrame);
-      headerNode.remove();
-    }
-    
-    const savedHeaderType = headerNode.getPluginData("headerType") || col.getPluginData("headerType") || "none";
-    const { filter, sort, search, info } = headerPropsFromMode(savedHeaderType as HeaderMode);
-    
-    let iconType: "Filter" | "Sort" | "Search" | "Info" | undefined;
-    if (filter) iconType = "Filter";
-    else if (sort) iconType = "Sort";
-    else if (search) iconType = "Search";
-    else if (info) iconType = "Info";
+        const headerText = extractTextFromNode(headerNode);
+        const { component: iconComponent } = await resolveCellFactory(HEADER_ICON_COMPONENT_KEY);
+        
+        let headerFrame: FrameNode;
+        if (headerNode.type === "FRAME" && headerNode.getPluginData("cellType") === "Header") {
+          headerFrame = headerNode as FrameNode;
+        } else {
+          headerFrame = createCustomCellFrame(headerNode.name, "Header");
+          col.insertChild(0, headerFrame);
+          headerNode.remove();
+        }
+        
+        const savedHeaderType = headerFrame.getPluginData("headerType") || col.getPluginData("headerType") || "none";
+        const { filter, sort, search, info } = headerPropsFromMode(savedHeaderType as HeaderMode);
+        
+        let iconType: "Filter" | "Sort" | "Search" | "Info" | undefined;
+        if (filter) iconType = "Filter";
+        else if (sort) iconType = "Sort";
+        else if (search) iconType = "Search";
+        else if (info) iconType = "Info";
 
-    await renderHeaderCell(headerFrame, headerText, { iconType, iconComponent });
-    
-    // Ensure Plugin Data is preserved
-    headerFrame.setPluginData("headerType", savedHeaderType);
-    col.setPluginData("headerType", savedHeaderType);
-    headerFrame.layoutSizingHorizontal = "FILL";
-    if ("layoutAlign" in headerFrame) {
-      (headerFrame as any).layoutAlign = "STRETCH";
+        await renderHeaderCell(headerFrame, headerText, { iconType, iconComponent });
+        
+        // Ensure Plugin Data is preserved
+        headerFrame.setPluginData("headerType", savedHeaderType);
+        col.setPluginData("headerType", savedHeaderType);
+        headerFrame.layoutSizingHorizontal = "FILL";
+        if ("layoutAlign" in headerFrame) {
+          (headerFrame as any).layoutAlign = "STRETCH";
+        }
     }
   }
 
