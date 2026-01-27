@@ -73,6 +73,7 @@ export function distributePrompt(
     - **特殊例外**：仅当字段为专有名词缩写、ID 或用户有明确全大写要求时，才使用 **UPPERCASE**（例如："ID", "URL", "SKU"）。
 - **Avatar (头像)**: 专门用于展示人物或实体的列。在 JSON 中 type 应为 "Avatar"。
 - **ActionText (操作列)**: 专门用于展示“查看、编辑、删除”等操作的列。在 JSON 中 type 应为 "ActionText"。
+    - **特别要求**：如果操作项中包含“更多”，请务必使用 "..." 代替文字（系统会自动转换为“更多”图标样式）。
 - **Tag (标签)**: 用于展示状态信息。在 JSON 中 type 应为 "Tag"。
 - **Header (表头类型)**: 每一列的 "header" 字段支持以下四种带图标的模式：
     - "filter": 漏斗图标，表示可筛选。
