@@ -536,13 +536,31 @@ function isSmartTableFrame(table: FrameNode): boolean {
     const mark = table.getPluginData("smart_table");
     if (mark && mark.toLowerCase() === "true") return true;
     
-    // Check children structure: all children should be vertical frames
+    // Check name (case-insensitive and more flexible)
+    const name = table.name.toLowerCase();
+    if (name.includes("smart table") || name.includes("table")) return true;
+
+    // Check children structure: if it's a horizontal frame and has children
     if (table.layoutMode === "HORIZONTAL" && table.children.length > 0) {
-      const allVertical = table.children.every(c => c.type === "FRAME" && c.layoutMode === "VERTICAL");
-      if (allVertical) return true;
+      // If it contains any child with column-like plugin data
+      const hasColumnChild = table.children.some(c => {
+        if (c.type !== "FRAME") return false;
+        const role = c.getPluginData("role");
+        const cellType = c.getPluginData("cellType");
+        return role === "column" || cellType === "Header" || c.name.toLowerCase().includes("column");
+      });
+      if (hasColumnChild) return true;
+
+      // Or if the majority of children are vertical frames (columns)
+      const verticalFrames = table.children.filter(c => c.type === "FRAME" && c.layoutMode === "VERTICAL");
+      if (verticalFrames.length >= table.children.length / 2 && verticalFrames.length > 0) {
+        return true;
+      }
     }
-  } catch {}
-  return table.name.startsWith("Smart Table ") || table.name.startsWith("Table ");
+  } catch (e) {
+    console.warn("Error in isSmartTableFrame:", e);
+  }
+  return false;
 }
 
 function findColumnFrame(node: SceneNode): FrameNode | null {

@@ -1817,6 +1817,17 @@ tabButtons.forEach((btn) => {
       const data = btn.dataset.tab || "ai";
       console.log(`Tab clicked: ${data}`);
       const tab = data === "manual" ? "manual" : data === "debug" ? "debug" : "ai";
+      
+      // 当点击 Manual 标签时，强制刷新面板状态
+      if (tab === "manual") {
+          updatePanels();
+          // 如果有选中内容，确保显示 Edit 面板
+          if (hasSelection && manualEmptyPanel && manualEditPanel) {
+              manualEmptyPanel.classList.add("hidden");
+              manualEditPanel.classList.remove("hidden");
+          }
+      }
+      
       setActiveTab(tab);
     });
   });
@@ -1843,8 +1854,12 @@ window.onmessage = (event) => {
     updateSelectionLabel(msg.selectionKind, msg.selectionLabel, msg.selectionCell, msg.selectionColumn);
     updateManualSubPanel(msg.selectionKind);
     const currentTab = document.querySelector(".tab.active")?.getAttribute("data-tab");
-    if ((msg.tableContext || msg.isSmartTable) && currentTab !== "debug") {
-      setActiveTab("manual");
+    if ((msg.tableContext || msg.isSmartTable || hasSelection) && currentTab !== "debug") {
+      // 只有当当前没有选中的 tab，或者当前 tab 不是 debug 时才切换
+      // 并且只有当真正选中了某种元素时才切换
+      if (hasSelection && document.querySelector(".tab.active")?.getAttribute("data-tab") !== "manual") {
+          setActiveTab("manual");
+      }
     }
 
     if (msg.tableSize && tableSizeSelect) {
