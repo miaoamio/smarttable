@@ -834,78 +834,56 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
     }
 
     try {
-      const totalCalls = await prisma.callLog.count();
-      const failCount = await prisma.callLog.count({ where: { status: "FAIL" } });
-      const avgLatencyResult = await prisma.callLog.aggregate({
-        _avg: { latency: true }
-      });
-      const recentCalls = await prisma.callLog.findMany({
-        take: 20,
-        orderBy: { createdAt: "desc" }
-      });
+      const [
+        totalCalls,
+        failCount,
+        avgLatencyResult,
+        recentCalls,
+        distribution,
+        errorAgg,
+        userGroups,
+        launchCount,
+        createStats,
+        modifyStats
+      ] = await Promise.all([
+        prisma.callLog.count(),
+        prisma.callLog.count({ where: { status: "FAIL" } }),
+        prisma.callLog.aggregate({ _avg: { latency: true } }),
+        prisma.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } }),
+        prisma.callLog.groupBy({ by: ['action'], _count: { _all: true } }),
+        prisma.callLog.groupBy({ where: { status: "FAIL", errorMsg: { not: null } }, by: ['errorMsg'], _count: { _all: true }, _max: { createdAt: true } }),
+        prisma.callLog.groupBy({ by: ['userId'] }),
+        prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }),
+        prisma.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }),
+        prisma.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } })
+      ]);
 
-      // Simple tool distribution
-      const distribution = await prisma.callLog.groupBy({
-        by: ['action'],
-        _count: {
-          _all: true
-        }
-      });
-
-      const toolDistribution = distribution.reduce((acc: any, curr: any) => {
+      const toolDistribution = (distribution as any[]).reduce((acc: any, curr: any) => {
         acc[curr.action] = curr._count._all;
         return acc;
       }, {});
 
-      // Error distribution (aggregated errors)
-      const errorAgg = await prisma.callLog.groupBy({
-        where: { status: "FAIL", errorMsg: { not: null } },
-        by: ['errorMsg'],
-        _count: {
-          _all: true
-        },
-        _max: {
-          createdAt: true
-        }
-      });
-
-      const errorDistribution = errorAgg.map((curr: any) => ({
+      const errorDistribution = (errorAgg as any[]).map((curr: any) => ({
         message: curr.errorMsg,
         count: curr._count._all,
         lastSeen: curr._max.createdAt
       })).sort((a: any, b: any) => b.count - a.count);
 
-      // New statistics
-      const userCountResult = await prisma.$queryRaw`SELECT COUNT(DISTINCT "userId") as count FROM "CallLog"`;
-      const userCount = Number((userCountResult as any)[0]?.count || 0);
-      
-      const launchCount = await prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } });
-      
-      const createStats = await prisma.callLog.aggregate({
-        where: { action: "CREATE_TABLE", status: "OK" },
-        _avg: { latency: true },
-        _count: { _all: true }
-      });
-      
-      const modifyStats = await prisma.callLog.aggregate({
-        where: { action: "MODIFY_TABLE", status: "OK" },
-        _avg: { latency: true },
-        _count: { _all: true }
-      });
+      const userCount = userGroups.length;
 
       sendJson(req, res, 200, {
         totalCalls,
         failCount,
-        avgLatency: Math.round(avgLatencyResult._avg.latency || 0),
+        avgLatency: Math.round((avgLatencyResult as any)._avg.latency || 0),
         recentCalls,
         toolDistribution,
         errorDistribution,
         userCount,
         launchCount,
-        createCount: createStats._count._all,
-        avgCreateTime: Math.round(createStats._avg.latency || 0),
-        modifyCount: modifyStats._count._all,
-        avgModifyTime: Math.round(modifyStats._avg.latency || 0)
+        createCount: (createStats as any)._count._all,
+        avgCreateTime: Math.round((createStats as any)._avg.latency || 0),
+        modifyCount: (modifyStats as any)._count._all,
+        avgModifyTime: Math.round((modifyStats as any)._avg.latency || 0)
       });
     } catch (e: any) {
       sendJson(req, res, 500, { error: "Failed to fetch stats", message: e.message });
