@@ -457,7 +457,9 @@ tr:last-child td{border-bottom:none}
     <div class="layout">
       <div class="card">
         <div style="font-weight:600;margin-bottom:20px;font-size:15px">功能使用分布</div>
-        <div id="distribution-container"></div>
+        <div id="distribution-container">
+            <div style="color:var(--text-secondary);font-size:13px;padding:20px;text-align:center">暂无数据</div>
+        </div>
       </div>
       <div class="card">
         <div style="font-weight:600;margin-bottom:20px;font-size:15px">近期活动日志</div>
@@ -471,7 +473,9 @@ tr:last-child td{border-bottom:none}
                 <th>耗时</th>
               </tr>
             </thead>
-            <tbody id="logs-body"></tbody>
+            <tbody id="logs-body">
+                <tr><td colspan="4" style="text-align:center;color:var(--text-secondary);padding:20px">暂无活动记录</td></tr>
+            </tbody>
           </table>
         </div>
       </div>
@@ -705,6 +709,10 @@ function renderErrors(errors) {
 function renderLogs(logs) {
   if(!logsBody) return;
   logsBody.innerHTML = "";
+  if(logs.length === 0) {
+      logsBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-secondary);padding:20px">暂无活动记录</td></tr>';
+      return;
+  }
   logs.forEach(log => {
     var tr = document.createElement("tr");
     tr.innerHTML = \`
@@ -722,6 +730,12 @@ function renderDistribution(dist) {
   if(!container) return;
   container.innerHTML = "";
   const entries = Object.entries(dist).sort((a,b) => (b[1]) - (a[1]));
+  
+  if(entries.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-secondary);font-size:13px;padding:20px;text-align:center">暂无数据</div>';
+      return;
+  }
+
   const max = entries.length > 0 ? entries[0][1] : 1;
   
   entries.forEach(([action, count]) => {

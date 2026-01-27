@@ -134206,7 +134206,9 @@ tr:last-child td{border-bottom:none}
     <div class="layout">
       <div class="card">
         <div style="font-weight:600;margin-bottom:20px;font-size:15px">\u529F\u80FD\u4F7F\u7528\u5206\u5E03</div>
-        <div id="distribution-container"></div>
+        <div id="distribution-container">
+            <div style="color:var(--text-secondary);font-size:13px;padding:20px;text-align:center">\u6682\u65E0\u6570\u636E</div>
+        </div>
       </div>
       <div class="card">
         <div style="font-weight:600;margin-bottom:20px;font-size:15px">\u8FD1\u671F\u6D3B\u52A8\u65E5\u5FD7</div>
@@ -134220,7 +134222,9 @@ tr:last-child td{border-bottom:none}
                 <th>\u8017\u65F6</th>
               </tr>
             </thead>
-            <tbody id="logs-body"></tbody>
+            <tbody id="logs-body">
+                <tr><td colspan="4" style="text-align:center;color:var(--text-secondary);padding:20px">\u6682\u65E0\u6D3B\u52A8\u8BB0\u5F55</td></tr>
+            </tbody>
           </table>
         </div>
       </div>
@@ -134450,6 +134454,10 @@ function renderErrors(errors) {
 function renderLogs(logs) {
   if(!logsBody) return;
   logsBody.innerHTML = "";
+  if(logs.length === 0) {
+      logsBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-secondary);padding:20px">\u6682\u65E0\u6D3B\u52A8\u8BB0\u5F55</td></tr>';
+      return;
+  }
   logs.forEach(log => {
     var tr = document.createElement("tr");
     tr.innerHTML = \`
@@ -134467,6 +134475,12 @@ function renderDistribution(dist) {
   if(!container) return;
   container.innerHTML = "";
   const entries = Object.entries(dist).sort((a,b) => (b[1]) - (a[1]));
+  
+  if(entries.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-secondary);font-size:13px;padding:20px;text-align:center">\u6682\u65E0\u6570\u636E</div>';
+      return;
+  }
+
   const max = entries.length > 0 ? entries[0][1] : 1;
   
   entries.forEach(([action, count]) => {
