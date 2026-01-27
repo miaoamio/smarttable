@@ -255,7 +255,7 @@ const adminPageHtml = `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>Figma AI 插件管理后台</title>
+<title>VED UI Agent 管理中心</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root {
@@ -316,7 +316,7 @@ tr:last-child td{border-bottom:none}
 <header class="header">
   <h1>
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2ZM12 4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20C7.58172 20 4 16.4183 4 12C4 7.58172 7.58172 4 12 4ZM11 7V11H7V13H11V17H13V13H17V11H13V7H11Z" fill="currentColor"/></svg>
-    Figma AI Gateway Admin
+    VED UI Agent 管理中心
   </h1>
 </header>
 
@@ -329,16 +329,32 @@ tr:last-child td{border-bottom:none}
   <div id="stats-section">
     <div class="stats-grid">
       <div class="stat-item">
-        <div class="stat-label">Total Calls</div>
-        <div id="stat-total" class="stat-value">-</div>
+        <div class="stat-label">Total Users</div>
+        <div id="stat-users" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Plugin Launches</div>
+        <div id="stat-launches" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Create Table</div>
+        <div id="stat-create-count" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Avg Create Time</div>
+        <div id="stat-create-time" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Modify Table</div>
+        <div id="stat-modify-count" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Avg Modify Time</div>
+        <div id="stat-modify-time" class="stat-value">-</div>
       </div>
       <div class="stat-item">
         <div class="stat-label">Failures</div>
         <div id="stat-fails" class="stat-value" style="color:var(--danger-color)">-</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-label">Avg Latency</div>
-        <div id="stat-latency" class="stat-value">-</div>
       </div>
       <div class="stat-item">
         <div class="stat-label">Success Rate</div>
@@ -487,10 +503,16 @@ function loadStats() {
       renderErrors(data.errorDistribution || []);
       
       // Update summary counters
-      document.getElementById("stat-total").textContent = data.totalCalls || 0;
+      document.getElementById("stat-users").textContent = data.userCount || 0;
+      document.getElementById("stat-launches").textContent = data.launchCount || 0;
+      document.getElementById("stat-create-count").textContent = data.createCount || 0;
+      document.getElementById("stat-create-time").textContent = (data.avgCreateTime || 0) + "ms";
+      document.getElementById("stat-modify-count").textContent = data.modifyCount || 0;
+      document.getElementById("stat-modify-time").textContent = (data.avgModifyTime || 0) + "ms";
       document.getElementById("stat-fails").textContent = data.failCount || 0;
-      document.getElementById("stat-latency").textContent = (data.avgLatency || 0) + "ms";
-      const rate = data.totalCalls ? Math.round(((data.totalCalls - data.failCount) / data.totalCalls) * 100) : 100;
+      
+      const total = data.totalCalls || 0;
+      const rate = total > 0 ? (((total - data.failCount) / total) * 100).toFixed(1) : "100";
       document.getElementById("stat-rate").textContent = rate + "%";
     });
 }
@@ -695,6 +717,32 @@ const server = http.createServer(async (req, res) => {
         sendJson(req, res, 200, { ok: true });
         return;
     }
+    if (req.method === "POST" && url.pathname === "/log") {
+        let body;
+        try {
+            body = await readJson(req);
+        }
+        catch (e) {
+            sendJson(req, res, 400, { error: "invalid_body" });
+            return;
+        }
+        const { userId, action, status, latency, errorMsg, prompt, llmResponse } = body;
+        if (!action) {
+            sendJson(req, res, 400, { error: "missing_action" });
+            return;
+        }
+        await logCall({
+            userId: userId || "anonymous",
+            action,
+            status: status || "OK",
+            latency: Number(latency) || 0,
+            errorMsg,
+            prompt: typeof prompt === 'string' ? prompt : JSON.stringify(prompt),
+            llmResponse
+        });
+        sendJson(req, res, 200, { ok: true });
+        return;
+    }
     if ((req.method === "GET" || req.method === "HEAD") && (url.pathname === "/admin" || url.pathname === "/admin/components")) {
         const auth = authenticate(req);
         if (!auth.ok) {
@@ -727,6 +775,13 @@ const server = http.createServer(async (req, res) => {
                 avgLatency: 0,
                 recentCalls: [],
                 toolDistribution: {},
+                errorDistribution: [],
+                userCount: 0,
+                launchCount: 0,
+                createCount: 0,
+                avgCreateTime: 0,
+                modifyCount: 0,
+                avgModifyTime: 0,
                 message: "Database not configured"
             });
             return;
@@ -763,23 +818,69 @@ const server = http.createServer(async (req, res) => {
                     createdAt: true
                 }
             });
-            const errorDistribution = errorAgg.map(curr => ({
+            const errorDistribution = errorAgg.map((curr) => ({
                 message: curr.errorMsg,
                 count: curr._count._all,
                 lastSeen: curr._max.createdAt
             })).sort((a, b) => b.count - a.count);
+            // New statistics
+            const userCountResult = await prisma.$queryRaw `SELECT COUNT(DISTINCT "userId") as count FROM "CallLog"`;
+            const userCount = Number(userCountResult[0]?.count || 0);
+            const launchCount = await prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } });
+            const createStats = await prisma.callLog.aggregate({
+                where: { action: "CREATE_TABLE", status: "OK" },
+                _avg: { latency: true },
+                _count: { _all: true }
+            });
+            const modifyStats = await prisma.callLog.aggregate({
+                where: { action: "MODIFY_TABLE", status: "OK" },
+                _avg: { latency: true },
+                _count: { _all: true }
+            });
             sendJson(req, res, 200, {
                 totalCalls,
                 failCount,
                 avgLatency: Math.round(avgLatencyResult._avg.latency || 0),
                 recentCalls,
                 toolDistribution,
-                errorDistribution
+                errorDistribution,
+                userCount,
+                launchCount,
+                createCount: createStats._count._all,
+                avgCreateTime: Math.round(createStats._avg.latency || 0),
+                modifyCount: modifyStats._count._all,
+                avgModifyTime: Math.round(modifyStats._avg.latency || 0)
             });
         }
         catch (e) {
             sendJson(req, res, 500, { error: "Failed to fetch stats", message: e.message });
         }
+        return;
+    }
+    if (req.method === "POST" && url.pathname === "/log") {
+        let body;
+        try {
+            body = await readJson(req);
+        }
+        catch (e) {
+            sendJson(req, res, 400, { error: "invalid_body" });
+            return;
+        }
+        const { userId, action, status, latency, errorMsg, prompt, llmResponse } = body;
+        if (!action) {
+            sendJson(req, res, 400, { error: "missing_action" });
+            return;
+        }
+        await logCall({
+            userId: userId || "anonymous",
+            action,
+            status: status || "OK",
+            latency: Number(latency) || 0,
+            errorMsg,
+            prompt: typeof prompt === 'string' ? prompt : JSON.stringify(prompt),
+            llmResponse
+        });
+        sendJson(req, res, 200, { ok: true });
         return;
     }
     const rateKey = getClientKey(req, auth.subject);
