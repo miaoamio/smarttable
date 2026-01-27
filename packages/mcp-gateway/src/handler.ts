@@ -751,16 +751,21 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
       if (!action) { sendJson(req, res, 400, { error: "missing_action" }); return; }
       
       console.log(`Received log: action=${action}, status=${status}, latency=${latency}, userId=${userId}`);
+      
+      try {
+        await logCall({
+          userId: userId || "anonymous",
+          action,
+          status: status || "OK",
+          latency: Number(latency) || 0,
+          errorMsg,
+          prompt: typeof prompt === 'string' ? prompt : (prompt ? JSON.stringify(prompt) : undefined),
+          llmResponse: llmResponse ? (typeof llmResponse === 'string' ? llmResponse : JSON.stringify(llmResponse)) : undefined
+        });
+      } catch (err) {
+        console.error("logCall failed:", err);
+      }
 
-      await logCall({
-        userId: userId || "anonymous",
-        action,
-        status: status || "OK",
-        latency: Number(latency) || 0,
-        errorMsg,
-        prompt: typeof prompt === 'string' ? prompt : (prompt ? JSON.stringify(prompt) : undefined),
-        llmResponse: llmResponse ? (typeof llmResponse === 'string' ? llmResponse : JSON.stringify(llmResponse)) : undefined
-      });
       sendJson(req, res, 200, { ok: true });
       return;
     }

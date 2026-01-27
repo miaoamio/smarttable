@@ -1899,7 +1899,8 @@ async function renderActionCell(
     
     // Apply size and color to more icon
     iconInst.resize(16, 16);
-    const fillColor = hexToRgb(TOKENS.colors["color-fill-2"]);
+    // Force color to link-6 (blue) for the more icon, instead of fill-2 (grey)
+    const fillColor = hexToRgb(TOKENS.colors["link-6"]);
     const applyColor = (node: SceneNode) => {
       const isVectorPart = node.type === "VECTOR" || 
                          node.type === "BOOLEAN_OPERATION" || 
@@ -4860,6 +4861,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
   if (message.type === "ai_apply_envelope") {
     setProcessing(true);
     const env = message.envelope;
+    const startTime = Date.now();
     try {
       if (env.intent === "create") {
         const { rows, cols, rowAction } = env.schema;
@@ -4874,6 +4876,18 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
         });
 
         if (table) {
+          const duration = Date.now() - startTime;
+          figma.ui.postMessage({ 
+            type: "log", 
+            action: "CREATE_TABLE", 
+            duration, 
+            userId: figma.currentUser?.id || "anonymous",
+            metadata: { 
+              rows, 
+              cols, 
+              rowAction
+            }
+          });
           postStatus("表格已生成成功");
           figma.ui.postMessage({ type: "ai_apply_envelope_done" });
         }
@@ -4900,12 +4914,33 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
           await applyOperationToTable(table, op);
           await yieldToMain();
         }
+        
+        const duration = Date.now() - startTime;
+        figma.ui.postMessage({ 
+          type: "log", 
+          action: "MODIFY_TABLE", 
+          duration, 
+          userId: figma.currentUser?.id || "anonymous",
+          metadata: { 
+            opCount: env.patch.operations.length
+          }
+        });
+
         figma.ui.postMessage({ type: "edit_completed" });
         figma.ui.postMessage({ type: "ai_apply_envelope_done" });
         figma.notify("已应用增量变更");
       }
     } catch (e: any) {
       const msg = e?.message ? String(e.message) : String(e);
+      const duration = Date.now() - startTime;
+      figma.ui.postMessage({ 
+        type: "log", 
+        action: env.intent === "create" ? "CREATE_TABLE" : "MODIFY_TABLE", 
+        duration, 
+        status: "FAIL",
+        error: msg,
+        userId: figma.currentUser?.id || "anonymous"
+      });
       figma.notify("Envelope 应用失败: " + msg);
       postError(msg);
       figma.ui.postMessage({ type: "ai_apply_envelope_done" }); // Also reset on error

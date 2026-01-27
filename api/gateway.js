@@ -134471,15 +134471,19 @@ async function handle(req, res) {
         return;
       }
       console.log(`Received log: action=${action}, status=${status}, latency=${latency}, userId=${userId}`);
-      await logCall({
-        userId: userId || "anonymous",
-        action,
-        status: status || "OK",
-        latency: Number(latency) || 0,
-        errorMsg,
-        prompt: typeof prompt === "string" ? prompt : prompt ? JSON.stringify(prompt) : void 0,
-        llmResponse: llmResponse ? typeof llmResponse === "string" ? llmResponse : JSON.stringify(llmResponse) : void 0
-      });
+      try {
+        await logCall({
+          userId: userId || "anonymous",
+          action,
+          status: status || "OK",
+          latency: Number(latency) || 0,
+          errorMsg,
+          prompt: typeof prompt === "string" ? prompt : prompt ? JSON.stringify(prompt) : void 0,
+          llmResponse: llmResponse ? typeof llmResponse === "string" ? llmResponse : JSON.stringify(llmResponse) : void 0
+        });
+      } catch (err) {
+        console.error("logCall failed:", err);
+      }
       sendJson(req, res, 200, { ok: true });
       return;
     }
@@ -134533,6 +134537,53 @@ async function handle(req, res) {
       }
       try {
         console.log("Fetching stats from database...");
+        const statsPromises = [
+          db_default.callLog.count().catch((err) => {
+            console.error("Error counting totalCalls:", err);
+            return 0;
+          }),
+          db_default.callLog.count({ where: { status: "FAIL" } }).catch((err) => {
+            console.error("Error counting failCount:", err);
+            return 0;
+          }),
+          db_default.callLog.aggregate({ _avg: { latency: true } }).catch((err) => {
+            console.error("Error aggregating latency:", err);
+            return { _avg: { latency: 0 } };
+          }),
+          db_default.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } }).catch((err) => {
+            console.error("Error fetching recentCalls:", err);
+            return [];
+          }),
+          db_default.callLog.groupBy({ by: ["action"], _count: { _all: true } }).catch((err) => {
+            console.error("Error grouping by action:", err);
+            return [];
+          }),
+          db_default.callLog.groupBy({
+            where: { status: "FAIL", errorMsg: { not: null } },
+            by: ["errorMsg"],
+            _count: { _all: true },
+            _max: { createdAt: true }
+          }).catch((err) => {
+            console.error("Error grouping errors:", err);
+            return [];
+          }),
+          db_default.callLog.groupBy({ by: ["userId"] }).then((r) => r.length).catch((err) => {
+            console.error("Error counting users:", err);
+            return 0;
+          }),
+          db_default.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }).catch((err) => {
+            console.error("Error counting launches:", err);
+            return 0;
+          }),
+          db_default.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }).catch((err) => {
+            console.error("Error aggregating createStats:", err);
+            return { _avg: { latency: 0 }, _count: { _all: 0 } };
+          }),
+          db_default.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }).catch((err) => {
+            console.error("Error aggregating modifyStats:", err);
+            return { _avg: { latency: 0 }, _count: { _all: 0 } };
+          })
+        ];
         const [
           totalCalls,
           failCount,
@@ -134544,23 +134595,7 @@ async function handle(req, res) {
           launchCount,
           createStats,
           modifyStats
-        ] = await Promise.all([
-          db_default.callLog.count(),
-          db_default.callLog.count({ where: { status: "FAIL" } }),
-          db_default.callLog.aggregate({ _avg: { latency: true } }),
-          db_default.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } }),
-          db_default.callLog.groupBy({ by: ["action"], _count: { _all: true } }),
-          db_default.callLog.groupBy({
-            where: { status: "FAIL", errorMsg: { not: null } },
-            by: ["errorMsg"],
-            _count: { _all: true },
-            _max: { createdAt: true }
-          }),
-          db_default.callLog.groupBy({ by: ["userId"] }).then((r) => r.length),
-          db_default.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }),
-          db_default.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }),
-          db_default.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } })
-        ]);
+        ] = await Promise.all(statsPromises);
         console.log("Stats fetched successfully.");
         const errorDistribution = errorList.map((curr) => ({
           message: curr.errorMsg,
@@ -134570,16 +134605,16 @@ async function handle(req, res) {
         sendJson(req, res, 200, {
           totalCalls,
           failCount,
-          avgLatency: Math.round(avgLatencyResult._avg.latency || 0),
+          avgLatency: Math.round(avgLatencyResult._avg?.latency || 0),
           recentCalls,
           toolDistribution: Object.fromEntries(distribution.map((d) => [d.action, d._count._all])),
           errorDistribution,
           userCount,
           launchCount,
-          createCount: createStats._count._all,
-          avgCreateTime: Math.round(createStats._avg.latency || 0),
-          modifyCount: modifyStats._count._all,
-          avgModifyTime: Math.round(modifyStats._avg.latency || 0)
+          createCount: createStats._count?._all || 0,
+          avgCreateTime: Math.round(createStats._avg?.latency || 0),
+          modifyCount: modifyStats._count?._all || 0,
+          avgModifyTime: Math.round(modifyStats._avg?.latency || 0)
         });
       } catch (e) {
         console.error("Failed to fetch stats:", e);
@@ -134840,3 +134875,4 @@ xlsx/xlsx.js:
   (*! sheetjs (C) 2013-present SheetJS -- http://sheetjs.com *)
 */
 export default handle;
+//# sourceMappingURL=gateway.js.map

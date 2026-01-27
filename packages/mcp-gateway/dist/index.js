@@ -787,56 +787,28 @@ const server = http.createServer(async (req, res) => {
             return;
         }
         try {
-            const totalCalls = await prisma.callLog.count();
-            const failCount = await prisma.callLog.count({ where: { status: "FAIL" } });
-            const avgLatencyResult = await prisma.callLog.aggregate({
-                _avg: { latency: true }
-            });
-            const recentCalls = await prisma.callLog.findMany({
-                take: 20,
-                orderBy: { createdAt: "desc" }
-            });
-            // Simple tool distribution
-            const distribution = await prisma.callLog.groupBy({
-                by: ['action'],
-                _count: {
-                    _all: true
-                }
-            });
+            const [totalCalls, failCount, avgLatencyResult, recentCalls, distribution, errorAgg, userGroups, launchCount, createStats, modifyStats] = await Promise.all([
+                prisma.callLog.count(),
+                prisma.callLog.count({ where: { status: "FAIL" } }),
+                prisma.callLog.aggregate({ _avg: { latency: true } }),
+                prisma.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } }),
+                prisma.callLog.groupBy({ by: ['action'], _count: { _all: true } }),
+                prisma.callLog.groupBy({ where: { status: "FAIL", errorMsg: { not: null } }, by: ['errorMsg'], _count: { _all: true }, _max: { createdAt: true } }),
+                prisma.callLog.groupBy({ by: ['userId'] }),
+                prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }),
+                prisma.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }),
+                prisma.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } })
+            ]);
             const toolDistribution = distribution.reduce((acc, curr) => {
                 acc[curr.action] = curr._count._all;
                 return acc;
             }, {});
-            // Error distribution (aggregated errors)
-            const errorAgg = await prisma.callLog.groupBy({
-                where: { status: "FAIL", errorMsg: { not: null } },
-                by: ['errorMsg'],
-                _count: {
-                    _all: true
-                },
-                _max: {
-                    createdAt: true
-                }
-            });
             const errorDistribution = errorAgg.map((curr) => ({
                 message: curr.errorMsg,
                 count: curr._count._all,
                 lastSeen: curr._max.createdAt
             })).sort((a, b) => b.count - a.count);
-            // New statistics
-            const userCountResult = await prisma.$queryRaw `SELECT COUNT(DISTINCT "userId") as count FROM "CallLog"`;
-            const userCount = Number(userCountResult[0]?.count || 0);
-            const launchCount = await prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } });
-            const createStats = await prisma.callLog.aggregate({
-                where: { action: "CREATE_TABLE", status: "OK" },
-                _avg: { latency: true },
-                _count: { _all: true }
-            });
-            const modifyStats = await prisma.callLog.aggregate({
-                where: { action: "MODIFY_TABLE", status: "OK" },
-                _avg: { latency: true },
-                _count: { _all: true }
-            });
+            const userCount = userGroups.length;
             sendJson(req, res, 200, {
                 totalCalls,
                 failCount,
