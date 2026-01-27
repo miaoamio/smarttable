@@ -30,7 +30,9 @@
       "continue": true
     },
     { "src": "/admin", "dest": "/api/gateway.js" },
+    { "src": "/admin/stats", "dest": "/api/gateway.js" },
     { "src": "/admin/components", "dest": "/api/gateway.js" },
+    { "src": "/log", "dest": "/api/gateway.js" },
     { "src": "/components", "dest": "/api/gateway.js" },
     { "src": "/components/.*", "dest": "/api/gateway.js" },
     { "src": "/files/upload", "dest": "/api/gateway.js" },

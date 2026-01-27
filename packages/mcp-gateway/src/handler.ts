@@ -1,8 +1,6 @@
-import http from "node:http";
+import * as http from "node:http";
 import path from "node:path";
 import crypto from "node:crypto";
-import fs from "node:fs";
-import { fileURLToPath } from "node:url";
 
 import * as XLSX from "xlsx";
 import jschardet from "jschardet";
@@ -13,9 +11,6 @@ import { CallToolResultSchema, ListToolsResultSchema } from "@modelcontextprotoc
 
 import { initialComponents } from "./component-config.js";
 import prisma from "./db.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 let mcpClient: Client | null = null;
 let mcpConnecting: Promise<Client> | null = null;
@@ -312,7 +307,7 @@ const adminPageHtml = `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>Figma AI 插件管理后台</title>
+<title>VED UI Agent 管理中心</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root {
@@ -373,7 +368,7 @@ tr:last-child td{border-bottom:none}
 <header class="header">
   <h1>
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2ZM12 4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20C7.58172 20 4 16.4183 4 12C4 7.58172 7.58172 4 12 4ZM11 7V11H7V13H11V17H13V13H17V11H13V7H11Z" fill="currentColor"/></svg>
-    Figma AI Gateway Admin
+    VED UI Agent 管理中心
   </h1>
 </header>
 
@@ -386,16 +381,32 @@ tr:last-child td{border-bottom:none}
   <div id="stats-section">
     <div class="stats-grid">
       <div class="stat-item">
-        <div class="stat-label">Total Calls</div>
-        <div id="stat-total" class="stat-value">-</div>
+        <div class="stat-label">Total Users</div>
+        <div id="stat-users" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Plugin Launches</div>
+        <div id="stat-launches" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Create Table</div>
+        <div id="stat-create-count" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Avg Create Time</div>
+        <div id="stat-create-time" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Modify Table</div>
+        <div id="stat-modify-count" class="stat-value">-</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Avg Modify Time</div>
+        <div id="stat-modify-time" class="stat-value">-</div>
       </div>
       <div class="stat-item">
         <div class="stat-label">Failures</div>
         <div id="stat-fails" class="stat-value" style="color:var(--danger-color)">-</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-label">Avg Latency</div>
-        <div id="stat-latency" class="stat-value">-</div>
       </div>
       <div class="stat-item">
         <div class="stat-label">Success Rate</div>
@@ -530,7 +541,7 @@ function loadStats() {
   fetch("/admin/stats")
     .then(res => {
       if(res.status === 401) {
-        window.location.reload(); // Trigger popup if session expired
+        window.location.reload();
         return;
       }
       return res.json();
@@ -538,6 +549,12 @@ function loadStats() {
     .then(data => {
       if(!data) return;
       if(data.error) { setStatus(data.error, "error"); return; }
+      
+      renderLogs(data.recentCalls || []);
+      renderDistribution(data.toolDistribution || {});
+      renderErrors(data.errorDistribution || []);
+      
+      // Update summary counters
       document.getElementById("stat-users").textContent = data.userCount || 0;
       document.getElementById("stat-launches").textContent = data.launchCount || 0;
       document.getElementById("stat-create-count").textContent = data.createCount || 0;
@@ -549,36 +566,63 @@ function loadStats() {
       const total = data.totalCalls || 0;
       const rate = total > 0 ? (((total - data.failCount) / total) * 100).toFixed(1) : "100";
       document.getElementById("stat-rate").textContent = rate + "%";
-      
-      logsBody.innerHTML = (data.recentCalls || []).map(log => \`
-        <tr>
-          <td style="font-size:12px;color:var(--text-secondary)">\${new Date(log.createdAt).toLocaleString()}</td>
-          <td class="key-cell">\${log.action}</td>
-          <td><span class="tag \${log.status === 'OK' ? 'tag-success' : 'tag-fail'}">\${log.status}</span></td>
-          <td>\${log.latency}ms</td>
-        </tr>
-      \`).join("");
-
-      errorsBody.innerHTML = (data.errorDistribution || []).map(err => \`
-        <tr>
-          <td style="color:var(--danger-color);font-size:13px">\${err.message}</td>
-          <td style="font-weight:600">\${err.count}</td>
-          <td style="font-size:12px;color:var(--text-secondary)">\${new Date(err.lastSeen).toLocaleString()}</td>
-        </tr>
-      \`).join("");
     });
 }
 
-function loadComponents(){
-  fetch("/components").then(res => {
-    if(res.status === 401) {
-      window.location.reload();
-      return;
-    }
-    return res.json();
-  }).then(json => {
-    if(!json) return;
-    renderList(json.items||[]);
+function renderErrors(errors) {
+  if(!errorsBody) return;
+  errorsBody.innerHTML = "";
+  if(errors.length === 0) {
+    errorsBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-secondary);padding:20px">No errors recorded</td></tr>';
+    return;
+  }
+  errors.forEach(err => {
+      var tr = document.createElement("tr");
+      tr.innerHTML = " \
+        <td style='font-family:Menlo,monospace;font-size:12px;color:var(--danger-color);word-break:break-all'>" + err.message + "</td> \
+        <td style='font-weight:600;text-align:center'>" + err.count + "</td> \
+        <td style='color:var(--text-secondary);font-size:12px'>" + new Date(err.lastSeen).toLocaleString() + "</td> \
+      ";
+      errorsBody.appendChild(tr);
+    });
+}
+
+function renderLogs(logs) {
+  if(!logsBody) return;
+  logsBody.innerHTML = "";
+  logs.forEach(log => {
+    var tr = document.createElement("tr");
+    tr.innerHTML = \`
+      <td style="color:var(--text-secondary);font-size:12px">\${new Date(log.createdAt).toLocaleTimeString()}</td>
+      <td style="font-weight:500;font-size:13px">\${log.action.replace('TOOL_CALL:', '')}</td>
+      <td><span class="tag \${log.status==='SUCCESS' || log.status==='OK' ?'tag-success':'tag-fail'}">\${log.status}</span></td>
+      <td style="font-size:13px">\${log.latency}ms</td>
+    \`;
+    logsBody.appendChild(tr);
+  });
+}
+
+function renderDistribution(dist) {
+  const container = document.getElementById("distribution-container");
+  if(!container) return;
+  container.innerHTML = "";
+  const entries = Object.entries(dist).sort((a,b) => (b[1]) - (a[1]));
+  const max = entries.length > 0 ? entries[0][1] : 1;
+  
+  entries.forEach(([action, count]) => {
+    const barWidth = Math.max(5, (count / max) * 100);
+    const div = document.createElement("div");
+    div.style.marginBottom = "16px";
+    div.innerHTML = \`
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+        <span style="font-weight:500">\${action.replace('TOOL_CALL:', '')}</span>
+        <span style="color:var(--text-secondary)">\${count}</span>
+      </div>
+      <div style="height:6px;background:var(--secondary-bg);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:\${barWidth}%;background:var(--accent-color);border-radius:3px"></div>
+      </div>
+    \`;
+    container.appendChild(div);
   });
 }
 
@@ -601,11 +645,25 @@ window.editItem = function(key, config) {
   editKey.value = key;
   editFigmaKey.value = config.figma?.componentKey || "";
   editVariants.value = JSON.stringify(config.variants || [], null, 2);
+  // Clean up config for general props display
   const displayConfig = {...config};
   delete displayConfig.variants;
   editConfig.value = JSON.stringify(displayConfig, null, 2);
   document.getElementById("configs-section").scrollIntoView({behavior: "smooth"});
 };
+
+function loadComponents(){
+  fetch("/components").then(res => {
+    if(res.status === 401) {
+      window.location.reload();
+      return;
+    }
+    return res.json();
+  }).then(json => {
+    if(!json) return;
+    renderList(json.items||[]);
+  });
+}
 
 function createOrUpdateComponent(){
   var key=editKey.value.trim();
@@ -621,7 +679,7 @@ function createOrUpdateComponent(){
       cfg.figma.componentKey = figmaKey;
     }
     setStatus("Saving...");
-    fetch("/components",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key:key,props:cfg})})
+    fetch("/components",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key:key,config:cfg})})
       .then(res => res.json())
       .then(() => { setStatus("Saved successfully"); loadComponents(); });
   }catch(e){ setStatus("Invalid JSON: "+e.message, "error"); }
@@ -665,6 +723,28 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
+    if (req.method === "POST" && url.pathname === "/log") {
+      let body: any;
+      try { body = await readJson(req); } catch (e: any) {
+        sendJson(req, res, 400, { error: "invalid_body" });
+        return;
+      }
+      const { userId, action, status, latency, errorMsg, prompt, llmResponse } = body;
+      if (!action) { sendJson(req, res, 400, { error: "missing_action" }); return; }
+      
+      await logCall({
+        userId: userId || "anonymous",
+        action,
+        status: status || "OK",
+        latency: Number(latency) || 0,
+        errorMsg,
+        prompt: typeof prompt === 'string' ? prompt : JSON.stringify(prompt),
+        llmResponse
+      });
+      sendJson(req, res, 200, { ok: true });
+      return;
+    }
+
     if ((req.method === "GET" || req.method === "HEAD") && (url.pathname === "/admin" || url.pathname === "/admin/components")) {
       const auth = authenticate(req);
       if (!auth.ok) {
@@ -696,7 +776,21 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
 
     if (req.method === "GET" && url.pathname === "/admin/stats") {
       if (!process.env.DATABASE_URL) {
-        sendJson(req, res, 200, { totalCalls: 0, failCount: 0, avgLatency: 0, recentCalls: [], toolDistribution: {}, errorDistribution: [], message: "Database not configured" });
+        sendJson(req, res, 200, { 
+          totalCalls: 0, 
+          failCount: 0, 
+          avgLatency: 0, 
+          recentCalls: [], 
+          toolDistribution: {}, 
+          errorDistribution: [], 
+          userCount: 0,
+          launchCount: 0,
+          createCount: 0,
+          avgCreateTime: 0,
+          modifyCount: 0,
+          avgModifyTime: 0,
+          message: "Database not configured" 
+        });
         return;
       }
       try {
@@ -745,28 +839,6 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
         console.error("Stats error:", e);
         sendJson(req, res, 500, { error: "Failed to fetch stats", message: e.message });
       }
-      return;
-    }
-
-    if (req.method === "POST" && url.pathname === "/log") {
-      let body: any;
-      try { body = await readJson(req); } catch (e: any) {
-        sendJson(req, res, 400, { error: "invalid_body" });
-        return;
-      }
-      const { userId, action, status, latency, errorMsg, prompt, llmResponse } = body;
-      if (!action) { sendJson(req, res, 400, { error: "missing_action" }); return; }
-      
-      await logCall({
-        userId: userId || "anonymous",
-        action,
-        status: status || "OK",
-        latency: Number(latency) || 0,
-        errorMsg,
-        prompt: typeof prompt === 'string' ? prompt : JSON.stringify(prompt),
-        llmResponse
-      });
-      sendJson(req, res, 200, { ok: true });
       return;
     }
 
@@ -959,6 +1031,26 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
       components.set(key, def);
       sendJson(req, res, 200, def);
       return;
+    }
+
+    const componentMatch = url.pathname.match(/^\/components\/([^/]+)$/);
+    if (componentMatch) {
+      const key = decodeURIComponent(componentMatch[1]);
+      if (req.method === "GET") {
+        const def = components.get(key);
+        if (!def) { sendJson(req, res, 404, { error: "not_found" }); return; }
+        sendJson(req, res, 200, def);
+        return;
+      }
+      if (req.method === "DELETE") {
+        const existed = components.delete(key);
+        if (!existed) { sendJson(req, res, 404, { error: "not_found" }); return; }
+        if (process.env.DATABASE_URL) {
+          try { await (prisma.componentConfig as any).delete({ where: { configKey: key } }); } catch (e) {}
+        }
+        sendJson(req, res, 204, {});
+        return;
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/tools") {
