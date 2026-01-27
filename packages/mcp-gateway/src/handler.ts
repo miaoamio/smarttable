@@ -820,6 +820,26 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
       }
       try {
         console.log("Fetching stats from database...");
+        
+        // Use a more robust way to fetch stats, catching individual failures if needed
+        const statsPromises = [
+          prisma.callLog.count().catch((err: any) => { console.error("Error counting totalCalls:", err); return 0; }),
+          prisma.callLog.count({ where: { status: "FAIL" } }).catch((err: any) => { console.error("Error counting failCount:", err); return 0; }),
+          prisma.callLog.aggregate({ _avg: { latency: true } }).catch((err: any) => { console.error("Error aggregating latency:", err); return { _avg: { latency: 0 } }; }),
+          prisma.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } }).catch((err: any) => { console.error("Error fetching recentCalls:", err); return []; }),
+          prisma.callLog.groupBy({ by: ["action"], _count: { _all: true } }).catch((err: any) => { console.error("Error grouping by action:", err); return []; }),
+          prisma.callLog.groupBy({ 
+            where: { status: "FAIL", errorMsg: { not: null } }, 
+            by: ["errorMsg"], 
+            _count: { _all: true }, 
+            _max: { createdAt: true } 
+          }).catch((err: any) => { console.error("Error grouping errors:", err); return []; }),
+          prisma.callLog.groupBy({ by: ["userId"] }).then((r: any[]) => r.length).catch((err: any) => { console.error("Error counting users:", err); return 0; }),
+          prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }).catch((err: any) => { console.error("Error counting launches:", err); return 0; }),
+          prisma.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }).catch((err: any) => { console.error("Error aggregating createStats:", err); return { _avg: { latency: 0 }, _count: { _all: 0 } }; }),
+          prisma.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }).catch((err: any) => { console.error("Error aggregating modifyStats:", err); return { _avg: { latency: 0 }, _count: { _all: 0 } }; })
+        ];
+
         const [
           totalCalls,
           failCount,
@@ -831,45 +851,29 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
           launchCount,
           createStats,
           modifyStats
-        ] = await Promise.all([
-          prisma.callLog.count(),
-          prisma.callLog.count({ where: { status: "FAIL" } }),
-          prisma.callLog.aggregate({ _avg: { latency: true } }),
-          prisma.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } }),
-          prisma.callLog.groupBy({ by: ["action"], _count: { _all: true } }),
-          prisma.callLog.groupBy({ 
-            where: { status: "FAIL", errorMsg: { not: null } }, 
-            by: ["errorMsg"], 
-            _count: { _all: true }, 
-            _max: { createdAt: true } 
-          }),
-          prisma.callLog.groupBy({ by: ["userId"] }).then((r: any[]) => r.length),
-           prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }),
-           prisma.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }),
-           prisma.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } })
-         ]);
+        ] = await Promise.all(statsPromises);
 
-         console.log("Stats fetched successfully.");
-          const errorDistribution = (errorList as any[]).map((curr: any) => ({ 
-            message: curr.errorMsg, 
-            count: curr._count._all, 
-            lastSeen: curr._max.createdAt 
-          })).sort((a: any, b: any) => b.count - a.count);
+        console.log("Stats fetched successfully.");
+        const errorDistribution = (errorList as any[]).map((curr: any) => ({ 
+          message: curr.errorMsg, 
+          count: curr._count._all, 
+          lastSeen: curr._max.createdAt 
+        })).sort((a: any, b: any) => b.count - a.count);
 
-          sendJson(req, res, 200, {
-            totalCalls,
-            failCount,
-            avgLatency: Math.round(avgLatencyResult._avg.latency || 0),
-            recentCalls,
-            toolDistribution: Object.fromEntries(distribution.map((d: any) => [d.action, d._count._all])),
-            errorDistribution,
-            userCount,
-            launchCount,
-            createCount: createStats._count._all,
-            avgCreateTime: Math.round(createStats._avg.latency || 0),
-            modifyCount: modifyStats._count._all,
-            avgModifyTime: Math.round(modifyStats._avg.latency || 0)
-          });
+        sendJson(req, res, 200, {
+          totalCalls,
+          failCount,
+          avgLatency: Math.round((avgLatencyResult as any)._avg?.latency || 0),
+          recentCalls,
+          toolDistribution: Object.fromEntries((distribution as any[]).map((d: any) => [d.action, d._count._all])),
+          errorDistribution,
+          userCount,
+          launchCount,
+          createCount: (createStats as any)._count?._all || 0,
+          avgCreateTime: Math.round((createStats as any)._avg?.latency || 0),
+          modifyCount: (modifyStats as any)._count?._all || 0,
+          avgModifyTime: Math.round((modifyStats as any)._avg?.latency || 0)
+        });
       } catch (e: any) {
         console.error("Failed to fetch stats:", e);
         sendJson(req, res, 500, { error: "db_error", message: e.message });

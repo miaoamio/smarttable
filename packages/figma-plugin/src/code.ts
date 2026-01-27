@@ -1858,7 +1858,7 @@ async function renderActionCell(
   const parts = text.split(/[\s,，、]+/).filter(s => s.trim().length > 0);
   if (parts.length === 0) return;
 
-  const ellipsisIndex = parts.findIndex(p => p === "…" || p === "...");
+  const ellipsisIndex = parts.findIndex(p => p === "…" || p === "..." || p === "更多");
   const showMore = ellipsisIndex !== -1 || parts.length > 3;
   
   let visibleParts = parts;
