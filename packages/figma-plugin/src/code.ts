@@ -1014,8 +1014,9 @@ async function syncTableMetadata(table: FrameNode) {
 }
 
 async function postSelection() {
-  if (typeof figma.ui === "undefined" || !figma.ui) return;
-  const selection = figma.currentPage.selection;
+  try {
+    if (typeof figma.ui === "undefined" || !figma.ui) return;
+    const selection = figma.currentPage.selection;
   console.log("[Debug] Selection updated:", selection.length, selection.map(n => ({ type: n.type, name: n.name })));
   
   let componentKey: string | undefined;
@@ -1353,6 +1354,9 @@ async function postSelection() {
     tableSwitches: activeTableFrame ? await getTableSwitches(activeTableFrame) : undefined,
     pluginData
   });
+  } catch (e) {
+    console.warn("postSelection error ignored:", e);
+  }
 }
 
 function postError(message: string) {
@@ -1493,14 +1497,22 @@ async function applyHeaderModeToInstance(instance: InstanceNode, mode: HeaderMod
 }
 
 function getColumnFrames(table: FrameNode): FrameNode[] {
-  if (table.removed) return [];
-  return table.children.filter((n) => !n.removed && n.type === "FRAME") as FrameNode[];
+  try {
+    if (!table || table.removed) return [];
+    return table.children.filter((n) => !n.removed && n.type === "FRAME") as FrameNode[];
+  } catch (e) {
+    return [];
+  }
 }
 
 async function getHeaderOffset(col: FrameNode): Promise<number> {
-  if (col.removed) return 0;
-  const first = col.children[0];
-  if (first && !first.removed && (first.type === "INSTANCE" || first.type === "FRAME") && isHeaderNode(first)) return 1;
+  try {
+    if (!col || col.removed) return 0;
+    const first = col.children[0];
+    if (first && !first.removed && (first.type === "INSTANCE" || first.type === "FRAME") && isHeaderNode(first)) return 1;
+  } catch (e) {
+    return 0;
+  }
   return 0;
 }
 
@@ -4582,16 +4594,25 @@ async function createTable(params: CreateTableOptions) {
   const finalCols = getColumnFrames(tableFrame);
   for (let i = 0; i < finalCols.length; i++) {
     const col = finalCols[i];
-    const cellType = col.getPluginData("cellType");
-    const isAction = cellType === "ActionText" || cellType === "ActionIcon";
-    if (isAction || col.layoutSizingHorizontal === "HUG") {
-      await applyColumnWidthToColumn(tableFrame, i, "HUG");
+    try {
+      if (col.removed) continue;
+      const cellType = col.getPluginData("cellType");
+      const isAction = cellType === "ActionText" || cellType === "ActionIcon";
+      if (isAction || col.layoutSizingHorizontal === "HUG") {
+        await applyColumnWidthToColumn(tableFrame, i, "HUG");
+      }
+    } catch (e) {
+      console.warn("Skipping invalidated column in final layout pass", e);
     }
   }
 
   // Position at center
   // Give Figma a moment to finalize layout
   await yieldToMain();
+  
+  if (container.removed) {
+     throw new Error("表格容器已被删除");
+  }
   
   const center = figma.viewport.center;
   // Use absolute dimensions or fallback to totalWidth
@@ -5218,7 +5239,8 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
   }
 
   if (message.type === "set_cell_type") {
-    setProcessing(true);
+    // 只有在涉及组件加载等可能较慢的操作时，才考虑阻塞 UI，或者完全移除阻塞
+    // setProcessing(true); 
     try {
       const { cellType } = message;
       const selection = figma.currentPage.selection;
@@ -5615,7 +5637,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
         figma.notify("未找到可更新的单元格");
       }
     } finally {
-      setProcessing(false);
+      // setProcessing(false);
     }
   }
 
@@ -5700,36 +5722,122 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
           return;
         }
 
+        // Apply content replication for all cell types
+        const children = columnFrame.children;
+        const headerOffset = await getHeaderOffset(columnFrame);
+        
+        let updateCount = 0;
+        let sourceValue = "";
+        
+        // Extract source value for custom cells
+        if (isCustomCell && cellType) {
+           sourceValue = sourceCell.getPluginData("cellValue") || extractTextFromNode(sourceCell);
+        }
+
         // If it's a custom cell type, we prefer using applyColumnTypeToColumn 
         // to ensure data preservation (it extracts text and renders new UI)
         if (isCustomCell && cellType) {
-          await applyColumnTypeToColumn(table, colIndex, cellType);
-          figma.notify(`已将 ${cellType} 类型应用到整列`);
-        } else {
-          // For standard instances, we still use the clone strategy
-          const children = columnFrame.children;
-          const header = children.length > 0 ? children[0] : null;
-          let updateCount = 0;
+          // Temporarily override the column cell type to ensure it renders correctly
+          // But applyColumnTypeToColumn usually just changes type, doesn't copy content.
+          // We need to implement content copying.
+          
+          // Re-render all cells in column with source content
+          const customRenderer = CUSTOM_CELL_REGISTRY[cellType];
+          
+          // Resolve components
+          let context: any = {};
+          // ... (Component resolution logic similar to set_cell_type) ...
+          // To avoid code duplication, we can try to reuse existing logic or just basic resolution
+          // For now, let's just resolve what we need based on cellType
+          if (cellType === "Tag") {
+            const { component: tagComponent } = await resolveCellFactory(TAG_COMPONENT_KEY);
+            const { component: counterComponent } = await resolveCellFactory(TAG_COUNTER_COMPONENT_KEY);
+            context = { tagComponent, counterComponent: counterComponent || tagComponent };
+          } else if (cellType === "Avatar") {
+            const { component: avatarComponent } = await resolveCellFactory(AVATAR_COMPONENT_KEY);
+            context = { avatarComponent, overrideDisplayValue: sourceValue };
+          } else if (cellType === "ActionText") {
+            const { component: moreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
+            context = { moreIconComponent };
+          } else if (cellType === "ActionIcon") {
+            const { component: editIconComponent } = await resolveCellFactory(EDIT_ICON_COMPONENT_KEY);
+            const { component: deleteIconComponent } = await resolveCellFactory(DELETE_ICON_COMPONENT_KEY);
+            const { component: actionMoreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
+            context = { editIconComponent, deleteIconComponent, actionMoreIconComponent };
+          } else if (cellType === "Input") {
+            const { component: inputComponent } = await resolveCellFactory(INPUT_COMPONENT_KEY);
+            context = { inputComponent };
+          } else if (cellType === "Select") {
+            const { component: selectComponent } = await resolveCellFactory(SELECT_COMPONENT_KEY);
+            context = { selectComponent };
+          } else if (cellType === "State") {
+            const { component: stateComponent } = await resolveCellFactory(STATE_COMPONENT_KEY);
+            context = { stateComponent };
+          }
 
-          for (let i = 0; i < children.length; i++) {
+          if (customRenderer) {
+             // We need to iterate and replace content
+             for (let i = headerOffset; i < children.length; i++) {
+                const target = children[i];
+                if (target === sourceCell) continue;
+                
+                if (target.type === "FRAME" && target.getPluginData("cellType") === cellType) {
+                   // Just re-render content
+                   await customRenderer(target as FrameNode, sourceValue, context);
+                   // Update plugin data
+                   target.setPluginData("cellValue", sourceValue);
+                   updateCount++;
+                } else if (target.type === "FRAME" || target.type === "INSTANCE") {
+                   // Different type, need to replace frame?
+                   // Actually applyColumnTypeToColumn handles type change, but not content replication.
+                   // Here we assume column already has mixed content or we want to force it.
+                   // For simplicity, let's assume we are just updating content if type matches, 
+                   // or we rely on the user to have set the column type first.
+                   // But the user expectation is "Apply to column" -> Copy everything.
+                   
+                   // So we should replace the cell frame.
+                   const newCell = createCustomCellFrame(`${cellType} Cell`, cellType);
+                   columnFrame.insertChild(i, newCell);
+                   // Copy size
+                   newCell.layoutSizingHorizontal = "FILL";
+                   newCell.layoutSizingVertical = "FIXED";
+                   newCell.resize(columnFrame.width, tableSwitchesState.rowHeight);
+                   
+                   await customRenderer(newCell, sourceValue, context);
+                   newCell.setPluginData("cellValue", sourceValue);
+                   target.remove();
+                   updateCount++;
+                }
+             }
+          }
+          
+          figma.notify(`已将内容应用到 ${updateCount} 个单元格`);
+        } else {
+          // For standard instances, clone and replace
+          for (let i = headerOffset; i < children.length; i++) {
             const target = children[i];
-            if (target === header || target === sourceCell) continue;
+            if (target === sourceCell) continue;
 
             if (target.type === "INSTANCE" || target.type === "FRAME") {
               try {
                 const newCell = sourceCell.clone();
                 columnFrame.insertChild(i, newCell);
                 target.remove();
+                
+                // Ensure layout properties are correct
                 if ("layoutSizingHorizontal" in newCell) {
                   (newCell as any).layoutSizingHorizontal = "FILL";
                 }
+                // Ensure text/content is synced if it's an instance
+                // clone() should preserve overrides, so text should be correct.
+                
                 updateCount++;
               } catch (e) {
                 console.error("Failed to clone/replace cell", e);
               }
             }
           }
-          figma.notify(`已将样式应用到 ${updateCount} 个单元格`);
+          figma.notify(`已将内容应用到 ${updateCount} 个单元格`);
         }
       } finally {
         if (container) container.locked = originalLocked;

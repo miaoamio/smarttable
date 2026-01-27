@@ -236,6 +236,46 @@ async function initComponents() {
     })();
     return initPromise;
 }
+const variables = new Map();
+let variablesInitialized = false;
+async function initVariables() {
+    if (variablesInitialized)
+        return;
+    if (process.env.DATABASE_URL) {
+        try {
+            const setting = await prisma.systemSetting.findUnique({ where: { key: "variables" } });
+            if (setting && setting.value) {
+                const items = JSON.parse(setting.value);
+                if (Array.isArray(items)) {
+                    items.forEach((v) => variables.set(v.id, v));
+                    console.log(`Loaded ${items.length} variables from database.`);
+                }
+            }
+        }
+        catch (e) {
+            console.error("Failed to load variables from database:", e);
+        }
+    }
+    if (variables.size === 0) {
+        const now = new Date().toISOString();
+        const defaults = [
+            { id: "token-text-1", type: "Variable", property: "fills", variableId: "", name: "Text/Primary @color-text-1", value: "#0C0D0E", updatedAt: now },
+            { id: "token-text-2", type: "Variable", property: "fills", variableId: "", name: "Text/Secondary @color-text-2", value: "#4B5563", updatedAt: now },
+            { id: "token-text-3", type: "Variable", property: "fills", variableId: "", name: "Text/Tertiary @color-text-3", value: "#86909C", updatedAt: now },
+            { id: "token-link-6", type: "Variable", property: "fills", variableId: "", name: "Link/Primary @color-link-6", value: "#1664FF", updatedAt: now },
+            { id: "token-danger-6", type: "Variable", property: "fills", variableId: "", name: "State/Danger @color-danger-6", value: "#D7312A", updatedAt: now },
+            { id: "token-bg-1", type: "Variable", property: "fills", variableId: "", name: "Bg/Primary @color-bg-1", value: "#FFFFFF", updatedAt: now },
+            { id: "token-bg-2", type: "Variable", property: "fills", variableId: "", name: "Bg/Secondary @color-bg-2", value: "#F7F8FA", updatedAt: now },
+            { id: "token-bg-3", type: "Variable", property: "fills", variableId: "", name: "Bg/Tertiary @color-bg-3", value: "#F2F3F5", updatedAt: now },
+            { id: "token-border-1", type: "Variable", property: "strokes", variableId: "", name: "Border/Primary @color-border-1", value: "#E5E6EB", updatedAt: now },
+            { id: "token-border-2", type: "Variable", property: "strokes", variableId: "", name: "Border/Secondary @color-border-2", value: "#C9CDD4", updatedAt: now },
+        ];
+        defaults.forEach(v => variables.set(v.id, v));
+    }
+    variablesInitialized = true;
+}
+// Initial variables example (optional)
+// variables.set("demo-var", { id: "demo-var", type: "Variable", property: "fills", variableId: "", name: "Demo", value: "#000", updatedAt: new Date().toISOString() });
 async function logCall(data) {
     try {
         if (!process.env.DATABASE_URL)
@@ -305,7 +345,6 @@ const adminPageHtml = `<!doctype html>
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;margin:0;padding:0;background:var(--secondary-bg);color:var(--text-primary);line-height:1.5}
 .header{background:var(--bg-color);border-bottom:1px solid var(--border-color);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
 .header h1{font-size:16px;font-weight:600;margin:0;display:flex;align-items:center;gap:10px}
-.header h1 svg{color:var(--accent-color)}
 .container{max-width:1100px;margin:32px auto;padding:0 24px}
 .tabs{display:flex;gap:24px;margin-bottom:32px;border-bottom:1px solid var(--border-color)}
 .tab{padding:8px 4px 12px;cursor:pointer;font-size:14px;color:var(--text-secondary);font-weight:500;border-bottom:2px solid transparent;transition:all 0.2s}
@@ -344,12 +383,31 @@ tr:last-child td{border-bottom:none}
 .status-msg{margin-top:12px;font-size:13px;padding:8px 12px;border-radius:6px}
 .status-success{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
 .status-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+
+/* New Styles for Sub-tabs and Variables */
+.sub-tabs { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid var(--border-color); }
+.sub-tab { padding: 8px 12px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--text-secondary); border-bottom: 2px solid transparent; transition: all 0.2s; }
+.sub-tab.active { color: var(--accent-color); border-bottom-color: var(--accent-color); }
+.sub-tab:hover:not(.active) { color: var(--text-primary); }
+
+.vars-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+.var-col { background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.var-col h3 { margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: var(--text-primary); display: flex; justify-content: space-between; align-items: center; }
+.var-item { border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; font-size: 12px; position: relative; background: #fff; transition: border-color 0.2s; }
+.var-item:hover { border-color: var(--accent-color); }
+.var-item .actions { position: absolute; top: 8px; right: 8px; display: none; gap: 4px; }
+.var-item:hover .actions { display: flex; }
+.var-label { font-weight: 600; margin-bottom: 4px; color: var(--text-primary); }
+.var-meta { color: var(--text-secondary); font-family: Menlo, monospace; font-size: 11px; word-break: break-all; margin-bottom: 2px; }
+.color-preview { width: 16px; height: 16px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1); display: inline-block; vertical-align: middle; margin-right: 6px; }
+.add-var-btn { width: 100%; border: 1px dashed var(--border-color); background: transparent; color: var(--text-secondary); padding: 8px; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+.add-var-btn:hover { border-color: var(--accent-color); color: var(--accent-color); background: var(--secondary-bg); }
 </style>
 </head>
 <body>
 <header class="header">
   <h1>
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2ZM12 4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20C7.58172 20 4 16.4183 4 12C4 7.58172 7.58172 4 12 4ZM11 7V11H7V13H11V17H13V13H17V11H13V7H11Z" fill="currentColor"/></svg>
+    <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAwwSURBVHgB7Z1rbBxXFcfPJPY6aR62iVSF4NSzdUNaIpKNUkRUEF6rRaIgYbdIvIpqGwlRKiQ7H1IkBNj5BBVIdooQ37qOECoqQnYUqMpD3XXaqhJBsoOgtHHIbuQ25ZWu3Q8tbdrc3v88dsfOzHhn53Vn5/6Uk/XuzM7OzDn33HPPfYxCjdPFZYhLP5ccF9X4TBI/K1wqXBa5zHOZMz4LBJXLFJcqFyYlMVIwdNc0KN1TRMSkJFomqAlULmWi2E5aSrBSJg/eIEdS+a1qBDnaAJWk8lvdCFSyoNBabthB0nJUuBwmo5Ww2bJhgvRmnqS1QXC/hcvv8cb0ACrppV+SHrJcKqYHQHNvwwBB0lKg8D+N/+ASqiRJG4gBsptI1vtpRUvtwwD6SZJW+mEAsu5PLznEAKj/Za9eOlmBATCSpJZNJEk10gBSjjSAlCMNIOVIA0g50gBSjjSAlCMNIOVIA0g50gBSThtJanR1ddHQ0BCpqkqVSoVKpZL22uokYTRr6DI2Nsaq1SpbT7FYZCMjI4wbRaKux4Mk6mRDkampKdYIhUKBcQ+RqGtrQBJ1soFLPp9nXimXy5ox4LtJulZpADYCRfoBxjA+Pp7kKiJRJxuo8KCPBYkZL+C4CboPiTnRwAXKCosExQvCn2BoghLrBNz6wsIC84sZL+RyOVHvg5An1ZTA9UJxuOEQt+YbPncCirfuNz09rSkyCGMQMF4Q5kR8Kd2pNOOm27lifMcJGI7dbyHqn5mZsc0XeEWgeIHiPoGmBMqYnZ1tWBnrm2xuJbqREgrl4feDIOZ4gVhSBEpE0qaZEgiFm8dBfewESqaXc4KxwBiCihecvE+IQkxkgYucmJgI5AabXsCt7e9HATAGVBF+4wVcb4T3mJhoslG93iwI5nB8JwXBswR1DX7jhQizjMREEVw0SmcQQZYdOK5b2x+/HcZ14Te9GrPXqiixBuCnXre7afAcKHlOuP1O2KXOS7wQpDcSzgDMej0IF48bNTk5uUZ5zXbwRHkPzHjBzSCjOI/I5gZisAW3fhocHCSuIPLDysoKnTp1iubm5rRBG3ZwhWoDOxoFAz9wzKBZXFzUxG5gCc4P5+n0vcOHD1MUhGphQdbrjSRPgmqSBQ3uwfr8gls8Aq8Wtm4MCU/xQaRPzXp9o4wZtvvt2g0bFAJrwsetCowwXRz8Qd0SLY3eqPX1+kYSdJMxTGAEbn0REbYAwjGAZko+lN7sKBsElEkC1+rWUok4GxjsAb1G4H47RdxKUlKJsrcw8GHh3P1vuA8i9/n5eeKZOS2i94PfFoVocM8Q+VD0QC3KrZs1jIGUbj1yiCPi7G5FSfbaIomhVzDYA7pVAVBW0L/ndIMjDqSauh/riToZBQl8ahjcu5Nbh7tGQihInI4nyoweL+fhlNQKk1DmBp48edL2czMbKLEnjEzkRoRiAG6WjFSw5EbMuYhRE5oBOF1MGNVAK+DkNcMmtOnhp0+fdtzGWwqUFhqNAdCxFQehGQDas07IamAtcU5DD80A0BJwqgaQLGq1BI4f4gj+TEJdIcTtwrAQg0QnjuDPJFQDQL3mlBMYHh4mSTypXyuhGoA5cscOtARkNeAeLEdB6ItEuUW3vBuX0gxKflzRv0noBuCWGkYwmOacQJx1v0kky8TJ1LA9ly9fpriJxADc3FxScgLKDpWUgQIp2dZqvURiABjinPTUcPvdj1PmjmHq+OwsKR2tU21FtlJo0lPDW27JU0cbUWYzo7aePLUKkRmAW2pY9JxAZi9XfrvCDUChLXjlxuAFpyC4t7eX4iYyA3BLDWOGjMg5gV2fK1AHL/kd7fAARDsPPkhtnWrD3/c77jFMIl0s2q3LU8TU8E29edrztSJt/YCqeQAoH0awdXs3//wZ2nFwhPywurpKcROpAbjlBESpBjJdKu0ZKtD+R16n3uFnqKsvrykd9b/uAZhmCNt2Zaln6HHa/50q369IO293NmCnVC+C47iJ1ACSkBq+5f4C3XxkhLbu6K6XegR/MABUAzwO0AyiXf9s67Yu6r4tT7c+MEubt9i3Do4dO3aD4UP5bnFRVET+vADRU8NvXZ43FF1XPEp9h2YISq0l0NFW3wfb6I0Kvfd/e+9mzvRFFQilnzhxggYGBkgEYnl0bLVatW37o5Rks1lPQZPTNHDc6NHRUWqGzlvztLOvn3bfOaLV/yZMu1WK+Ybe5Qr/97kZWi3P0+rFkvY+acTyxBDRU8Orl0q0/McTdO6HWSqfGTfqfdML6CX+6sKMtv3SmWN09W9ziVQ+iMUAkpQaXj57kq48/5ieB2jXq4D3uLt/8YlRevetZCrdSiwGkLTUcKU0rQeBhiyfnSavdPXk6OAXpzTZtkslUYjtoVFJSg2/ebVCm95Z0QNCLm+8ct7T97dzhd99vEgfuWdMk8/8YIEyN4lh5LEZQNJSwxeLJ7XSf22lQv+5UPLyVdp7ZIi27+yq5RPwd98nR0gEYjOApKWGz89N0h8eHaAzE94Xbuq7c1BvNm6uxxH4TARifW5g0lLDr71Uonfe9B74ZT+a51WHUkseQfb05ahjW/zVQKwGkITUsF/2HsjXEkcZzQvoCaQdOzrp5myO4iZWA0jDqOH+L08YLQjFSCMrRr+CQp/6UvyZz9gfHdvKo4aPDo7RbTl9LIHu+lmtCoAR7OPbDt8Tr6eL3QBaddTwkU8P0+BD0/X+grZ6XwKk3ehL+Dzf58Bd8cU7Qjw8upVGDW/d3kX3PTxFDzwys0b5GUsHE2SLYQw7Ozvp65Oz9NXjBdq1W6WoiaUzaD0o6QsLC7bb4CHW95whNujv79cSRk4ewk9nkFc+zF35vly/5tL3Hcqv6TQyuo6Mz/BeMd7Xt1nfL50v0V+fO01Li7w/4mL44wWEMABQLBYdg77u7m7tdWxsTNunkeAwCgPYuy9Hxx8raqVex07xFrAAuKLfchhCfRvT/imKsuY7V/9VoZ999z5aXgrPEIR5fDxSw06KhXfwsvJ3VIw/Oqt5IMYVqytP0Uq6YnklspYy0ywUm6OZ36n/vaenl775/QJ978HwVg0XIgYAbqlhEZUPevaqekTfrqwL9phWx2eMv60dSWZroP6e1YLD+nfqzcZ9dxyiMBHGANxSw6JygdfTNaW3U629n7EoMmMdVWQJADM1w1Dq+1iMwfzuwrPhzh4WxgBAXAslNctPJ0bp7G9n6BpPD+tjB9cNFbM2/doVQ8HMkhha6w3qn5E21uCpX01T4SfHKEyECQJNvDzpw8wf2LUE7FoPYXLoY3nqu/0QfWF4nHZ/CBM+6vW8XVxgre/NvRb/PE/P/+k0nT9Xon++FN2IYSaSYH3djZabtz5Ewm2tYOwTxzXce/8I+3WpzJ5dus6eW2L8da3UP9O3P8n3zX08H8u5CucBADzA5OSkNjzMLN1OK4xjP7eUsd/lV8xnCXkdwv3BHpV+/kSRR/Kq4WbXNhHNm37llQp96ysD9Bp/jQMhDcAKjAEKd0oXw0AwyjhsMLYfxueF/Qdy9OTTSHDpt7huAubfCt17V5auLFcoLoQKAu1ACXQbJo5tUQSPSEJ55eW/L9JTv5kxAjul3iNoyO/4tjiVb8KSLogFgnhA1UY0c25HP5Fnl/7LDLle+7v8P6ZtE+D+xX4CgUgjwaMf8FyCZs/tH5XX2avV6+zVFaZLlbEXK5E9GdRVhK8CGgVVBWYVYdpV0NOxcTzEAM1y7oX5eobPmFzylxdKJALCB4HNYI4mgnTy7lY/YAo3WgB+ZvI+/O0x+tGPp2utAfQbPPSNUfrlL2ZIBIRwRa0snTxGeflimb19jXG5zi7wv3sjfDKYm7SkBxCVwaEh6ubeyW0J3aiRBpByWiYIlDSHNICUIw0g5UgDSDnSAFKONICUIw0g5UgDSDkwgOSvdCRplhUYQIUkaaUCA/C24pGklViEAZRIklbm0RmEYbdl41WSLrrNIPAUSdLGDJcVc5SySroXkKSHLJfKZuMNvAAm4R8lSRo4wUVbnMk6UR0xAGYxqCRpZSqkl34NayYQXmCAZF6glamQrmNXsHoh4gEhBi1KCUzKhm4bQiVpBK2mfJWaYJKImJREC2a0+srxqKS3GZN00WkXTJeepgZKvUKNAyvCkpZ5LoeMg8vsoRgggK9wwfSledKbeA318r4Pvnh4iYfhYSgAAAAASUVORK5CYII=" width="20" height="20" style="margin-right:8px" />
     VED UI Agent 管理中心
   </h1>
 </header>
@@ -357,7 +415,7 @@ tr:last-child td{border-bottom:none}
 <div class="container">
   <div class="tabs">
     <div class="tab active" data-target="stats-section">运行统计</div>
-    <div class="tab" data-target="configs-section">组件配置</div>
+    <div class="tab" data-target="configs-section">参数配置</div>
   </div>
 
   <div id="stats-section">
@@ -437,49 +495,82 @@ tr:last-child td{border-bottom:none}
   </div>
 
   <div id="configs-section" class="hidden">
-    <div class="layout">
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-          <div style="font-weight:600;font-size:15px">Registered Components</div>
-          <button id="reload-btn" class="secondary" style="padding:4px 10px;font-size:12px">Refresh</button>
+    <div class="sub-tabs">
+      <div class="sub-tab active" data-target="sub-components">组件</div>
+      <div class="sub-tab" data-target="sub-variables">变量</div>
+      <div class="sub-tab" data-target="sub-llm">大模型</div>
+    </div>
+
+    <div id="sub-components">
+      <div class="layout">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+            <div style="font-weight:600;font-size:15px">Registered Components</div>
+            <button id="reload-btn" class="secondary" style="padding:4px 10px;font-size:12px">Refresh</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Key</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="components-body"></tbody>
+            </table>
+          </div>
         </div>
-        <div style="overflow-x:auto">
-          <table>
-            <thead>
-              <tr>
-                <th>Key</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="components-body"></tbody>
-          </table>
+        <div class="card">
+          <div style="font-weight:600;margin-bottom:20px;font-size:15px">Edit Configuration</div>
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div>
+              <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Component Key</label>
+              <input id="edit-key" style="width:100%;box-sizing:border-box" placeholder="e.g. Cell/Tag">
+            </div>
+            <div>
+              <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Figma Component Key</label>
+              <input id="edit-figma-key" style="width:100%;box-sizing:border-box" placeholder="Unique Figma Key">
+            </div>
+            <div>
+              <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Display States (Variants - JSON)</label>
+              <textarea id="edit-variants" spellcheck="false" style="min-height:100px" placeholder='[ { "property": "value" }, ... ]'></textarea>
+            </div>
+            <div>
+              <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Configuration (Props - JSON)</label>
+              <textarea id="edit-config" spellcheck="false" style="min-height:150px" placeholder='{ "displayName": "...", "props": { ... } }'></textarea>
+            </div>
+            <div style="display:flex;gap:12px;justify-content:flex-end">
+              <button id="delete-btn" class="danger">Delete</button>
+              <button id="create-update-btn" class="primary">Save Changes</button>
+            </div>
+            <div id="status" class="status-msg hidden"></div>
+          </div>
         </div>
       </div>
-      <div class="card">
-        <div style="font-weight:600;margin-bottom:20px;font-size:15px">Edit Configuration</div>
-        <div style="display:flex;flex-direction:column;gap:16px">
-          <div>
-            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Component Key</label>
-            <input id="edit-key" style="width:100%;box-sizing:border-box" placeholder="e.g. Cell/Tag">
-          </div>
-          <div>
-            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Figma Component Key</label>
-            <input id="edit-figma-key" style="width:100%;box-sizing:border-box" placeholder="Unique Figma Key">
-          </div>
-          <div>
-            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Display States (Variants - JSON)</label>
-            <textarea id="edit-variants" spellcheck="false" style="min-height:100px" placeholder='[ { "property": "value" }, ... ]'></textarea>
-          </div>
-          <div>
-            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Configuration (Props - JSON)</label>
-            <textarea id="edit-config" spellcheck="false" style="min-height:150px" placeholder='{ "displayName": "...", "props": { ... } }'></textarea>
-          </div>
-          <div style="display:flex;gap:12px;justify-content:flex-end">
-            <button id="delete-btn" class="danger">Delete</button>
-            <button id="create-update-btn" class="primary">Save Changes</button>
-          </div>
-          <div id="status" class="status-msg hidden"></div>
+    </div>
+
+    <div id="sub-variables" class="hidden">
+      <div class="vars-grid">
+        <div class="var-col">
+          <h3>PaintStyle <button class="secondary" style="padding:2px 6px;font-size:11px" onclick="addVar('PaintStyle')">+</button></h3>
+          <div id="list-PaintStyle" style="display:flex;flex-direction:column;gap:8px"></div>
         </div>
+        <div class="var-col">
+          <h3>TextStyle <button class="secondary" style="padding:2px 6px;font-size:11px" onclick="addVar('TextStyle')">+</button></h3>
+          <div id="list-TextStyle" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+        <div class="var-col">
+          <h3>Variable <button class="secondary" style="padding:2px 6px;font-size:11px" onclick="addVar('Variable')">+</button></h3>
+          <div id="list-Variable" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+      </div>
+      <div id="var-status" class="status-msg hidden"></div>
+    </div>
+
+    <div id="sub-llm" class="hidden">
+      <div class="card">
+        <div style="font-weight:600;margin-bottom:20px;font-size:15px">大模型配置 (Coming Soon)</div>
+        <p style="color:var(--text-secondary);font-size:14px">配置大模型参数、Key 以及 BaseURL。</p>
       </div>
     </div>
   </div>
@@ -497,6 +588,7 @@ var editConfig=document.getElementById("edit-config");
 var createUpdateBtn=document.getElementById("create-update-btn");
 var deleteBtn=document.getElementById("delete-btn");
 var statusEl=document.getElementById("status");
+var varStatusEl=document.getElementById("var-status");
 
 // Tabs logic
 document.querySelectorAll(".tab").forEach(tab => {
@@ -508,7 +600,28 @@ document.querySelectorAll(".tab").forEach(tab => {
     document.getElementById("configs-section").classList.add("hidden");
     document.getElementById(target).classList.remove("hidden");
     if(target === "stats-section") loadStats();
-    if(target === "configs-section") loadComponents();
+    if(target === "configs-section") {
+       // Trigger load for active sub-tab
+       const activeSub = document.querySelector(".sub-tab.active");
+       if(activeSub) activeSub.click();
+       else loadComponents();
+    }
+  };
+});
+
+// Sub-tabs logic
+document.querySelectorAll(".sub-tab").forEach(tab => {
+  tab.onclick = function() {
+    document.querySelectorAll(".sub-tab").forEach(t => t.classList.remove("active"));
+    this.classList.add("active");
+    const target = this.getAttribute("data-target");
+    document.getElementById("sub-components").classList.add("hidden");
+    document.getElementById("sub-variables").classList.add("hidden");
+    document.getElementById("sub-llm").classList.add("hidden");
+    document.getElementById(target).classList.remove("hidden");
+    
+    if(target === "sub-components") loadComponents();
+    if(target === "sub-variables") loadVariables();
   };
 });
 
@@ -517,6 +630,13 @@ function setStatus(msg, type){
   statusEl.textContent=msg||"";
   statusEl.className = "status-msg " + (type === "error" ? "status-error" : "status-success");
   statusEl.classList.toggle("hidden", !msg);
+}
+
+function setVarStatus(msg, type){
+  if(!varStatusEl) return;
+  varStatusEl.textContent=msg||"";
+  varStatusEl.className = "status-msg " + (type === "error" ? "status-error" : "status-success");
+  varStatusEl.classList.toggle("hidden", !msg);
 }
 
 function loadStats() {
@@ -682,6 +802,96 @@ function deleteComponent(){
     loadComponents();
     editKey.value = "";
     editConfig.value = "";
+  });
+}
+
+// Variables Logic
+function loadVariables() {
+  fetch("/variables").then(res => res.json()).then(data => {
+    const items = data.items || [];
+    renderVars(items, "PaintStyle");
+    renderVars(items, "TextStyle");
+    renderVars(items, "Variable");
+  });
+}
+
+function renderVars(all, type) {
+  const container = document.getElementById("list-" + type);
+  if(!container) return;
+  container.innerHTML = "";
+  const filtered = all.filter(x => x.type === type);
+  
+  filtered.forEach(item => {
+    const div = document.createElement("div");
+    div.className = "var-item";
+    
+    let preview = "";
+    if(type === "PaintStyle" || type === "Variable") {
+      if(item.value && item.value.startsWith("#")) {
+        preview = \`<span class="color-preview" style="background:\${item.value}"></span>\`;
+      }
+    }
+    
+    div.innerHTML = \`
+      <div class="actions">
+        <button class="secondary" style="padding:2px 6px;font-size:10px" onclick="editVar('\${item.id}')">Edit</button>
+        <button class="danger" style="padding:2px 6px;font-size:10px" onclick="deleteVar('\${item.id}')">×</button>
+      </div>
+      <div class="var-label">\${preview}\${item.name || "Unnamed"}</div>
+      <div class="var-meta">ID: \${item.variableId || "No ID"}</div>
+      <div class="var-meta">Val: \${item.value || "Default"}</div>
+    \`;
+    container.appendChild(div);
+  });
+}
+
+window.addVar = function(type) {
+  const name = prompt("Enter Name (e.g. Text/Primary):");
+  if(!name) return;
+  const variableId = prompt("Enter Variable ID (optional):", "");
+  const value = prompt("Enter Fallback Value (e.g. #000000):", "");
+  
+  const id = crypto.randomUUID();
+  saveVar({
+    id,
+    type,
+    name,
+    variableId,
+    value,
+    property: type === "PaintStyle" || type === "Variable" ? "fills" : "text"
+  });
+};
+
+window.editVar = function(id) {
+  fetch("/variables").then(r=>r.json()).then(data => {
+    const item = data.items.find(x => x.id === id);
+    if(!item) return;
+    
+    const name = prompt("Name:", item.name);
+    if(name === null) return;
+    const variableId = prompt("Variable ID:", item.variableId);
+    if(variableId === null) return;
+    const value = prompt("Fallback Value:", item.value);
+    if(value === null) return;
+    
+    saveVar({ ...item, name, variableId, value });
+  });
+};
+
+window.deleteVar = function(id) {
+  if(!confirm("Delete?")) return;
+  fetch("/variables/" + encodeURIComponent(id), { method: "DELETE" })
+    .then(() => loadVariables());
+};
+
+function saveVar(data) {
+  fetch("/variables", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  }).then(res => {
+    if(res.ok) loadVariables();
+    else res.json().then(e => alert(e.error));
   });
 }
 
@@ -1048,6 +1258,66 @@ export async function handle(req, res) {
                 if (process.env.DATABASE_URL) {
                     try {
                         await prisma.componentConfig.delete({ where: { configKey: key } });
+                    }
+                    catch (e) { }
+                }
+                sendJson(req, res, 204, {});
+                return;
+            }
+        }
+        if (req.method === "GET" && pathName === "/variables") {
+            await initVariables();
+            sendJson(req, res, 200, { items: Array.from(variables.values()) });
+            return;
+        }
+        if (req.method === "POST" && pathName === "/variables") {
+            await initVariables();
+            let body = await readJson(req);
+            const id = body?.id?.trim();
+            if (!id) {
+                sendJson(req, res, 400, { error: "missing_id" });
+                return;
+            }
+            const now = new Date().toISOString();
+            const newVar = {
+                id,
+                type: body.type || "Variable",
+                property: body.property || "",
+                variableId: body.variableId || "",
+                name: body.name || "",
+                value: body.value || "",
+                updatedAt: now
+            };
+            variables.set(id, newVar);
+            if (process.env.DATABASE_URL) {
+                try {
+                    const allVars = Array.from(variables.values());
+                    await prisma.systemSetting.upsert({
+                        where: { key: "variables" },
+                        update: { value: JSON.stringify(allVars), updatedAt: new Date() },
+                        create: { key: "variables", value: JSON.stringify(allVars), description: "Plugin variables config" }
+                    });
+                }
+                catch (e) {
+                    console.error("Failed to save variables to DB:", e);
+                }
+            }
+            sendJson(req, res, 200, newVar);
+            return;
+        }
+        const variableMatch = pathName.match(/^\/variables\/([^/]+)$/);
+        if (variableMatch) {
+            const id = decodeURIComponent(variableMatch[1]);
+            if (req.method === "DELETE") {
+                variables.delete(id);
+                if (process.env.DATABASE_URL) {
+                    try {
+                        const allVars = Array.from(variables.values());
+                        await prisma.systemSetting.upsert({
+                            where: { key: "variables" },
+                            update: { value: JSON.stringify(allVars), updatedAt: new Date() },
+                            create: { key: "variables", value: JSON.stringify(allVars) }
+                        });
                     }
                     catch (e) { }
                 }
