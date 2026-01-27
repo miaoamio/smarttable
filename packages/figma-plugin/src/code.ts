@@ -533,12 +533,14 @@ async function isFilter(node: SceneNode): Promise<boolean> {
 
 function isSmartTableFrame(table: FrameNode): boolean {
   try {
+    // console.log("Checking isSmartTableFrame:", table.name, table.type);
     const mark = table.getPluginData("smart_table");
     if (mark && mark.toLowerCase() === "true") return true;
     
     // Check name (case-insensitive and more flexible)
     const name = table.name.toLowerCase();
-    if (name.includes("smart table") || name.includes("table")) return true;
+    // 增加对 "block" 的宽容度，以及常见的表格命名
+    if (name.includes("smart table") || name.includes("table") || name.includes("表格")) return true;
 
     // Check children structure: if it's a horizontal frame and has children
     if (table.layoutMode === "HORIZONTAL" && table.children.length > 0) {
@@ -547,7 +549,7 @@ function isSmartTableFrame(table: FrameNode): boolean {
         if (c.type !== "FRAME") return false;
         const role = c.getPluginData("role");
         const cellType = c.getPluginData("cellType");
-        return role === "column" || cellType === "Header" || c.name.toLowerCase().includes("column");
+        return role === "column" || cellType === "Header" || c.name.toLowerCase().includes("column") || c.name.includes("列");
       });
       if (hasColumnChild) return true;
 
@@ -1012,6 +1014,8 @@ async function syncTableMetadata(table: FrameNode) {
 async function postSelection() {
   if (typeof figma.ui === "undefined" || !figma.ui) return;
   const selection = figma.currentPage.selection;
+  // console.log("Selection updated:", selection.length, selection.map(n => ({ type: n.type, name: n.name })));
+  
   let componentKey: string | undefined;
   let headerProps: { filter: boolean; sort: boolean; search: boolean; info: boolean } | null = { filter: false, sort: false, search: false, info: false };
   let tableContext: TableContext | null = null;
@@ -1024,6 +1028,7 @@ async function postSelection() {
 
   if (selection.length === 1) {
     const node = selection[0];
+    console.log("[Debug] Selected Node:", { type: node.type, name: node.name, id: node.id });
     
     // Extract all plugin data keys we care about
     const dataKeys = [
@@ -1044,22 +1049,27 @@ async function postSelection() {
         componentKey = main.key;
       }
     }
+    console.log("[Debug] Component Key:", componentKey);
 
     if (await isFilter(node)) {
       selectionLabel = "当前选中：筛选器";
       selectionKind = "filter";
+      console.log("[Debug] Identified as Filter");
     }
 
     // Identify other components by key
     if (componentKey === BUTTON_GROUP_COMPONENT_KEY) {
       selectionLabel = "当前选中：按钮组";
       selectionKind = "button_group";
+      console.log("[Debug] Identified as Button Group");
     } else if (componentKey === TABS_COMPONENT_KEY) {
       selectionLabel = "当前选中：页签";
       selectionKind = "tabs";
+      console.log("[Debug] Identified as Tabs");
     } else if (componentKey === PAGINATION_COMPONENT_KEY) {
       selectionLabel = "当前选中：分页器";
       selectionKind = "pagination";
+      console.log("[Debug] Identified as Pagination");
     }
 
     // 尝试识别表头
@@ -1073,7 +1083,7 @@ async function postSelection() {
       node.layoutMode === "VERTICAL" &&
       node.parent?.type === "FRAME" &&
       node.parent.layoutMode === "HORIZONTAL" &&
-      node.parent.name.startsWith("Table ")
+      isSmartTableFrame(node.parent as FrameNode)
     ) {
       columnFrame = node as FrameNode;
     }
@@ -1083,12 +1093,14 @@ async function postSelection() {
       node.parent.layoutMode === "VERTICAL" &&
       node.parent.parent?.type === "FRAME" &&
       node.parent.parent.layoutMode === "HORIZONTAL" &&
-      node.parent.parent.name.startsWith("Table ")
+      isSmartTableFrame(node.parent.parent as FrameNode)
     ) {
       columnFrame = node.parent as FrameNode;
     }
 
     const tableFrame = findTableFrameFromNode(node as any);
+    console.log("[Debug] findTableFrameFromNode result:", tableFrame ? tableFrame.name : "null");
+    
     if (tableFrame) {
       activeTableFrame = tableFrame;
       await syncTableMetadata(tableFrame); // Sync metadata on selection
@@ -1104,10 +1116,12 @@ async function postSelection() {
       const ctx = await getTableContext(tableFrame);
       tableContext = ctx;
       const pos = await computeTableSelectionPosition(tableFrame, node as SceneNode);
+      console.log("[Debug] computeTableSelectionPosition:", JSON.stringify(pos));
       
       // Only set selectionKind/Label if not already set by isFilter
       if (!selectionKind) {
         selectionKind = pos.kind;
+        console.log("[Debug] Selection Kind set from position:", selectionKind);
       }
       
       let colWidthMode: "FIXED" | "FILL" | undefined;
@@ -1115,8 +1129,12 @@ async function postSelection() {
       let cellAlign: "left" | "center" | "right" | undefined;
 
       if (!selectionKind) {
+        // 如果我们找到了 tableFrame，但 computeTableSelectionPosition 没返回 kind，
+        // 说明选中的可能是表格内的其他装饰元素，或者表格本身。
+        // 这里做一个兜底：如果是表格本身或其直接子元素（非列），也视为选中表格
         selectionKind = "table";
         if (!selectionLabel) selectionLabel = "当前选中：表格";
+        console.log("[Debug] Fallback to 'table' selection kind");
       } else if (selectionKind === "table") {
         if (!selectionLabel) selectionLabel = "当前选中：表格";
       } else if (selectionKind === "column" && typeof pos.columnIndex === "number") {

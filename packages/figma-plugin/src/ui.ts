@@ -227,6 +227,7 @@ function setOutput(msg: string) {
 
 function updatePanels() {
   if (!aiEmptyPanel || !aiEditPanel || !manualEmptyPanel || !manualEditPanel) return;
+  
   if (hasSelection) {
     aiEmptyPanel.classList.add("hidden");
     aiEditPanel.classList.remove("hidden");
@@ -304,16 +305,14 @@ function setActiveTab(tab: "ai" | "manual" | "debug") {
     const key = btn.dataset.tab === tab ? "add" : "remove";
     btn.classList[key]("active");
   });
-  if (aiTabPanel && manualTabPanel && debugTabPanel) {
-    aiTabPanel.classList.remove("active");
-    manualTabPanel.classList.remove("active");
-    debugTabPanel.classList.remove("active");
-    if (tab === "ai") aiTabPanel.classList.add("active");
-    else if (tab === "manual") manualTabPanel.classList.add("active");
-    else debugTabPanel.classList.add("active");
-  } else {
-    console.error("Tab panels not found!", { aiTabPanel, manualTabPanel, debugTabPanel });
-  }
+  
+  if (aiTabPanel) aiTabPanel.classList.remove("active");
+  if (manualTabPanel) manualTabPanel.classList.remove("active");
+  if (debugTabPanel) debugTabPanel.classList.remove("active");
+
+  if (tab === "ai" && aiTabPanel) aiTabPanel.classList.add("active");
+  else if (tab === "manual" && manualTabPanel) manualTabPanel.classList.add("active");
+  else if (tab === "debug" && debugTabPanel) debugTabPanel.classList.add("active");
 }
 
 function getGatewayBaseUrl() {
@@ -1822,9 +1821,14 @@ tabButtons.forEach((btn) => {
       if (tab === "manual") {
           updatePanels();
           // 如果有选中内容，确保显示 Edit 面板
-          if (hasSelection && manualEmptyPanel && manualEditPanel) {
-              manualEmptyPanel.classList.add("hidden");
-              manualEditPanel.classList.remove("hidden");
+          if (hasSelection) {
+              if (manualEmptyPanel) manualEmptyPanel.classList.add("hidden");
+              if (manualEditPanel) manualEditPanel.classList.remove("hidden");
+              // 确保子面板状态正确
+              updateManualSubPanel(latestSelectionKind || undefined);
+          } else {
+              if (manualEmptyPanel) manualEmptyPanel.classList.remove("hidden");
+              if (manualEditPanel) manualEditPanel.classList.add("hidden");
           }
       }
       
@@ -1844,6 +1848,12 @@ window.onmessage = (event) => {
   if (!msg) return;
 
   if (msg.type === "selection") {
+    console.log("[Debug] UI Received selection message:", {
+      kind: msg.selectionKind,
+      isSmartTable: msg.isSmartTable,
+      label: msg.selectionLabel,
+      tableContext: !!msg.tableContext
+    });
     latestTableContext = msg.tableContext ?? null;
     hasSelection = !!msg.selectionKind;
     updateAiTabLabel(hasSelection);
