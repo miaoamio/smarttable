@@ -629,14 +629,14 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
         return;
       }
       const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : "upload.xlsx";
-      let data = typeof body?.data === "string" ? body.data.trim() : "";
-      if (!data) { sendJson(req, res, 400, { error: "missing_data" }); return; }
-      const commaIdx = data.indexOf(",");
-      if (commaIdx >= 0) data = data.slice(commaIdx + 1);
+      let base64Data = typeof body?.data === "string" ? body.data.trim() : "";
+      if (!base64Data) { sendJson(req, res, 400, { error: "missing_data" }); return; }
+      const commaIdx = base64Data.indexOf(",");
+      if (commaIdx >= 0) base64Data = base64Data.slice(commaIdx + 1);
 
       const startTime = Date.now();
       try {
-        const buf = Buffer.from(data, "base64");
+        const buf = Buffer.from(base64Data, "base64");
         let wb: XLSX.WorkBook;
         if (name.toLowerCase().endsWith(".csv")) {
           const detected = jschardet.detect(buf);
@@ -646,9 +646,24 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
           wb = XLSX.read(buf, { type: "buffer" });
         }
         const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet);
+        const allData: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        
+        let headers: string[] = [];
+        let data: any[][] = [];
+        
+        if (allData.length > 0) {
+          headers = allData[0].map(h => String(h || ""));
+          data = allData.slice(1);
+        }
+
         await logCall({ action: "parse-excel", status: "OK", latency: Date.now() - startTime });
-        sendJson(req, res, 200, { rows });
+        sendJson(req, res, 200, { 
+          headers, 
+          data, 
+          rowCount: data.length, 
+          colCount: headers.length,
+          sheetName: wb.SheetNames[0]
+        });
       } catch (e: any) {
         await logCall({ action: "parse-excel", status: "FAIL", latency: Date.now() - startTime, errorMsg: e.message });
         sendJson(req, res, 500, { error: "parse_failed", message: e.message });
