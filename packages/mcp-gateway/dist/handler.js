@@ -272,6 +272,46 @@ async function initVariables() {
         ];
         defaults.forEach(v => variables.set(v.id, v));
     }
+    {
+        const now = new Date().toISOString();
+        const paintStyleId = "S:68eb72ad68f196be54a5663c564b5f817d63a946,121374:27";
+        const textStyleId = "S:ac8ef12de2cc499e51922d6b5239c26b3645a05a,131052:2";
+        if (!variables.has("paintstyle-test")) {
+            variables.set("paintstyle-test", {
+                id: "paintstyle-test",
+                type: "PaintStyle",
+                property: "fills",
+                variableId: paintStyleId,
+                name: "test",
+                value: "#0C0D0E",
+                updatedAt: now
+            });
+        }
+        if (!variables.has("textstyle-test")) {
+            variables.set("textstyle-test", {
+                id: "textstyle-test",
+                type: "TextStyle",
+                property: "text",
+                variableId: textStyleId,
+                name: "test",
+                value: "",
+                updatedAt: now
+            });
+        }
+        if (process.env.DATABASE_URL) {
+            try {
+                const allVars = Array.from(variables.values());
+                await prisma.systemSetting.upsert({
+                    where: { key: "variables" },
+                    update: { value: JSON.stringify(allVars), updatedAt: new Date() },
+                    create: { key: "variables", value: JSON.stringify(allVars), description: "Plugin variables config" }
+                });
+            }
+            catch (e) {
+                console.error("Failed to save variables to DB:", e);
+            }
+        }
+    }
     variablesInitialized = true;
 }
 // Initial variables example (optional)
@@ -1021,22 +1061,23 @@ export async function handle(req, res) {
             try {
                 console.log("Fetching stats from database...");
                 // Use a more robust way to fetch stats, catching individual failures if needed
+                // Note: We throw on the first failure to trigger the catch block below and show the error
                 const statsPromises = [
-                    prisma.callLog.count().catch((err) => { console.error("Error counting totalCalls:", err); return 0; }),
-                    prisma.callLog.count({ where: { status: "FAIL" } }).catch((err) => { console.error("Error counting failCount:", err); return 0; }),
-                    prisma.callLog.aggregate({ _avg: { latency: true } }).catch((err) => { console.error("Error aggregating latency:", err); return { _avg: { latency: 0 } }; }),
-                    prisma.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } }).catch((err) => { console.error("Error fetching recentCalls:", err); return []; }),
-                    prisma.callLog.groupBy({ by: ["action"], _count: { _all: true } }).catch((err) => { console.error("Error grouping by action:", err); return []; }),
+                    prisma.callLog.count(),
+                    prisma.callLog.count({ where: { status: "FAIL" } }),
+                    prisma.callLog.aggregate({ _avg: { latency: true } }),
+                    prisma.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } }),
+                    prisma.callLog.groupBy({ by: ["action"], _count: { _all: true } }),
                     prisma.callLog.groupBy({
                         where: { status: "FAIL", errorMsg: { not: null } },
                         by: ["errorMsg"],
                         _count: { _all: true },
                         _max: { createdAt: true }
-                    }).catch((err) => { console.error("Error grouping errors:", err); return []; }),
-                    prisma.callLog.groupBy({ by: ["userId"] }).then((r) => r.length).catch((err) => { console.error("Error counting users:", err); return 0; }),
-                    prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }).catch((err) => { console.error("Error counting launches:", err); return 0; }),
-                    prisma.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }).catch((err) => { console.error("Error aggregating createStats:", err); return { _avg: { latency: 0 }, _count: { _all: 0 } }; }),
-                    prisma.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }).catch((err) => { console.error("Error aggregating modifyStats:", err); return { _avg: { latency: 0 }, _count: { _all: 0 } }; })
+                    }),
+                    prisma.callLog.groupBy({ by: ["userId"] }).then((r) => r.length),
+                    prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }),
+                    prisma.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }),
+                    prisma.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } })
                 ];
                 const [totalCalls, failCount, avgLatencyResult, recentCalls, distribution, errorList, userCount, launchCount, createStats, modifyStats] = await Promise.all(statsPromises);
                 console.log("Stats fetched successfully.");

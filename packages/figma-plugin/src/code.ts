@@ -2206,14 +2206,14 @@ async function renderTextCell(
   let appliedTextStyle = false;
   let appliedPaintStyle = false;
   try {
-    const ts = figma.getStyleById("S:ac8ef12de2cc499e51922d6b5239c26b3645a05a,131052:2") as TextStyle;
+    const ts = (await figma.importStyleByKeyAsync("S:ac8ef12de2cc499e51922d6b5239c26b3645a05a,131052:2")) as TextStyle;
     if (ts) {
       textNode.textStyleId = ts.id;
       appliedTextStyle = true;
     }
   } catch {}
   try {
-    const ps = figma.getStyleById("S:68eb72ad68f196be54a5663c564b5f817d63a946,121374:27") as PaintStyle;
+    const ps = (await figma.importStyleByKeyAsync("S:68eb72ad68f196be54a5663c564b5f817d63a946,121374:27")) as PaintStyle;
     if (ps) {
       textNode.fillStyleId = ps.id;
       appliedPaintStyle = true;

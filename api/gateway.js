@@ -133793,7 +133793,27 @@ var initialComponents = [
 
 // packages/mcp-gateway/src/db.ts
 import { PrismaClient } from "@prisma/client";
-var prisma = new PrismaClient();
+var prismaInstance = null;
+var prisma = new Proxy({}, {
+  get: (_target, prop) => {
+    if (!prismaInstance) {
+      try {
+        console.log("Initializing PrismaClient...");
+        prismaInstance = new PrismaClient({
+          log: ["query", "info", "warn", "error"]
+        });
+      } catch (e) {
+        console.error("Failed to initialize PrismaClient:", e);
+        throw e;
+      }
+    }
+    const value = prismaInstance[prop];
+    if (typeof value === "function") {
+      return value.bind(prismaInstance);
+    }
+    return value;
+  }
+});
 var db_default = prisma;
 
 // packages/mcp-gateway/src/handler.ts
@@ -134025,6 +134045,45 @@ async function initVariables() {
       { id: "token-border-2", type: "Variable", property: "strokes", variableId: "", name: "Border/Secondary @color-border-2", value: "#C9CDD4", updatedAt: now }
     ];
     defaults.forEach((v) => variables.set(v.id, v));
+  }
+  {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const paintStyleId = "S:68eb72ad68f196be54a5663c564b5f817d63a946,121374:27";
+    const textStyleId = "S:ac8ef12de2cc499e51922d6b5239c26b3645a05a,131052:2";
+    if (!variables.has("paintstyle-test")) {
+      variables.set("paintstyle-test", {
+        id: "paintstyle-test",
+        type: "PaintStyle",
+        property: "fills",
+        variableId: paintStyleId,
+        name: "test",
+        value: "#0C0D0E",
+        updatedAt: now
+      });
+    }
+    if (!variables.has("textstyle-test")) {
+      variables.set("textstyle-test", {
+        id: "textstyle-test",
+        type: "TextStyle",
+        property: "text",
+        variableId: textStyleId,
+        name: "test",
+        value: "",
+        updatedAt: now
+      });
+    }
+    if (process.env.DATABASE_URL) {
+      try {
+        const allVars = Array.from(variables.values());
+        await db_default.systemSetting.upsert({
+          where: { key: "variables" },
+          update: { value: JSON.stringify(allVars), updatedAt: /* @__PURE__ */ new Date() },
+          create: { key: "variables", value: JSON.stringify(allVars), description: "Plugin variables config" }
+        });
+      } catch (e) {
+        console.error("Failed to save variables to DB:", e);
+      }
+    }
   }
   variablesInitialized = true;
 }
@@ -134764,51 +134823,21 @@ async function handle(req, res) {
       try {
         console.log("Fetching stats from database...");
         const statsPromises = [
-          db_default.callLog.count().catch((err) => {
-            console.error("Error counting totalCalls:", err);
-            return 0;
-          }),
-          db_default.callLog.count({ where: { status: "FAIL" } }).catch((err) => {
-            console.error("Error counting failCount:", err);
-            return 0;
-          }),
-          db_default.callLog.aggregate({ _avg: { latency: true } }).catch((err) => {
-            console.error("Error aggregating latency:", err);
-            return { _avg: { latency: 0 } };
-          }),
-          db_default.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } }).catch((err) => {
-            console.error("Error fetching recentCalls:", err);
-            return [];
-          }),
-          db_default.callLog.groupBy({ by: ["action"], _count: { _all: true } }).catch((err) => {
-            console.error("Error grouping by action:", err);
-            return [];
-          }),
+          db_default.callLog.count(),
+          db_default.callLog.count({ where: { status: "FAIL" } }),
+          db_default.callLog.aggregate({ _avg: { latency: true } }),
+          db_default.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } }),
+          db_default.callLog.groupBy({ by: ["action"], _count: { _all: true } }),
           db_default.callLog.groupBy({
             where: { status: "FAIL", errorMsg: { not: null } },
             by: ["errorMsg"],
             _count: { _all: true },
             _max: { createdAt: true }
-          }).catch((err) => {
-            console.error("Error grouping errors:", err);
-            return [];
           }),
-          db_default.callLog.groupBy({ by: ["userId"] }).then((r) => r.length).catch((err) => {
-            console.error("Error counting users:", err);
-            return 0;
-          }),
-          db_default.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }).catch((err) => {
-            console.error("Error counting launches:", err);
-            return 0;
-          }),
-          db_default.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }).catch((err) => {
-            console.error("Error aggregating createStats:", err);
-            return { _avg: { latency: 0 }, _count: { _all: 0 } };
-          }),
-          db_default.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }).catch((err) => {
-            console.error("Error aggregating modifyStats:", err);
-            return { _avg: { latency: 0 }, _count: { _all: 0 } };
-          })
+          db_default.callLog.groupBy({ by: ["userId"] }).then((r) => r.length),
+          db_default.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }),
+          db_default.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }),
+          db_default.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } })
         ];
         const [
           totalCalls,
