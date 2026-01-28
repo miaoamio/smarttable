@@ -166,6 +166,18 @@ const TOKENS = {
 
 let cancelRequested = false;
 let inProgressContainer: FrameNode | null = null;
+let blockedGlobal = new Set<string>();
+async function loadBlockedStyles() {
+  try {
+    const arr = await figma.clientStorage.getAsync("blockedStyles");
+    if (Array.isArray(arr)) blockedGlobal = new Set(arr as string[]);
+  } catch {}
+}
+async function saveBlockedStyles() {
+  try {
+    await figma.clientStorage.setAsync("blockedStyles", Array.from(blockedGlobal));
+  } catch {}
+}
 function requestCancel() {
   cancelRequested = true;
   try {
@@ -282,12 +294,14 @@ async function resolveStyleId(
 ): Promise<string | null> {
   const norm = normalizeStyleKey(key);
   const cacheKey = `${kind}:${norm}`;
-  if (policy.blocked.has(cacheKey)) return null;
+  if (policy.blocked.has(cacheKey) || blockedGlobal.has(cacheKey)) return null;
   const cached = policy.cache.get(cacheKey);
   if (cached) return cached;
   const fail = policy.failCount.get(cacheKey) || 0;
   if (fail >= policy.failThreshold) {
     policy.blocked.add(cacheKey);
+    blockedGlobal.add(cacheKey);
+    saveBlockedStyles();
     return null;
   }
   const style =
@@ -301,7 +315,11 @@ async function resolveStyleId(
   }
   const next = fail + 1;
   policy.failCount.set(cacheKey, next);
-  if (next >= policy.failThreshold) policy.blocked.add(cacheKey);
+  if (next >= policy.failThreshold) {
+    policy.blocked.add(cacheKey);
+    blockedGlobal.add(cacheKey);
+    saveBlockedStyles();
+  }
   return null;
 }
 
@@ -4998,6 +5016,7 @@ async function alignTableRows(table: FrameNode, rowIndex: number, sourceNodes: S
 // Initialize listeners
 async function init() {
   console.log("Smart Table: Initializing...");
+  await loadBlockedStyles();
   
   // Required for documentchange event when documentAccess is "dynamic-page"
   if (typeof figma.loadAllPagesAsync === "function") {

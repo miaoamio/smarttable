@@ -361,9 +361,7 @@ function setLoading(btn: HTMLButtonElement | undefined, isLoading: boolean, abor
 
 function getGatewayBaseUrl() {
   const v = gatewayUrlInput?.value?.trim();
-  const DEFAULT_GATEWAY = process.env.NODE_ENV === "production" 
-    ? "https://smartable-nine.vercel.app" 
-    : "http://localhost:8787";
+  const DEFAULT_GATEWAY = "https://smartable-nine.vercel.app";
   return (v && v.length > 0 ? v : DEFAULT_GATEWAY).replace(/\/$/, "");
 }
 
