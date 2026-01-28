@@ -1125,7 +1125,20 @@ async function postSelection() {
       tableContext = ctx;
       const pos = await computeTableSelectionPosition(tableFrame, node as SceneNode);
       
-      // Only set selectionKind/Label if not already set by isFilter
+      // Special handling for Row Action Column (Checkbox/Radio etc.)
+      // User request: When selecting this column, show table-level info instead of column/cell info
+      if (pos.kind === "column" || pos.kind === "cell") {
+          const columns = getColumnFrames(tableFrame);
+          if (typeof pos.columnIndex === "number" && columns[pos.columnIndex]) {
+             const col = columns[pos.columnIndex];
+             if (col.getPluginData("isRowActionColumn") === "true") {
+                 selectionKind = "table";
+                 selectionLabel = "当前选中：操作列"; 
+             }
+          }
+      }
+      
+      // Only set selectionKind/Label if not already set by isFilter or above override
       if (!selectionKind) {
         selectionKind = pos.kind;
       }
