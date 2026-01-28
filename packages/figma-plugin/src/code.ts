@@ -168,9 +168,16 @@ const TOKENS = {
  * Helper to convert hex to RGB for Figma
  */
 function hexToRgb(hex: string): { r: number, g: number, b: number } {
-  const r = parseInt(hex.substring(0, 2), 16) / 255;
-  const g = parseInt(hex.substring(2, 4), 16) / 255;
-  const b = parseInt(hex.substring(4, 6), 16) / 255;
+  let s = hex.trim();
+  if (s.startsWith("#")) s = s.slice(1);
+  if (s.length === 3) s = s.split("").map(c => c + c).join("");
+  const rHex = s.substring(0, 2);
+  const gHex = s.substring(2, 4);
+  const bHex = s.substring(4, 6);
+  const r = parseInt(rHex, 16) / 255;
+  const g = parseInt(gHex, 16) / 255;
+  const b = parseInt(bHex, 16) / 255;
+  if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) return { r: 0, g: 0, b: 0 };
   return { r, g, b };
 }
 
@@ -4412,7 +4419,7 @@ async function createTable(params: CreateTableOptions) {
   tableFrame.itemSpacing = colGap;
   tableFrame.fills = [];
   tableFrame.cornerRadius = 4;
-  tableFrame.strokes = [{ type: "SOLID", color: hexToRgb("#EAEDF1") }];
+  tableFrame.strokes = [{ type: "SOLID", color: hexToRgb("EAEDF1") }];
   tableFrame.strokeWeight = 1;
   tableFrame.strokeAlign = "INSIDE";
   tableFrame.clipsContent = true;
