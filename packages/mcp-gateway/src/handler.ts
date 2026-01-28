@@ -304,6 +304,46 @@ async function initVariables() {
     ];
     defaults.forEach(v => variables.set(v.id, v));
   }
+  
+  {
+    const now = new Date().toISOString();
+    const paintStyleId = "S:68eb72ad68f196be54a5663c564b5f817d63a946,121374:27";
+    const textStyleId = "S:ac8ef12de2cc499e51922d6b5239c26b3645a05a,131052:2";
+    if (!variables.has("paintstyle-test")) {
+      variables.set("paintstyle-test", {
+        id: "paintstyle-test",
+        type: "PaintStyle",
+        property: "fills",
+        variableId: paintStyleId,
+        name: "test",
+        value: "#0C0D0E",
+        updatedAt: now
+      });
+    }
+    if (!variables.has("textstyle-test")) {
+      variables.set("textstyle-test", {
+        id: "textstyle-test",
+        type: "TextStyle",
+        property: "text",
+        variableId: textStyleId,
+        name: "test",
+        value: "",
+        updatedAt: now
+      });
+    }
+    if (process.env.DATABASE_URL) {
+      try {
+        const allVars = Array.from(variables.values());
+        await (prisma.systemSetting as any).upsert({
+          where: { key: "variables" },
+          update: { value: JSON.stringify(allVars), updatedAt: new Date() },
+          create: { key: "variables", value: JSON.stringify(allVars), description: "Plugin variables config" }
+        });
+      } catch (e) {
+        console.error("Failed to save variables to DB:", e);
+      }
+    }
+  }
   variablesInitialized = true;
 }
 

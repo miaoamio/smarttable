@@ -2203,8 +2203,28 @@ async function renderTextCell(
   const textNode = figma.createText();
   await loadTextNodeFonts(textNode);
   textNode.characters = text || "";
-  textNode.fontSize = TOKENS.fontSizes["body-2"];
-  textNode.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["text-1"]) }];
+  let appliedTextStyle = false;
+  let appliedPaintStyle = false;
+  try {
+    const ts = figma.getStyleById("S:ac8ef12de2cc499e51922d6b5239c26b3645a05a,131052:2") as TextStyle;
+    if (ts) {
+      textNode.textStyleId = ts.id;
+      appliedTextStyle = true;
+    }
+  } catch {}
+  try {
+    const ps = figma.getStyleById("S:68eb72ad68f196be54a5663c564b5f817d63a946,121374:27") as PaintStyle;
+    if (ps) {
+      textNode.fillStyleId = ps.id;
+      appliedPaintStyle = true;
+    }
+  } catch {}
+  if (!appliedTextStyle) {
+    textNode.fontSize = TOKENS.fontSizes["body-2"];
+  }
+  if (!appliedPaintStyle) {
+    textNode.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["text-1"]) }];
+  }
 
   cellFrame.appendChild(textNode);
   
@@ -6596,4 +6616,3 @@ figma.on("selectionchange", () => {
 
 // 初始化时发送一次选中状态
 postSelection();
-
