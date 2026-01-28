@@ -4820,6 +4820,9 @@ async function createTable(params: CreateTableOptions) {
     // Yield to main thread every few columns
     if (c > 0 && c % 3 === 0) {
       await yieldToMain();
+      if (cancelRequested) {
+        throw new Error("用户取消了生成");
+      }
       postStatus(`正在生成第 ${c + 1} 列...`);
     }
   }
@@ -5304,6 +5307,9 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
         for (const op of env.patch.operations) {
           await applyOperationToTable(table, op);
           await yieldToMain();
+          if (cancelRequested) {
+            throw new Error("用户取消了操作");
+          }
         }
         
         const duration = Date.now() - startTime;
@@ -5323,22 +5329,33 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       }
     } catch (e: any) {
       const msg = e?.message ? String(e.message) : String(e);
+      const isCancel = msg.includes("取消");
+      
       const duration = Date.now() - startTime;
       figma.ui.postMessage({ 
         type: "log", 
         action: env.intent === "create" ? "CREATE_TABLE" : "MODIFY_TABLE", 
         duration, 
-        status: "FAIL",
+        status: isCancel ? "CANCEL" : "FAIL",
         error: msg,
         userId: figma.currentUser?.id || "anonymous"
       });
       try {
         if (inProgressContainer && !inProgressContainer.removed) {
           inProgressContainer.locked = false;
+          // If cancelled during creation, we might want to remove the half-baked table?
+          // For now, let's just unlock it. 
+          // If requestCancel was called, it might have already removed it.
         }
       } catch {}
-      figma.notify("Envelope 应用失败: " + msg);
-      postError(msg);
+      
+      if (isCancel) {
+        figma.notify("操作已取消");
+      } else {
+        figma.notify("Envelope 应用失败: " + msg);
+        postError(msg);
+      }
+      
       figma.ui.postMessage({ type: "ai_apply_envelope_done" }); // Also reset on error
     } finally {
       setProcessing(false);
