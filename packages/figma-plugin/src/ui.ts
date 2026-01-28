@@ -131,6 +131,7 @@ const componentKeyInput = document.getElementById("component-key") as HTMLInputE
 const pluginDataOutput = document.getElementById("plugin-data-output") as HTMLDivElement;
 const getPropsBtn = document.getElementById("get-props");
 const btnGetTokens = document.getElementById("btn-get-tokens");
+const btnGetTeamStyles = document.getElementById("btn-get-team-styles");
 const btnOneClickCreate = document.getElementById("btn-one-click-create");
 const propsOutput = document.getElementById("props-output");
 const debugOutput = document.getElementById("debug-output");
@@ -1913,6 +1914,15 @@ btnGetTokens?.addEventListener("click", () => {
   post({ type: "get_figma_tokens" });
 });
 
+// Get Team Library TextStyles
+btnGetTeamStyles?.addEventListener("click", () => {
+  if (debugOutput) {
+    debugOutput.style.display = "block";
+    debugOutput.innerText = "Fetching Team TextStyles...";
+  }
+  post({ type: "get_team_library_styles" });
+});
+
 // One-click create subscription table
 btnOneClickCreate?.addEventListener("click", () => {
   setLoading(btnOneClickCreate as HTMLButtonElement, true);
@@ -2084,6 +2094,12 @@ window.onmessage = (event) => {
     console.log("Received Figma Tokens:", msg.tokens);
     if (debugOutput) {
       debugOutput.textContent = JSON.stringify(msg.tokens, null, 2);
+      debugOutput.style.display = "block";
+    }
+  } else if (msg.type === "team_library_styles") {
+    console.log("Received Team Library Styles:", msg.styles);
+    if (debugOutput) {
+      debugOutput.textContent = JSON.stringify(msg.styles, null, 2);
       debugOutput.style.display = "block";
     }
   } else if (msg.type === "error") {

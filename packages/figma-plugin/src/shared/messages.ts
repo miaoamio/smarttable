@@ -133,6 +133,7 @@ export type UiToPluginMessage =
   | { type: "set_table_switch"; key: "pagination" | "filter" | "actions" | "tabs"; enabled: boolean }
   | { type: "set_table_rows"; rows: number }
   | { type: "get_figma_tokens" }
+  | { type: "get_team_library_styles" }
   | { type: "ping" }
   | { type: "cancel_generation" };
 
@@ -184,6 +185,7 @@ export type PluginToUiMessage =
   | { type: "processing_start" }
   | { type: "processing_end" }
   | { type: "figma_tokens"; tokens: any }
+  | { type: "team_library_styles"; styles: any }
   | { type: "error"; message: string }
   | { type: "status"; message: string }
   | { type: "log"; action: string; userId: string; metadata?: any; duration?: number; error?: string };

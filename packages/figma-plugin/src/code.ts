@@ -2114,6 +2114,7 @@ async function renderActionCell(
     const part = visibleParts[i];
     const textNode = figma.createText();
     await loadTextNodeFonts(textNode);
+    if (cellFrame.removed) return;
     textNode.characters = part;
     textNode.fontSize = TOKENS.fontSizes["body-2"];
     
@@ -2163,6 +2164,7 @@ async function renderActionCell(
   }
 
   // Layout styling
+  if (cellFrame.removed) return;
   cellFrame.itemSpacing = 16;
   cellFrame.layoutMode = "HORIZONTAL";
   (cellFrame as any).layoutSizingHorizontal = "FILL";
@@ -2301,6 +2303,7 @@ async function renderHeaderCell(
   // 3. Create Text
   const textNode = figma.createText();
   await loadTextNodeFonts(textNode, "Regular");
+  if (cellFrame.removed) return;
   textNode.characters = text || "Header";
   textNode.fontSize = TOKENS.fontSizes["body-2"];
   textNode.textAlignHorizontal = align === "right" ? "RIGHT" : "LEFT";
@@ -2375,6 +2378,7 @@ async function renderTextCell(
 
   const textNode = figma.createText();
   await loadTextNodeFonts(textNode);
+  if (cellFrame.removed) return;
   textNode.characters = text || "";
   let appliedTextStyle = false;
   let appliedPaintStyle = false;
@@ -2383,6 +2387,7 @@ async function renderTextCell(
     const runtimeTextKey = (globalThis as any).__TEXT_STYLE_KEY__ || "S:ac8ef12de2cc499e51922d6b5239c26b3645a05a,131052:2";
     try { console.log("[SmartTable][Style] renderTextCell TextStyle key", runtimeTextKey); } catch {}
     const tsId = await resolveStyleId(stylePolicy, runtimeTextKey, "text");
+    if (cellFrame.removed) return;
     if (tsId) {
       textNode.textStyleId = tsId;
       appliedTextStyle = true;
@@ -2390,6 +2395,7 @@ async function renderTextCell(
     } else {
       const tsName = (globalThis as any).__TEXT_STYLE_NAME__ || "test";
       const localTsId = await getOrCreateTextStyleByName(tsName, TOKENS.fontSizes["body-2"]);
+      if (cellFrame.removed) return;
       textNode.textStyleId = localTsId;
       appliedTextStyle = true;
       try { console.log("[SmartTable][Style] fallback local textStyleId", tsName, localTsId); } catch {}
@@ -2399,6 +2405,7 @@ async function renderTextCell(
     const runtimePaintKey = (globalThis as any).__PAINT_STYLE_KEY__ || "S:68eb72ad68f196be54a5663c564b5f817d63a946,121374:27";
     try { console.log("[SmartTable][Style] renderTextCell PaintStyle key", runtimePaintKey); } catch {}
     const psId = await resolveStyleId(stylePolicy, runtimePaintKey, "paint");
+    if (cellFrame.removed) return;
     if (psId) {
       textNode.fillStyleId = psId;
       appliedPaintStyle = true;
@@ -2406,6 +2413,7 @@ async function renderTextCell(
     } else {
       const psName = (globalThis as any).__PAINT_STYLE_NAME__ || "test";
       const localPsId = await getOrCreatePaintStyleByName(psName, TOKENS.colors["text-1"]);
+      if (cellFrame.removed) return;
       textNode.fillStyleId = localPsId;
       appliedPaintStyle = true;
       try { console.log("[SmartTable][Style] fallback local fillStyleId", psName, localPsId); } catch {}
@@ -2682,11 +2690,13 @@ async function renderAvatarCell(
   // Create Name Text
   const nameText = figma.createText();
   await loadTextNodeFonts(nameText);
+  if (cellFrame.removed) return;
   nameText.characters = finalName;
   nameText.fontSize = TOKENS.fontSizes["body-2"];
   nameText.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["text-1"]) }];
   
   // Layout in cellFrame
+  if (cellFrame.removed) return;
   cellFrame.itemSpacing = 4; // Head-to-text spacing
   cellFrame.appendChild(avatarInst);
   cellFrame.appendChild(nameText);
@@ -2747,6 +2757,7 @@ async function renderTagCell(
             const t = counterInst.findOne(x => x.type === "TEXT") as TextNode;
             if (t) {
                 await loadTextNodeFonts(t);
+                if (cellFrame.removed) return;
                 t.characters = part;
             }
             cellFrame.appendChild(counterInst);
@@ -2776,6 +2787,7 @@ async function renderTagCell(
             const t = tagInst.findOne(x => x.type === "TEXT") as TextNode;
             if (t) {
                 await loadTextNodeFonts(t);
+                if (cellFrame.removed) return;
                 t.characters = part;
                 t.textTruncation = "ENDING";
                 if ("layoutSizingHorizontal" in t) {
@@ -2806,6 +2818,7 @@ async function renderTagCell(
         const t = counterInst.findOne(x => x.type === "TEXT") as TextNode;
         if (t) {
             await loadTextNodeFonts(t);
+            if (cellFrame.removed) return;
             const remaining = parts.length - MAX_TAGS;
             t.characters = `+${remaining}`;
         }
@@ -5220,6 +5233,26 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
   if (message.type === "cancel_generation") {
     requestCancel();
     figma.ui.postMessage({ type: "processing_end" });
+    return;
+  }
+  if (message.type === "get_team_library_styles") {
+    try {
+      const styles = await (figma as any).getAvailableTextStyles();
+      console.log("Team Library Styles:", styles);
+      const simplifiedStyles = styles.map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        key: s.key,
+        description: s.description,
+        remote: s.remote,
+        type: s.type
+      }));
+      figma.ui.postMessage({ type: "team_library_styles", styles: simplifiedStyles });
+      figma.notify(`Found ${styles.length} styles from team library`);
+    } catch (e) {
+      console.error("Failed to get team library styles:", e);
+      figma.ui.postMessage({ type: "error", message: "Failed to get team library styles: " + String(e) });
+    }
     return;
   }
   if (message.type === "set_variables") {
