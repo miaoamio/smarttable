@@ -1104,7 +1104,7 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
         prisma.callLog.groupBy({ by: ['action'], _count: { _all: true } }),
         prisma.callLog.groupBy({ where: { status: "FAIL", errorMsg: { not: null } }, by: ['errorMsg'], _count: { _all: true }, _max: { createdAt: true } }),
         prisma.callLog.groupBy({ by: ['userId'] }),
-        prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }),
+        prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH", status: { not: "DEV_SKIP" }, createdAt: { gte: new Date("2026-01-29T00:00:00.000Z") } } }),
         prisma.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }),
         prisma.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } })
       ]);

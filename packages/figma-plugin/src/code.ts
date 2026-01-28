@@ -2271,8 +2271,8 @@ async function renderHeaderCell(
   const align = alignProp || savedAlign || "left";
 
   // 1. Styling - Header Background
-  const headerBgKey = (globalThis as any).__HEADER_BG_KEY__;
-  const headerBgVarKey = (globalThis as any).__HEADER_BG_VAR_KEY__;
+  const headerBgKey = (globalThis as any).__HEADER_BG_KEY__ || "7cf3ca831c1355514ce1f4aacb8f1fd85242c41a";
+  const headerBgVarKey = (globalThis as any).__HEADER_BG_VAR_KEY__ || "0ad927853701159721b6bb95d53b532de24282a7";
   let bgApplied = false;
 
   // Try Variable for BG first (common for tokens)
@@ -2349,9 +2349,9 @@ async function renderHeaderCell(
   textNode.characters = text || "Header";
   
   // Apply Header Text Styles
-  const headerTextPaintKey = (globalThis as any).__HEADER_TEXT_PAINT_KEY__;
-  const headerTextStyleKey = (globalThis as any).__HEADER_TEXT_STYLE_KEY__;
-  const headerTextVarKey = (globalThis as any).__HEADER_TEXT_VAR_KEY__;
+  const headerTextPaintKey = (globalThis as any).__HEADER_TEXT_PAINT_KEY__ || "b2a5c0e2feb8b01e201e02e8f3cf831f8d2a0c4e";
+  const headerTextStyleKey = (globalThis as any).__HEADER_TEXT_STYLE_KEY__ || "06c98e2c68a38e391190684c4b73e26efcd5d930";
+  const headerTextVarKey = (globalThis as any).__HEADER_TEXT_VAR_KEY__ || "a7442f0ba4f4f027d86e03f335df11c38232c0ce";
   let textStyleApplied = false;
   let textPaintApplied = false;
 
@@ -5241,11 +5241,24 @@ async function init() {
 
   // Log plugin launch
   const userId = figma.currentUser?.id || "anonymous";
-  figma.ui.postMessage({ 
-    type: "log", 
-    action: "PLUGIN_LAUNCH", 
-    userId 
-  });
+  const isDev = process.env.NODE_ENV === "development" || (globalThis as any).__IS_DEV__;
+  
+  if (!isDev) {
+    figma.ui.postMessage({ 
+      type: "log", 
+      action: "PLUGIN_LAUNCH", 
+      userId,
+      status: "OK"
+    });
+  } else {
+    // Log with a special status to exclude from main stats
+    figma.ui.postMessage({ 
+      type: "log", 
+      action: "PLUGIN_LAUNCH", 
+      userId,
+      status: "DEV_SKIP"
+    });
+  }
   
   // Also pass userId to UI for subsequent logs
   figma.ui.postMessage({

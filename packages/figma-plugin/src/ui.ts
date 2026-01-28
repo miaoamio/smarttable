@@ -2134,6 +2134,7 @@ window.onmessage = (event) => {
       userId: msg.userId,
       duration: msg.duration,
       error: msg.error,
+      status: (msg as any).status,
       ...msg.metadata
     });
   }
@@ -2155,7 +2156,7 @@ async function sendLog(action: string, metadata: any = {}) {
     action,
     userId: metadata.userId || currentUserId || "unknown",
     latency: metadata.duration || 0,
-    status: metadata.error ? "FAIL" : "OK",
+    status: metadata.status || (metadata.error ? "FAIL" : "OK"),
     errorMsg: metadata.error,
     metadata: {
       ...metadata,
