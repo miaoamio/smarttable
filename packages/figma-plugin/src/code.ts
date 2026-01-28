@@ -5272,7 +5272,7 @@ init();
 figma.ui.onmessage = async (message: UiToPluginMessage) => {
   if (message.type === "save_style_config") {
     try {
-      const { textStyleKey, paintStyleKey, variableKey } = message;
+      const { textStyleKey, paintStyleKey, variableKey, silent } = message as any;
       await figma.clientStorage.setAsync("custom_style_config", {
         textStyleKey,
         paintStyleKey,
@@ -5283,7 +5283,9 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       (globalThis as any).__PAINT_STYLE_KEY__ = paintStyleKey;
       (globalThis as any).__VARIABLE_KEY__ = variableKey;
       
-      figma.notify("Style configuration saved!");
+      if (!silent) {
+        figma.notify("Style configuration saved!");
+      }
     } catch (e) {
       figma.notify("Failed to save style configuration", { error: true });
     }

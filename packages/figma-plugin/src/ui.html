@@ -569,7 +569,6 @@
       <div class="tabs">
         <button class="tab active" data-tab="ai">AI 生成</button>
         <button class="tab" data-tab="manual">手动调整</button>
-        <button class="tab" data-tab="config">参数配置</button>
         <button class="tab" data-tab="debug" style="display: none;">开发模式</button>
       </div>
       <div id="alert" class="alert">
@@ -994,38 +993,6 @@
         </div>
       </div>
 
-      <div id="tab-config" class="tab-panel">
-        <div class="section">
-          <div class="section-title">全局样式配置</div>
-          <div class="row">
-            <div class="col">
-              <span class="label">TextStyle Key (文本样式)</span>
-              <input type="text" id="public-text-style-key" placeholder="例如: S:..." style="width: 100%;">
-            </div>
-          </div>
-          <div class="row">
-            <div class="col">
-              <span class="label">PaintStyle Key (颜色样式)</span>
-              <input type="text" id="public-paint-style-key" placeholder="例如: S:..." style="width: 100%;">
-            </div>
-          </div>
-          <div class="row">
-            <div class="col">
-              <span class="label">Variable Key (变量)</span>
-              <input type="text" id="public-variable-key" placeholder="例如: VariableID:..." style="width: 100%;">
-            </div>
-          </div>
-          <div class="row" style="margin-top: 16px;">
-            <button id="btn-save-public-config" class="primary-button" style="width: 100%;">保存配置</button>
-          </div>
-          <div class="row" style="margin-top: 8px;">
-            <div class="col">
-              <span class="label" style="font-size: 10px; color: var(--color-text-subtle);">配置将保存在本地存储中，重启插件后依然有效。</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <div id="output" class="status-text"></div>
       <div id="tab-debug" class="tab-panel">
         <div
@@ -1073,25 +1040,6 @@
           </div>
           <div class="row" style="margin-top: 8px;">
             <button id="btn-get-team-styles" class="secondary" style="width: 100%;">获取团队库 TextStyle</button>
-          </div>
-          
-          <div class="divider"></div>
-          <div class="section-title">全局样式配置 (持久化)</div>
-          
-          <div class="row">
-            <label>TextStyle Key</label>
-            <input type="text" id="config-text-style-key" placeholder="S:..." style="width: 100%;">
-          </div>
-          <div class="row">
-            <label>PaintStyle Key</label>
-            <input type="text" id="config-paint-style-key" placeholder="S:..." style="width: 100%;">
-          </div>
-          <div class="row">
-            <label>Variable Key</label>
-            <input type="text" id="config-variable-key" placeholder="VariableID/Key..." style="width: 100%;">
-          </div>
-          <div class="row" style="margin-top: 8px;">
-            <button id="btn-save-style-config" class="primary-button" style="width: 100%;">保存样式配置</button>
           </div>
           
           <div

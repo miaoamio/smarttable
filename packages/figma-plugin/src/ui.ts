@@ -132,16 +132,6 @@ const pluginDataOutput = document.getElementById("plugin-data-output") as HTMLDi
 const getPropsBtn = document.getElementById("get-props");
 const btnGetTokens = document.getElementById("btn-get-tokens");
 const btnGetTeamStyles = document.getElementById("btn-get-team-styles");
-const btnSaveStyleConfig = document.getElementById("btn-save-style-config");
-const btnSavePublicConfig = document.getElementById("btn-save-public-config");
-
-const inputConfigTextStyleKey = document.getElementById("config-text-style-key") as HTMLInputElement;
-const inputConfigPaintStyleKey = document.getElementById("config-paint-style-key") as HTMLInputElement;
-const inputConfigVariableKey = document.getElementById("config-variable-key") as HTMLInputElement;
-
-const inputPublicTextStyleKey = document.getElementById("public-text-style-key") as HTMLInputElement;
-const inputPublicPaintStyleKey = document.getElementById("public-paint-style-key") as HTMLInputElement;
-const inputPublicVariableKey = document.getElementById("public-variable-key") as HTMLInputElement;
 
 const btnOneClickCreate = document.getElementById("btn-one-click-create");
 const propsOutput = document.getElementById("props-output");
@@ -1934,34 +1924,6 @@ btnGetTeamStyles?.addEventListener("click", () => {
   post({ type: "get_team_library_styles" });
 });
 
-// Save Style Config (Debug)
-btnSaveStyleConfig?.addEventListener("click", () => {
-  const textStyleKey = inputConfigTextStyleKey.value.trim();
-  const paintStyleKey = inputConfigPaintStyleKey.value.trim();
-  const variableKey = inputConfigVariableKey.value.trim();
-  
-  post({ 
-    type: "save_style_config",
-    textStyleKey,
-    paintStyleKey,
-    variableKey
-  });
-});
-
-// Save Style Config (Public)
-btnSavePublicConfig?.addEventListener("click", () => {
-  const textStyleKey = inputPublicTextStyleKey.value.trim();
-  const paintStyleKey = inputPublicPaintStyleKey.value.trim();
-  const variableKey = inputPublicVariableKey.value.trim();
-  
-  post({ 
-    type: "save_style_config",
-    textStyleKey,
-    paintStyleKey,
-    variableKey
-  });
-});
-
 // One-click create subscription table
 btnOneClickCreate?.addEventListener("click", () => {
   setLoading(btnOneClickCreate as HTMLButtonElement, true);
@@ -2141,17 +2103,6 @@ window.onmessage = (event) => {
       debugOutput.textContent = JSON.stringify(msg.styles, null, 2);
       debugOutput.style.display = "block";
     }
-  } else if (msg.type === "style_config") {
-    // Populate config inputs
-    if (msg.config) {
-      if (inputConfigTextStyleKey) inputConfigTextStyleKey.value = msg.config.textStyleKey || "";
-      if (inputConfigPaintStyleKey) inputConfigPaintStyleKey.value = msg.config.paintStyleKey || "";
-      if (inputConfigVariableKey) inputConfigVariableKey.value = msg.config.variableKey || "";
-
-      if (inputPublicTextStyleKey) inputPublicTextStyleKey.value = msg.config.textStyleKey || "";
-      if (inputPublicPaintStyleKey) inputPublicPaintStyleKey.value = msg.config.paintStyleKey || "";
-      if (inputPublicVariableKey) inputPublicVariableKey.value = msg.config.variableKey || "";
-    }
   } else if (msg.type === "error") {
     const text = `错误: ${msg.message}`;
     setOutput(text);
@@ -2229,7 +2180,24 @@ async function sendLog(action: string, metadata: any = {}) {
   // Start initialization immediately
   setupExcelUpload();
   loadCellTypeOptions();
-  post({ type: "get_style_config" });
+  // Fetch global style config from Gateway (DB)
+  const baseUrl = (document.getElementById("gateway-url") as HTMLInputElement)?.value || "http://localhost:8787";
+  fetch(`${baseUrl}/style-config`)
+    .then(res => res.json())
+    .then(config => {
+      if (config && (config.textStyleKey || config.paintStyleKey || config.variableKey)) {
+        console.log("Loaded remote style config:", config);
+        post({ 
+          type: "save_style_config",
+          textStyleKey: config.textStyleKey,
+          paintStyleKey: config.paintStyleKey,
+          variableKey: config.variableKey,
+          silent: true // Custom flag to avoid toast if code.ts supports it, otherwise just updates
+        } as any);
+      }
+    })
+    .catch(e => console.warn("Failed to load remote style config:", e));
+
   } catch (err: any) {
     const el = document.getElementById("alert");
     const textEl = document.getElementById("alert-text");

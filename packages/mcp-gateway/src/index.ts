@@ -440,6 +440,36 @@ tr:last-child td{border-bottom:none}
   <div class="tabs">
     <div class="tab active" data-target="stats-section">运行统计</div>
     <div class="tab" data-target="configs-section">组件配置</div>
+    <div class="tab" data-target="style-section">样式配置</div>
+  </div>
+
+  <div id="style-section" class="hidden">
+    <div class="card" style="max-width: 600px; margin: 0 auto;">
+      <div style="font-weight:600;margin-bottom:20px;font-size:15px">Global Style Configuration</div>
+      <div style="margin-bottom: 24px; font-size: 13px; color: var(--text-secondary);">
+        Configure the default styles and variables used when generating table cells. These settings are persisted in the database and synced to the Figma plugin.
+      </div>
+      
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">TextStyle Key</label>
+          <input id="style-text-key" style="width:100%;box-sizing:border-box" placeholder="e.g. S:ac8ef12de2cc499e51922d6b5239c26b3645a05a,131052:2">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">PaintStyle Key</label>
+          <input id="style-paint-key" style="width:100%;box-sizing:border-box" placeholder="e.g. S:68eb72ad68f196be54a5663c564b5f817d63a946,175596:9">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Variable Key</label>
+          <input id="style-variable-key" style="width:100%;box-sizing:border-box" placeholder="e.g. 178115a8c3bc7983da5bc10e637208895750dbfd">
+        </div>
+        
+        <div style="display:flex;justify-content:flex-end;margin-top:8px">
+          <button id="save-style-btn" class="primary">Save Configuration</button>
+        </div>
+        <div id="style-status" class="status-msg hidden"></div>
+      </div>
+    </div>
   </div>
 
   <div id="stats-section">
@@ -580,6 +610,53 @@ var createUpdateBtn=document.getElementById("create-update-btn");
 var deleteBtn=document.getElementById("delete-btn");
 var statusEl=document.getElementById("status");
 
+// Style Config Elements
+var styleTextKey = document.getElementById("style-text-key");
+var stylePaintKey = document.getElementById("style-paint-key");
+var styleVariableKey = document.getElementById("style-variable-key");
+var saveStyleBtn = document.getElementById("save-style-btn");
+var styleStatusEl = document.getElementById("style-status");
+
+function setStyleStatus(msg, type){
+  if(!styleStatusEl) return;
+  styleStatusEl.textContent=msg||"";
+  styleStatusEl.className = "status-msg " + (type === "error" ? "status-error" : "status-success");
+  styleStatusEl.classList.toggle("hidden", !msg);
+}
+
+function loadStyleConfig() {
+  fetch("/style-config")
+    .then(res => res.json())
+    .then(data => {
+      if(data) {
+        styleTextKey.value = data.textStyleKey || "";
+        stylePaintKey.value = data.paintStyleKey || "";
+        styleVariableKey.value = data.variableKey || "";
+      }
+    })
+    .catch(e => setStyleStatus("Failed to load config: " + e.message, "error"));
+}
+
+function saveStyleConfig() {
+  var data = {
+    textStyleKey: styleTextKey.value.trim(),
+    paintStyleKey: stylePaintKey.value.trim(),
+    variableKey: styleVariableKey.value.trim()
+  };
+  
+  setStyleStatus("Saving...");
+  fetch("/style-config", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(data)
+  })
+  .then(res => res.json())
+  .then(() => setStyleStatus("Configuration saved successfully!"))
+  .catch(e => setStyleStatus("Failed to save: " + e.message, "error"));
+}
+
+if(saveStyleBtn) saveStyleBtn.onclick = saveStyleConfig;
+
 // Tabs logic
 document.querySelectorAll(".tab").forEach(tab => {
   tab.onclick = function() {
@@ -588,9 +665,11 @@ document.querySelectorAll(".tab").forEach(tab => {
     const target = this.getAttribute("data-target");
     document.getElementById("stats-section").classList.add("hidden");
     document.getElementById("configs-section").classList.add("hidden");
+    document.getElementById("style-section").classList.add("hidden");
     document.getElementById(target).classList.remove("hidden");
     if(target === "stats-section") loadStats();
     if(target === "configs-section") loadComponents();
+    if(target === "style-section") loadStyleConfig();
   };
 });
 
@@ -1244,6 +1323,52 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
   if (req.method === "GET" && url.pathname === "/variables") {
     await initVariables();
     sendJson(req, res, 200, { items: Array.from(variables.values()) });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/style-config") {
+    let config = { textStyleKey: "", paintStyleKey: "", variableKey: "" };
+    if (process.env.DATABASE_URL) {
+      try {
+        const setting = await (prisma.systemSetting as any).findUnique({ where: { key: "global_style_config" } });
+        if (setting && setting.value) {
+          config = JSON.parse(setting.value);
+        }
+      } catch (e) {
+        console.error("Failed to load style config:", e);
+      }
+    }
+    sendJson(req, res, 200, config);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/style-config") {
+    let body: any;
+    try {
+      body = await readJson(req);
+    } catch (e: any) {
+      sendJson(req, res, 400, { error: "invalid_body" });
+      return;
+    }
+    
+    const config = {
+      textStyleKey: String(body.textStyleKey || "").trim(),
+      paintStyleKey: String(body.paintStyleKey || "").trim(),
+      variableKey: String(body.variableKey || "").trim()
+    };
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await (prisma.systemSetting as any).upsert({
+          where: { key: "global_style_config" },
+          update: { value: JSON.stringify(config), updatedAt: new Date() },
+          create: { key: "global_style_config", value: JSON.stringify(config), description: "Global style configuration for plugin generation" }
+        });
+      } catch (e) {
+        console.error("Failed to save style config:", e);
+      }
+    }
+    sendJson(req, res, 200, config);
     return;
   }
 
