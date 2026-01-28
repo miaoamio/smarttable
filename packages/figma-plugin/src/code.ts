@@ -2270,8 +2270,50 @@ async function renderHeaderCell(
   const savedAlign = cellFrame.getPluginData("textAlign") as "left" | "right";
   const align = alignProp || savedAlign || "left";
 
-  // 1. Styling
-  cellFrame.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["color-bg-4"]) }];
+  // 1. Styling - Header Background
+  const headerBgKey = (globalThis as any).__HEADER_BG_KEY__;
+  const headerBgVarKey = (globalThis as any).__HEADER_BG_VAR_KEY__;
+  let bgApplied = false;
+
+  // Try Variable for BG first (common for tokens)
+  if (headerBgVarKey) {
+    try {
+      let variable = null;
+      try {
+        variable = await figma.variables.importVariableByKeyAsync(headerBgVarKey);
+      } catch {
+         // try local if import fails
+      }
+      
+      if (variable) {
+         const paint: SolidPaint = { type: "SOLID", color: { r: 1, g: 1, b: 1 } };
+         const newFills = [figma.variables.setBoundVariableForPaint(paint, 'color', variable)];
+         cellFrame.fills = newFills;
+         bgApplied = true;
+      }
+    } catch (e) {
+      console.warn("Failed to apply header bg variable", e);
+    }
+  }
+
+  // Try PaintStyle for BG if variable didn't apply
+  if (!bgApplied && headerBgKey) {
+    try {
+       const style = await figma.importStyleByKeyAsync(headerBgKey);
+       if (style && style.type === "PAINT") {
+         await cellFrame.setFillStyleIdAsync(style.id);
+         bgApplied = true;
+       }
+    } catch (e) {
+      console.warn("Failed to apply header bg style", e);
+    }
+  }
+  
+  // Fallback BG
+  if (!bgApplied) {
+    cellFrame.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["color-bg-4"]) }];
+  }
+
   cellFrame.layoutMode = "HORIZONTAL";
   cellFrame.primaryAxisAlignItems = align === "left" ? "MIN" : "MAX";
   cellFrame.counterAxisAlignItems = "CENTER";
@@ -2305,9 +2347,46 @@ async function renderHeaderCell(
   await loadTextNodeFonts(textNode, "Regular");
   if (cellFrame.removed) return;
   textNode.characters = text || "Header";
-  textNode.fontSize = TOKENS.fontSizes["body-2"];
+  
+  // Apply Header Text Styles
+  const headerTextPaintKey = (globalThis as any).__HEADER_TEXT_PAINT_KEY__;
+  const headerTextStyleKey = (globalThis as any).__HEADER_TEXT_STYLE_KEY__;
+  let textStyleApplied = false;
+  let textPaintApplied = false;
+
+  // TextStyle
+  if (headerTextStyleKey) {
+    try {
+      const style = await figma.importStyleByKeyAsync(headerTextStyleKey);
+      if (style && style.type === "TEXT") {
+        await figma.loadFontAsync(style.fontName);
+        await textNode.setTextStyleIdAsync(style.id);
+        textStyleApplied = true;
+      }
+    } catch (e) { console.warn("Header text style fail", e); }
+  }
+
+  // Text Paint (Color)
+  if (headerTextPaintKey) {
+    try {
+      const style = await figma.importStyleByKeyAsync(headerTextPaintKey);
+      if (style && style.type === "PAINT") {
+        await textNode.setFillStyleIdAsync(style.id);
+        textPaintApplied = true;
+      }
+    } catch (e) { console.warn("Header text paint fail", e); }
+  }
+
+  // Fallbacks
+  if (!textStyleApplied) {
+    textNode.fontSize = TOKENS.fontSizes["body-2"];
+    textNode.fontName = { family: "Inter", style: "Medium" };
+  }
+  if (!textPaintApplied) {
+    textNode.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["text-2"]) }];
+  }
+  
   textNode.textAlignHorizontal = align === "right" ? "RIGHT" : "LEFT";
-  textNode.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["text-2"]) }];
   
   cellFrame.appendChild(textNode);
 
@@ -5272,16 +5351,33 @@ init();
 figma.ui.onmessage = async (message: UiToPluginMessage) => {
   if (message.type === "save_style_config") {
     try {
-      const { textStyleKey, paintStyleKey, variableKey, silent } = message as any;
-      await figma.clientStorage.setAsync("custom_style_config", {
+      const { 
+        textStyleKey, paintStyleKey, variableKey, 
+        headerBgKey, headerBgVarKey, headerTextPaintKey, headerTextStyleKey,
+        silent 
+      } = message as any;
+      
+      const config = {
         textStyleKey,
         paintStyleKey,
-        variableKey
-      });
+        variableKey,
+        headerBgKey,
+        headerBgVarKey,
+        headerTextPaintKey,
+        headerTextStyleKey
+      };
+
+      await figma.clientStorage.setAsync("custom_style_config", config);
       // Update runtime globals for immediate effect
       (globalThis as any).__TEXT_STYLE_KEY__ = textStyleKey;
       (globalThis as any).__PAINT_STYLE_KEY__ = paintStyleKey;
       (globalThis as any).__VARIABLE_KEY__ = variableKey;
+      
+      // Header styles
+      (globalThis as any).__HEADER_BG_KEY__ = headerBgKey;
+      (globalThis as any).__HEADER_BG_VAR_KEY__ = headerBgVarKey;
+      (globalThis as any).__HEADER_TEXT_PAINT_KEY__ = headerTextPaintKey;
+      (globalThis as any).__HEADER_TEXT_STYLE_KEY__ = headerTextStyleKey;
       
       if (!silent) {
         figma.notify("Style configuration saved!");

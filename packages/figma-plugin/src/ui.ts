@@ -2192,6 +2192,10 @@ async function sendLog(action: string, metadata: any = {}) {
           textStyleKey: config.textStyleKey,
           paintStyleKey: config.paintStyleKey,
           variableKey: config.variableKey,
+          headerBgKey: config.headerBgKey,
+          headerBgVarKey: config.headerBgVarKey,
+          headerTextPaintKey: config.headerTextPaintKey,
+          headerTextStyleKey: config.headerTextStyleKey,
           silent: true // Custom flag to avoid toast if code.ts supports it, otherwise just updates
         } as any);
       }

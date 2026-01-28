@@ -323,6 +323,43 @@ async function initVariables() {
       { id: "token-bg-3", type: "Variable", property: "fills", variableId: "", name: "Bg/Tertiary @color-bg-3", value: "#F2F3F5", updatedAt: now },
       { id: "token-border-1", type: "Variable", property: "strokes", variableId: "", name: "Border/Primary @color-border-1", value: "#E5E6EB", updatedAt: now },
       { id: "token-border-2", type: "Variable", property: "strokes", variableId: "", name: "Border/Secondary @color-border-2", value: "#C9CDD4", updatedAt: now },
+      // New Header Styles
+      { 
+        id: "header-bg-paint", 
+        type: "PaintStyle", 
+        property: "fills", 
+        variableId: "S:7cf3ca831c1355514ce1f4aacb8f1fd85242c41a,175526:1", 
+        name: "Header Bg (PaintStyle)", 
+        value: "#F2F3F5", 
+        updatedAt: now 
+      },
+      { 
+        id: "header-bg-var", 
+        type: "Variable", 
+        property: "fills", 
+        variableId: "VariableID:0ad927853701159721b6bb95d53b532de24282a7/174345:586", 
+        name: "Background/深 灰底 @color-bg-4", 
+        value: "#F2F3F5", 
+        updatedAt: now 
+      },
+      { 
+        id: "header-text-paint", 
+        type: "PaintStyle", 
+        property: "fills", 
+        variableId: "S:b2a5c0e2feb8b01e201e02e8f3cf831f8d2a0c4e,121374:28", 
+        name: "Header Text (PaintStyle)", 
+        value: "#1D2129", 
+        updatedAt: now 
+      },
+      { 
+        id: "header-text-style", 
+        type: "TextStyle", 
+        property: "text", 
+        variableId: "S:06c98e2c68a38e391190684c4b73e26efcd5d930,131052:3", 
+        name: "Header Text (TextStyle)", 
+        value: "Medium", 
+        updatedAt: now 
+      }
     ];
     defaults.forEach(v => variables.set(v.id, v));
   }
@@ -460,8 +497,28 @@ tr:last-child td{border-bottom:none}
           <input id="style-paint-key" style="width:100%;box-sizing:border-box" placeholder="e.g. S:68eb72ad68f196be54a5663c564b5f817d63a946,175596:9">
         </div>
         <div>
-          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Variable Key</label>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Body Variable Key</label>
           <input id="style-variable-key" style="width:100%;box-sizing:border-box" placeholder="e.g. 178115a8c3bc7983da5bc10e637208895750dbfd">
+        </div>
+
+        <div style="border-top:1px solid var(--border-color);margin:8px 0;"></div>
+        <div style="font-weight:600;font-size:14px">Header Style</div>
+
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Header Bg PaintStyle Key</label>
+          <input id="style-header-bg-key" style="width:100%;box-sizing:border-box" placeholder="e.g. S:7cf3ca831c1355514ce1f4aacb8f1fd85242c41a,175526:1">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Header Bg Variable Key</label>
+          <input id="style-header-bg-var-key" style="width:100%;box-sizing:border-box" placeholder="e.g. 0ad927853701159721b6bb95d53b532de24282a7">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Header Text PaintStyle Key</label>
+          <input id="style-header-text-paint-key" style="width:100%;box-sizing:border-box" placeholder="e.g. S:b2a5c0e2feb8b01e201e02e8f3cf831f8d2a0c4e,121374:28">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Header TextStyle Key</label>
+          <input id="style-header-text-style-key" style="width:100%;box-sizing:border-box" placeholder="e.g. S:06c98e2c68a38e391190684c4b73e26efcd5d930,131052:3">
         </div>
         
         <div style="display:flex;justify-content:flex-end;margin-top:8px">
@@ -614,6 +671,11 @@ var statusEl=document.getElementById("status");
 var styleTextKey = document.getElementById("style-text-key");
 var stylePaintKey = document.getElementById("style-paint-key");
 var styleVariableKey = document.getElementById("style-variable-key");
+var styleHeaderBgKey = document.getElementById("style-header-bg-key");
+var styleHeaderBgVarKey = document.getElementById("style-header-bg-var-key");
+var styleHeaderTextPaintKey = document.getElementById("style-header-text-paint-key");
+var styleHeaderTextStyleKey = document.getElementById("style-header-text-style-key");
+
 var saveStyleBtn = document.getElementById("save-style-btn");
 var styleStatusEl = document.getElementById("style-status");
 
@@ -632,6 +694,11 @@ function loadStyleConfig() {
         styleTextKey.value = data.textStyleKey || "";
         stylePaintKey.value = data.paintStyleKey || "";
         styleVariableKey.value = data.variableKey || "";
+        
+        styleHeaderBgKey.value = data.headerBgKey || "";
+        styleHeaderBgVarKey.value = data.headerBgVarKey || "";
+        styleHeaderTextPaintKey.value = data.headerTextPaintKey || "";
+        styleHeaderTextStyleKey.value = data.headerTextStyleKey || "";
       }
     })
     .catch(e => setStyleStatus("Failed to load config: " + e.message, "error"));
@@ -641,7 +708,11 @@ function saveStyleConfig() {
   var data = {
     textStyleKey: styleTextKey.value.trim(),
     paintStyleKey: stylePaintKey.value.trim(),
-    variableKey: styleVariableKey.value.trim()
+    variableKey: styleVariableKey.value.trim(),
+    headerBgKey: styleHeaderBgKey.value.trim(),
+    headerBgVarKey: styleHeaderBgVarKey.value.trim(),
+    headerTextPaintKey: styleHeaderTextPaintKey.value.trim(),
+    headerTextStyleKey: styleHeaderTextStyleKey.value.trim()
   };
   
   setStyleStatus("Saving...");
@@ -1327,12 +1398,15 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
   }
 
   if (req.method === "GET" && url.pathname === "/style-config") {
-    let config = { textStyleKey: "", paintStyleKey: "", variableKey: "" };
+    let config = { 
+      textStyleKey: "", paintStyleKey: "", variableKey: "",
+      headerBgKey: "", headerBgVarKey: "", headerTextPaintKey: "", headerTextStyleKey: ""
+    };
     if (process.env.DATABASE_URL) {
       try {
         const setting = await (prisma.systemSetting as any).findUnique({ where: { key: "global_style_config" } });
         if (setting && setting.value) {
-          config = JSON.parse(setting.value);
+          config = { ...config, ...JSON.parse(setting.value) };
         }
       } catch (e) {
         console.error("Failed to load style config:", e);
@@ -1354,7 +1428,11 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
     const config = {
       textStyleKey: String(body.textStyleKey || "").trim(),
       paintStyleKey: String(body.paintStyleKey || "").trim(),
-      variableKey: String(body.variableKey || "").trim()
+      variableKey: String(body.variableKey || "").trim(),
+      headerBgKey: String(body.headerBgKey || "").trim(),
+      headerBgVarKey: String(body.headerBgVarKey || "").trim(),
+      headerTextPaintKey: String(body.headerTextPaintKey || "").trim(),
+      headerTextStyleKey: String(body.headerTextStyleKey || "").trim()
     };
 
     if (process.env.DATABASE_URL) {
