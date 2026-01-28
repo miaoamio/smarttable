@@ -9,7 +9,8 @@
     "figma"
   ],
   "permissions": [
-    "currentuser"
+    "currentuser",
+    "teamlibrary"
   ],
   "networkAccess": {
     "allowedDomains": [
