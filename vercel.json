@@ -39,6 +39,8 @@
     { "src": "/tools", "dest": "/api/gateway.js" },
     { "src": "/tools/.*", "dest": "/api/gateway.js" },
     { "src": "/health", "dest": "/api/gateway.js" },
-    { "src": "/parse-excel", "dest": "/api/gateway.js" }
+    { "src": "/parse-excel", "dest": "/api/gateway.js" },
+    { "src": "/variables", "dest": "/api/gateway.js" },
+    { "src": "/variables/.*", "dest": "/api/gateway.js" }
   ]
 }

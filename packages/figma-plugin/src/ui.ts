@@ -341,6 +341,7 @@ function setLoading(btn: HTMLButtonElement | undefined, isLoading: boolean, abor
                 currentAbortController = null;
                 setOutput("用户取消了生成");
             }
+            post({ type: "cancel_generation" } as any);
             setLoading(btn, false);
         };
     }
@@ -1842,6 +1843,7 @@ cancelBtn?.addEventListener("click", () => {
   setOutput(msg);
   showAlert("error", msg);
   setLoading(currentLoadingButton, false);
+  post({ type: "cancel_generation" } as any);
 });
 
 btnCancelEdit?.addEventListener("click", () => {
@@ -1851,6 +1853,7 @@ btnCancelEdit?.addEventListener("click", () => {
   setOutput(msg);
   showAlert("error", msg);
   setLoading(currentLoadingButton, false);
+  post({ type: "cancel_generation" } as any);
 });
 
 // Get Props

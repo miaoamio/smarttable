@@ -132,7 +132,8 @@ export type UiToPluginMessage =
   | { type: "set_table_switch"; key: "pagination" | "filter" | "actions" | "tabs"; enabled: boolean }
   | { type: "set_table_rows"; rows: number }
   | { type: "get_figma_tokens" }
-  | { type: "ping" };
+  | { type: "ping" }
+  | { type: "cancel_generation" };
 
 export interface TableContext {
   rows: number;

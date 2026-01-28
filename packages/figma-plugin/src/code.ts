@@ -164,6 +164,21 @@ const TOKENS = {
   }
 };
 
+let cancelRequested = false;
+let inProgressContainer: FrameNode | null = null;
+function requestCancel() {
+  cancelRequested = true;
+  try {
+    if (inProgressContainer) {
+      inProgressContainer.locked = false;
+      inProgressContainer.remove();
+    }
+  } catch {}
+}
+function resetCancelState() {
+  cancelRequested = false;
+  inProgressContainer = null;
+}
 /**
  * Helper to convert hex to RGB for Figma
  */
@@ -179,6 +194,79 @@ function hexToRgb(hex: string): { r: number, g: number, b: number } {
   const b = parseInt(bHex, 16) / 255;
   if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) return { r: 0, g: 0, b: 0 };
   return { r, g, b };
+}
+
+function normalizeStyleKey(key: string) {
+  let s = (key || "").trim();
+  const i = s.indexOf(",");
+  if (i >= 0) s = s.slice(0, i);
+  return s;
+}
+
+async function importTextStyleByKey(key: string): Promise<TextStyle | null> {
+  try {
+    const k = normalizeStyleKey(key);
+    const style = await figma.importStyleByKeyAsync(k);
+    return style as TextStyle;
+  } catch {
+    return null;
+  }
+}
+
+async function importPaintStyleByKey(key: string): Promise<PaintStyle | null> {
+  try {
+    const k = normalizeStyleKey(key);
+    const style = await figma.importStyleByKeyAsync(k);
+    return style as PaintStyle;
+  } catch {
+    return null;
+  }
+}
+
+type StylePolicy = {
+  failThreshold: number;
+  failCount: Map<string, number>;
+  blocked: Set<string>;
+  cache: Map<string, string>;
+};
+
+function createStylePolicy(threshold = 3): StylePolicy {
+  return {
+    failThreshold: threshold,
+    failCount: new Map(),
+    blocked: new Set(),
+    cache: new Map(),
+  };
+}
+
+async function resolveStyleId(
+  policy: StylePolicy,
+  key: string,
+  kind: "text" | "paint"
+): Promise<string | null> {
+  const norm = normalizeStyleKey(key);
+  const cacheKey = `${kind}:${norm}`;
+  if (policy.blocked.has(cacheKey)) return null;
+  const cached = policy.cache.get(cacheKey);
+  if (cached) return cached;
+  const fail = policy.failCount.get(cacheKey) || 0;
+  if (fail >= policy.failThreshold) {
+    policy.blocked.add(cacheKey);
+    return null;
+  }
+  const style =
+    kind === "text"
+      ? await importTextStyleByKey(norm)
+      : await importPaintStyleByKey(norm);
+  if (style && style.id) {
+    policy.cache.set(cacheKey, style.id);
+    policy.failCount.set(cacheKey, 0);
+    return style.id;
+  }
+  const next = fail + 1;
+  policy.failCount.set(cacheKey, next);
+  if (next >= policy.failThreshold) policy.blocked.add(cacheKey);
+  return null;
 }
 
 /**
@@ -2212,17 +2300,18 @@ async function renderTextCell(
   textNode.characters = text || "";
   let appliedTextStyle = false;
   let appliedPaintStyle = false;
+  const stylePolicy: StylePolicy = (context as any)?.stylePolicy || createStylePolicy(3);
   try {
-    const ts = (await figma.importStyleByKeyAsync("S:ac8ef12de2cc499e51922d6b5239c26b3645a05a,131052:2")) as TextStyle;
-    if (ts) {
-      textNode.textStyleId = ts.id;
+    const tsId = await resolveStyleId(stylePolicy, "S:ac8ef12de2cc499e51922d6b5239c26b3645a05a,131052:2", "text");
+    if (tsId) {
+      textNode.textStyleId = tsId;
       appliedTextStyle = true;
     }
   } catch {}
   try {
-    const ps = (await figma.importStyleByKeyAsync("S:68eb72ad68f196be54a5663c564b5f817d63a946,121374:27")) as PaintStyle;
-    if (ps) {
-      textNode.fillStyleId = ps.id;
+    const psId = await resolveStyleId(stylePolicy, "S:68eb72ad68f196be54a5663c564b5f817d63a946,121374:27", "paint");
+    if (psId) {
+      textNode.fillStyleId = psId;
       appliedPaintStyle = true;
     }
   } catch {}
@@ -4354,6 +4443,7 @@ async function createTable(params: CreateTableOptions) {
   const totalWidth = 1176;
   const container = figma.createFrame();
   figma.currentPage.appendChild(container); // Add to page early to ensure valid coordinates
+  inProgressContainer = container;
 
   // Initial positioning to avoid appearing at origin during creation
   const initialCenter = figma.viewport.center;
@@ -4371,6 +4461,8 @@ async function createTable(params: CreateTableOptions) {
   
   // Lock container during creation to prevent user interference
   container.locked = true;
+
+  const stylePolicy = createStylePolicy(3);
 
   // Top Bar Container
   const topBarContainer = figma.createFrame();
@@ -4578,7 +4670,8 @@ async function createTable(params: CreateTableOptions) {
             inputComponent,
             selectComponent,
             stateComponent,
-            isAI: !!envelopeSchema
+            isAI: !!envelopeSchema,
+            stylePolicy
         };
         
         await customRenderer(cellFrame, val, context);
@@ -4706,6 +4799,7 @@ async function createTable(params: CreateTableOptions) {
   
   // Unlock container after creation is finished
   container.locked = false;
+  resetCancelState();
   
   // Also scroll to it to be sure
   figma.viewport.scrollAndZoomIntoView([container]);
@@ -5007,6 +5101,11 @@ init();
 
 
 figma.ui.onmessage = async (message: UiToPluginMessage) => {
+  if (message.type === "cancel_generation") {
+    requestCancel();
+    figma.ui.postMessage({ type: "processing_end" });
+    return;
+  }
   if (isProcessing) {
     console.warn("Plugin is busy, ignoring message:", message.type);
     return;
@@ -5117,11 +5216,17 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
         error: msg,
         userId: figma.currentUser?.id || "anonymous"
       });
+      try {
+        if (inProgressContainer && !inProgressContainer.removed) {
+          inProgressContainer.locked = false;
+        }
+      } catch {}
       figma.notify("Envelope 应用失败: " + msg);
       postError(msg);
       figma.ui.postMessage({ type: "ai_apply_envelope_done" }); // Also reset on error
     } finally {
       setProcessing(false);
+      resetCancelState();
     }
     return;
   }
