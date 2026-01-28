@@ -282,6 +282,91 @@ for (const entry of initialComponents) {
   }
 }
 
+type VariableConfig = {
+  id: string;
+  type: "PaintStyle" | "TextStyle" | "Variable";
+  property: string;
+  variableId: string;
+  name: string;
+  value: string;
+  updatedAt: string;
+};
+
+const variables = new Map<string, VariableConfig>();
+let variablesInitialized = false;
+async function initVariables() {
+  if (variablesInitialized) return;
+  if (process.env.DATABASE_URL) {
+    try {
+      const setting = await (prisma.systemSetting as any).findUnique({ where: { key: "variables" } });
+      if (setting && setting.value) {
+        const items = JSON.parse(setting.value);
+        if (Array.isArray(items)) {
+          items.forEach((v: any) => variables.set(v.id, v));
+          console.log(`Loaded ${items.length} variables from database.`);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load variables from database:", e);
+    }
+  }
+  if (variables.size === 0) {
+    const now = new Date().toISOString();
+    const defaults: VariableConfig[] = [
+      { id: "token-text-1", type: "Variable", property: "fills", variableId: "", name: "Text/Primary @color-text-1", value: "#0C0D0E", updatedAt: now },
+      { id: "token-text-2", type: "Variable", property: "fills", variableId: "", name: "Text/Secondary @color-text-2", value: "#4B5563", updatedAt: now },
+      { id: "token-text-3", type: "Variable", property: "fills", variableId: "", name: "Text/Tertiary @color-text-3", value: "#86909C", updatedAt: now },
+      { id: "token-link-6", type: "Variable", property: "fills", variableId: "", name: "Link/Primary @color-link-6", value: "#1664FF", updatedAt: now },
+      { id: "token-danger-6", type: "Variable", property: "fills", variableId: "", name: "State/Danger @color-danger-6", value: "#D7312A", updatedAt: now },
+      { id: "token-bg-1", type: "Variable", property: "fills", variableId: "", name: "Bg/Primary @color-bg-1", value: "#FFFFFF", updatedAt: now },
+      { id: "token-bg-2", type: "Variable", property: "fills", variableId: "", name: "Bg/Secondary @color-bg-2", value: "#F7F8FA", updatedAt: now },
+      { id: "token-bg-3", type: "Variable", property: "fills", variableId: "", name: "Bg/Tertiary @color-bg-3", value: "#F2F3F5", updatedAt: now },
+      { id: "token-border-1", type: "Variable", property: "strokes", variableId: "", name: "Border/Primary @color-border-1", value: "#E5E6EB", updatedAt: now },
+      { id: "token-border-2", type: "Variable", property: "strokes", variableId: "", name: "Border/Secondary @color-border-2", value: "#C9CDD4", updatedAt: now },
+    ];
+    defaults.forEach(v => variables.set(v.id, v));
+  }
+  {
+    const now = new Date().toISOString();
+    const paintStyleId = "S:68eb72ad68f196be54a5663c564b5f817d63a946,121374:27";
+    const textStyleId = "S:ac8ef12de2cc499e51922d6b5239c26b3645a05a,131052:2";
+    if (!variables.has("paintstyle-test")) {
+      variables.set("paintstyle-test", {
+        id: "paintstyle-test",
+        type: "PaintStyle",
+        property: "fills",
+        variableId: paintStyleId,
+        name: "test",
+        value: "#0C0D0E",
+        updatedAt: now
+      });
+    }
+    if (!variables.has("textstyle-test")) {
+      variables.set("textstyle-test", {
+        id: "textstyle-test",
+        type: "TextStyle",
+        property: "text",
+        variableId: textStyleId,
+        name: "test",
+        value: "",
+        updatedAt: now
+      });
+    }
+    if (process.env.DATABASE_URL) {
+      try {
+        const allVars = Array.from(variables.values());
+        await (prisma.systemSetting as any).upsert({
+          where: { key: "variables" },
+          update: { value: JSON.stringify(allVars), updatedAt: new Date() },
+          create: { key: "variables", value: JSON.stringify(allVars), description: "Plugin variables config" }
+        });
+      } catch (e) {
+        console.error("Failed to save variables to DB:", e);
+      }
+    }
+  }
+  variablesInitialized = true;
+}
 const adminPageHtml = `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -1156,6 +1241,12 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/variables") {
+    await initVariables();
+    sendJson(req, res, 200, { items: Array.from(variables.values()) });
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/components") {
     let body: any;
     try {
@@ -1223,6 +1314,48 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/variables") {
+    await initVariables();
+    let body: any;
+    try {
+      body = await readJson(req);
+    } catch (e: any) {
+      const msg = e?.message ? String(e.message) : String(e);
+      sendJson(req, res, msg === "request_body_too_large" ? 413 : 400, { error: msg });
+      return;
+    }
+    const id = typeof body?.id === "string" ? body.id.trim() : "";
+    if (!id) {
+      sendJson(req, res, 400, { error: "missing_id" });
+      return;
+    }
+    const now = new Date().toISOString();
+    const newVar: VariableConfig = {
+      id,
+      type: body.type || "Variable",
+      property: body.property || "",
+      variableId: body.variableId || "",
+      name: body.name || "",
+      value: body.value || "",
+      updatedAt: now
+    };
+    variables.set(id, newVar);
+    if (process.env.DATABASE_URL) {
+      try {
+        const allVars = Array.from(variables.values());
+        await (prisma.systemSetting as any).upsert({
+          where: { key: "variables" },
+          update: { value: JSON.stringify(allVars), updatedAt: new Date() },
+          create: { key: "variables", value: JSON.stringify(allVars), description: "Plugin variables config" }
+        });
+      } catch (e) {
+        console.error("Failed to save variables to DB:", e);
+      }
+    }
+    sendJson(req, res, 200, newVar);
+    return;
+  }
+
   const componentMatch = url.pathname.match(/^\/components\/([^/]+)$/);
   if (componentMatch) {
     const key = decodeURIComponent(componentMatch[1]);
@@ -1249,6 +1382,29 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
           await prisma.componentConfig.delete({ where: { configKey: key } });
         } catch (e) {
           console.error("Failed to delete config from database:", e);
+        }
+      }
+      sendJson(req, res, 204, {});
+      return;
+    }
+  }
+
+  const variableMatch = url.pathname.match(/^\/variables\/([^/]+)$/);
+  if (variableMatch) {
+    const id = decodeURIComponent(variableMatch[1]);
+    if (req.method === "DELETE") {
+      await initVariables();
+      variables.delete(id);
+      if (process.env.DATABASE_URL) {
+        try {
+          const allVars = Array.from(variables.values());
+          await (prisma.systemSetting as any).upsert({
+            where: { key: "variables" },
+            update: { value: JSON.stringify(allVars), updatedAt: new Date() },
+            create: { key: "variables", value: JSON.stringify(allVars), description: "Plugin variables config" }
+          });
+        } catch (e) {
+          console.error("Failed to save variables to DB:", e);
         }
       }
       sendJson(req, res, 204, {});
