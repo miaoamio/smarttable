@@ -326,7 +326,13 @@ function setLoading(btn: HTMLButtonElement | undefined, isLoading: boolean, abor
   
   if (isLoading) {
     if (overlay) overlay.classList.remove("hidden");
-    if (btn) btn.disabled = true;
+    if (btn) {
+        btn.disabled = true;
+        currentLoadingButton = btn;
+        if (!btn.dataset.originalText) {
+             btn.dataset.originalText = btn.textContent || "";
+        }
+    }
     
     // Store abort controller if provided
     if (abortController) {
@@ -355,6 +361,7 @@ function setLoading(btn: HTMLButtonElement | undefined, isLoading: boolean, abor
   } else {
     if (overlay) overlay.classList.add("hidden");
     if (btn) btn.disabled = false;
+    currentLoadingButton = null;
     currentAbortController = null;
   }
 }
@@ -775,7 +782,9 @@ function resetLoadingState() {
   stopFakeProgress();
   if (currentLoadingButton) {
     currentLoadingButton.disabled = false;
-    currentLoadingButton.textContent = currentLoadingButton.dataset.originalText || "AI 生成表格";
+    if (currentLoadingButton.dataset.originalText) {
+        currentLoadingButton.textContent = currentLoadingButton.dataset.originalText;
+    }
     currentLoadingButton = null;
   }
   // Ensure buttons are re-enabled
@@ -1906,6 +1915,7 @@ btnGetTokens?.addEventListener("click", () => {
 
 // One-click create subscription table
 btnOneClickCreate?.addEventListener("click", () => {
+  setLoading(btnOneClickCreate as HTMLButtonElement, true);
   const subscriptionData = {
     "intent": "create",
     "schema": {

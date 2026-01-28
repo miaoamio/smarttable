@@ -4559,6 +4559,7 @@ async function createTable(params: CreateTableOptions) {
   container.locked = true;
 
   const stylePolicy = createStylePolicy(3);
+  let lastYieldTime = Date.now();
 
   // Top Bar Container
   const topBarContainer = figma.createFrame();
@@ -4631,6 +4632,8 @@ async function createTable(params: CreateTableOptions) {
 
       // Create Columns and Fill Content simultaneously
       for (let c = 0; c < cols; c++) {
+          if (cancelRequested) throw new Error("用户取消了生成");
+          
           const colSpec = envelopeSchema?.columns?.[c];
           const colTitle = colSpec?.title || `Column ${c + 1}`;
           let colType = colSpec?.type || "Text";
@@ -4817,8 +4820,10 @@ async function createTable(params: CreateTableOptions) {
       }
 
       // Yield every 10 rows inside the column loop to respond to cancellation faster
-      if (r > 0 && r % 10 === 0) {
+      // Check time instead of count for better responsiveness
+      if (Date.now() - lastYieldTime > 50) {
         await yieldToMain();
+        lastYieldTime = Date.now();
         if (cancelRequested) {
           throw new Error("用户取消了生成");
         }
@@ -4828,6 +4833,9 @@ async function createTable(params: CreateTableOptions) {
     // Yield to main thread every few columns
     if (c > 0 && c % 3 === 0) {
       await yieldToMain();
+      // Reset timer after yield
+      lastYieldTime = Date.now();
+      
       if (cancelRequested) {
         throw new Error("用户取消了生成");
       }
