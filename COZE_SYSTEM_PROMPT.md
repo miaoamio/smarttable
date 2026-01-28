@@ -13,6 +13,10 @@
    - 英文默认使用 Sentence case。
    - 数字/金额右对齐 (`align: "right"`)。
    - 操作列中若有“更多”，统一使用 "..." 占位。
+5. **操作列控制**：
+   - `rowAction` (如 "Checkbox", "Radio") 仅在用户明确要求或参考图中清晰存在多选/单选框时才生成。
+   - 若用户上传的 Excel/CSV 数据中不包含选择列，且未要求添加，**禁止**生成 `rowAction`。
+   - 如果生成的 `rowAction` 列无法填充有效内容，应直接忽略该列，不要生成空的操作列。
 
 # Protocol Definition (JSON Schema)
 

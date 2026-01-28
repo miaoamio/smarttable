@@ -3805,7 +3805,19 @@ function toPositiveInt(value: number, fallback: number) {
 async function loadComponent(key: string, fallbackName?: string): Promise<ComponentNode | ComponentSetNode> {
   // 0. Check Cache
   if (componentCache.has(key)) {
-    return componentCache.get(key)!;
+    const cached = componentCache.get(key)!;
+    try {
+      // Accessing a property to check if node is valid/alive
+      if (cached.removed) {
+        console.warn(`Cached component ${key} is removed, reloading...`);
+        componentCache.delete(key);
+      } else {
+        return cached;
+      }
+    } catch (e) {
+      console.warn(`Cached component ${key} is invalid (${e}), reloading...`);
+      componentCache.delete(key);
+    }
   }
 
   // 1. Try importComponentByKeyAsync directly
@@ -4241,6 +4253,10 @@ async function createRowActionColumn(tableFrame: FrameNode, rows: number, type: 
             }
         } catch (e) {
             console.warn(`Failed to load row action ${type}`, e);
+            // If we failed to load the component or populate the column, remove the entire column
+            // to avoid showing a broken column with only a header.
+            colFrame.remove();
+            return colFrame;
         }
     }
     
@@ -5841,8 +5857,18 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
     try {
       const selection = figma.currentPage.selection;
       let table: FrameNode | null = null;
+      let targetColumnIndex = -1;
+
       if (selection.length > 0) {
-        table = findTableFrameFromNode(selection[0] as any);
+        const node = selection[0];
+        table = findTableFrameFromNode(node);
+        
+        // Try to find the specific column to insert after
+        const colFrame = findColumnFrame(node);
+        if (colFrame && table) {
+            const cols = getColumnFrames(table);
+            targetColumnIndex = cols.indexOf(colFrame);
+        }
       }
       
       if (!table) {
@@ -5858,9 +5884,12 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
         await applyOperationToTable(table, {
           op: "add_cols",
           count: 1,
-          position: "end"
+          position: targetColumnIndex !== -1 ? targetColumnIndex + 1 : "end"
         });
-        figma.notify("已在最右侧添加一列");
+        const msg = targetColumnIndex !== -1 
+            ? `已在选中列右侧添加一列` 
+            : "已在最右侧添加一列";
+        figma.notify(msg);
       } catch (e: any) {
         figma.notify("添加列失败: " + e.message);
       } finally {
