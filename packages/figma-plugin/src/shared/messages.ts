@@ -135,6 +135,8 @@ export type UiToPluginMessage =
   | { type: "get_figma_tokens" }
   | { type: "get_team_library_styles" }
   | { type: "ping" }
+  | { type: "save_style_config"; textStyleKey: string; paintStyleKey: string; variableKey: string }
+  | { type: "get_style_config" }
   | { type: "cancel_generation" };
 
 export interface TableContext {
@@ -186,6 +188,7 @@ export type PluginToUiMessage =
   | { type: "processing_end" }
   | { type: "figma_tokens"; tokens: any }
   | { type: "team_library_styles"; styles: any }
+  | { type: "style_config"; config: any }
   | { type: "error"; message: string }
   | { type: "status"; message: string }
   | { type: "log"; action: string; userId: string; metadata?: any; duration?: number; error?: string };

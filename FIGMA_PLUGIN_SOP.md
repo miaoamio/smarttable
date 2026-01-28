@@ -159,6 +159,19 @@ Figma 插件不会自动“热更新”界面，你需要在修改代码后执�
   3. **优化 UI 状态同步**: 重构 `setActiveTab` 和 `updatePanels`，移除对开发模式面板的强依赖，并在 Tab 点击时强制刷新子面板状态。
   4. **兜底定位**: 在 `postSelection` 中增加兜底逻辑，若无法精确定位行列，至少识别为表格容器，确保基础配置项可用。
 
+### **问题 D: "Failed to apply TextStyle/Variable" (API 限制与权限)**
+- **现象**: 尝试应用团队库样式或变量时报错 `Cannot call with documentAccess: dynamic-page` 或 `could not find variable`。
+- **根本原因**:
+  1. **异步 API 强制**: `documentAccess: dynamic-page` 模式下，设置样式 ID（如 `textStyleId`）必须使用异步方法 `setTextStyleIdAsync`。
+  2. **变量查找限制**: `importVariableByKeyAsync` 仅适用于从未导入过的远程变量。如果变量已在本地存在（即使是引用的库变量），该方法可能失败。
+- **解决方案**:
+  1. **样式应用**: 
+     - **TextStyle**: 使用 `await node.setTextStyleIdAsync(id)` 替代 `node.textStyleId = id`。
+     - **PaintStyle**: 使用 `await node.setFillStyleIdAsync(id)` 替代 `node.fillStyleId = id`。
+  2. **变量应用**:
+     - **查找策略**: 优先尝试 `importVariableByKeyAsync(key)`。如果失败（抛错），捕获错误并降级尝试 `getVariableByIdAsync(id)`。
+     - **绑定**: 使用 `figma.variables.setBoundVariableForPaint(paint, 'color', variable)` 绑定颜色变量。注意先检查 `paint.type === 'SOLID'`。
+
 - `EADDRINUSE`（端口占用）
   - 结束旧的 gateway 进程后再重新启动
 

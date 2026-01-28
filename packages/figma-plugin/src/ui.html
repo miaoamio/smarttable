@@ -1041,6 +1041,26 @@
           <div class="row" style="margin-top: 8px;">
             <button id="btn-get-team-styles" class="secondary" style="width: 100%;">获取团队库 TextStyle</button>
           </div>
+          
+          <div class="divider"></div>
+          <div class="section-title">全局样式配置 (持久化)</div>
+          
+          <div class="row">
+            <label>TextStyle Key</label>
+            <input type="text" id="config-text-style-key" placeholder="S:..." style="width: 100%;">
+          </div>
+          <div class="row">
+            <label>PaintStyle Key</label>
+            <input type="text" id="config-paint-style-key" placeholder="S:..." style="width: 100%;">
+          </div>
+          <div class="row">
+            <label>Variable Key</label>
+            <input type="text" id="config-variable-key" placeholder="VariableID/Key..." style="width: 100%;">
+          </div>
+          <div class="row" style="margin-top: 8px;">
+            <button id="btn-save-style-config" class="primary-button" style="width: 100%;">保存样式配置</button>
+          </div>
+          
           <div
             id="debug-output"
             style="

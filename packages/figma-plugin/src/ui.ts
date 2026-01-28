@@ -132,6 +132,11 @@ const pluginDataOutput = document.getElementById("plugin-data-output") as HTMLDi
 const getPropsBtn = document.getElementById("get-props");
 const btnGetTokens = document.getElementById("btn-get-tokens");
 const btnGetTeamStyles = document.getElementById("btn-get-team-styles");
+const btnSaveStyleConfig = document.getElementById("btn-save-style-config");
+const inputConfigTextStyleKey = document.getElementById("config-text-style-key") as HTMLInputElement;
+const inputConfigPaintStyleKey = document.getElementById("config-paint-style-key") as HTMLInputElement;
+const inputConfigVariableKey = document.getElementById("config-variable-key") as HTMLInputElement;
+
 const btnOneClickCreate = document.getElementById("btn-one-click-create");
 const propsOutput = document.getElementById("props-output");
 const debugOutput = document.getElementById("debug-output");
@@ -1923,6 +1928,20 @@ btnGetTeamStyles?.addEventListener("click", () => {
   post({ type: "get_team_library_styles" });
 });
 
+// Save Style Config
+btnSaveStyleConfig?.addEventListener("click", () => {
+  const textStyleKey = inputConfigTextStyleKey.value.trim();
+  const paintStyleKey = inputConfigPaintStyleKey.value.trim();
+  const variableKey = inputConfigVariableKey.value.trim();
+  
+  post({ 
+    type: "save_style_config",
+    textStyleKey,
+    paintStyleKey,
+    variableKey
+  });
+});
+
 // One-click create subscription table
 btnOneClickCreate?.addEventListener("click", () => {
   setLoading(btnOneClickCreate as HTMLButtonElement, true);
@@ -2102,6 +2121,13 @@ window.onmessage = (event) => {
       debugOutput.textContent = JSON.stringify(msg.styles, null, 2);
       debugOutput.style.display = "block";
     }
+  } else if (msg.type === "style_config") {
+    // Populate config inputs
+    if (msg.config) {
+      if (inputConfigTextStyleKey) inputConfigTextStyleKey.value = msg.config.textStyleKey || "";
+      if (inputConfigPaintStyleKey) inputConfigPaintStyleKey.value = msg.config.paintStyleKey || "";
+      if (inputConfigVariableKey) inputConfigVariableKey.value = msg.config.variableKey || "";
+    }
   } else if (msg.type === "error") {
     const text = `错误: ${msg.message}`;
     setOutput(text);
@@ -2179,6 +2205,7 @@ async function sendLog(action: string, metadata: any = {}) {
   // Start initialization immediately
   setupExcelUpload();
   loadCellTypeOptions();
+  post({ type: "get_style_config" });
   } catch (err: any) {
     const el = document.getElementById("alert");
     const textEl = document.getElementById("alert-text");
