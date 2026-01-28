@@ -284,6 +284,89 @@ async function initVariables() {
             { id: "token-bg-3", type: "Variable", property: "fills", variableId: "", name: "Bg/Tertiary @color-bg-3", value: "#F2F3F5", updatedAt: now },
             { id: "token-border-1", type: "Variable", property: "strokes", variableId: "", name: "Border/Primary @color-border-1", value: "#E5E6EB", updatedAt: now },
             { id: "token-border-2", type: "Variable", property: "strokes", variableId: "", name: "Border/Secondary @color-border-2", value: "#C9CDD4", updatedAt: now },
+            // New Header Styles
+            {
+                id: "header-bg-paint",
+                type: "PaintStyle",
+                property: "fills",
+                variableId: "S:7cf3ca831c1355514ce1f4aacb8f1fd85242c41a,175526:1",
+                name: "Header Bg (PaintStyle)",
+                value: "#F2F3F5",
+                updatedAt: now
+            },
+            {
+                id: "header-bg-var",
+                type: "Variable",
+                property: "fills",
+                variableId: "VariableID:0ad927853701159721b6bb95d53b532de24282a7/174345:586",
+                name: "Background/深 灰底 @color-bg-4",
+                value: "#F2F3F5",
+                updatedAt: now
+            },
+            {
+                id: "header-text-paint",
+                type: "PaintStyle",
+                property: "fills",
+                variableId: "S:b2a5c0e2feb8b01e201e02e8f3cf831f8d2a0c4e,121374:28",
+                name: "Header Text (PaintStyle)",
+                value: "#1D2129",
+                updatedAt: now
+            },
+            {
+                id: "header-text-var",
+                type: "Variable",
+                property: "fills",
+                variableId: "VariableID:a7442f0ba4f4f027d86e03f335df11c38232c0ce/174345:562",
+                name: "Text/次强调正文标题 @color-text-2",
+                value: "#4B5563",
+                updatedAt: now
+            },
+            {
+                id: "header-text-style",
+                type: "TextStyle",
+                property: "text",
+                variableId: "S:06c98e2c68a38e391190684c4b73e26efcd5d930,131052:3",
+                name: "Header Text (TextStyle)",
+                value: "Medium",
+                updatedAt: now
+            },
+            // Action Column Styles
+            {
+                id: "action-primary-paint",
+                type: "PaintStyle",
+                property: "fills",
+                variableId: "S:492925ebab9058ced1e85da9e339d24ee43c37b9,175526:0",
+                name: "Action/Primary (PaintStyle)",
+                value: "#1664FF",
+                updatedAt: now
+            },
+            {
+                id: "action-primary-var",
+                type: "Variable",
+                property: "fills",
+                variableId: "VariableID:75f358d76d414f045a47f128470fcbbde49888dc/174345:300",
+                name: "Primary Color/常规 @primary-6",
+                value: "#1664FF",
+                updatedAt: now
+            },
+            {
+                id: "action-danger-paint",
+                type: "PaintStyle",
+                property: "fills",
+                variableId: "S:917be8eadd8d3dddacdde2f6103b1aa04d2254d4,175596:51",
+                name: "Action/Danger (PaintStyle)",
+                value: "#D7312A",
+                updatedAt: now
+            },
+            {
+                id: "action-danger-var",
+                type: "Variable",
+                property: "fills",
+                variableId: "VariableID:f60b03f9d134cb4ac3f68fb23b1fda9ba1304745/174345:672",
+                name: "Red/常规 @danger-6",
+                value: "#D7312A",
+                updatedAt: now
+            }
         ];
         defaults.forEach(v => variables.set(v.id, v));
     }
@@ -402,6 +485,72 @@ tr:last-child td{border-bottom:none}
   <div class="tabs">
     <div class="tab active" data-target="stats-section">运行统计</div>
     <div class="tab" data-target="configs-section">组件配置</div>
+    <div class="tab" data-target="style-section">样式配置</div>
+  </div>
+
+  <div id="style-section" class="hidden">
+    <div class="card" style="max-width: 600px; margin: 0 auto;">
+      <div style="font-weight:600;margin-bottom:20px;font-size:15px">Global Style Configuration</div>
+      <div style="margin-bottom: 24px; font-size: 13px; color: var(--text-secondary);">
+        Configure the default styles and variables used when generating table cells. These settings are persisted in the database and synced to the Figma plugin.
+      </div>
+      
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">TextStyle Key</label>
+          <input id="style-text-key" style="width:100%;box-sizing:border-box" placeholder="e.g. S:ac8ef12de2cc499e51922d6b5239c26b3645a05a,131052:2">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">PaintStyle Key</label>
+          <input id="style-paint-key" style="width:100%;box-sizing:border-box" placeholder="e.g. S:68eb72ad68f196be54a5663c564b5f817d63a946,175596:9">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Body Variable Key</label>
+          <input id="style-variable-key" style="width:100%;box-sizing:border-box" placeholder="e.g. 178115a8c3bc7983da5bc10e637208895750dbfd">
+        </div>
+
+        <div style="border-top:1px solid var(--border-color);margin:8px 0;"></div>
+        <div style="font-weight:600;font-size:14px">Header Style</div>
+
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Header Bg PaintStyle Key</label>
+          <input id="style-header-bg-key" style="width:100%;box-sizing:border-box" placeholder="e.g. S:7cf3ca831c1355514ce1f4aacb8f1fd85242c41a,175526:1">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Header Bg Variable Key</label>
+          <input id="style-header-bg-var-key" style="width:100%;box-sizing:border-box" placeholder="e.g. 0ad927853701159721b6bb95d53b532de24282a7">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Header Text PaintStyle Key</label>
+          <input id="style-header-text-paint-key" style="width:100%;box-sizing:border-box" placeholder="e.g. S:b2a5c0e2feb8b01e201e02e8f3cf831f8d2a0c4e,121374:28">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Header Text Variable Key</label>
+          <input id="style-header-text-var-key" style="width:100%;box-sizing:border-box" placeholder="e.g. a7442f0ba4f4f027d86e03f335df11c38232c0ce">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Header TextStyle Key</label>
+          <input id="style-header-text-style-key" style="width:100%;box-sizing:border-box" placeholder="e.g. S:06c98e2c68a38e391190684c4b73e26efcd5d930,131052:3">
+        </div>
+        
+        <div style="border-top:1px solid var(--border-color);margin:8px 0;"></div>
+        <div style="font-weight:600;font-size:14px">Action Column Style</div>
+
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Action Primary Variable Key</label>
+          <input id="style-action-primary-var-key" style="width:100%;box-sizing:border-box" placeholder="e.g. 75f358d76d414f045a47f128470fcbbde49888dc">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Action Danger Variable Key</label>
+          <input id="style-action-danger-var-key" style="width:100%;box-sizing:border-box" placeholder="e.g. f60b03f9d134cb4ac3f68fb23b1fda9ba1304745">
+        </div>
+        
+        <div style="display:flex;justify-content:flex-end;margin-top:8px">
+          <button id="save-style-btn" class="primary">Save Configuration</button>
+        </div>
+        <div id="style-status" class="status-msg hidden"></div>
+      </div>
+    </div>
   </div>
 
   <div id="stats-section">
@@ -542,6 +691,78 @@ var createUpdateBtn=document.getElementById("create-update-btn");
 var deleteBtn=document.getElementById("delete-btn");
 var statusEl=document.getElementById("status");
 
+// Style Config Elements
+var styleTextKey = document.getElementById("style-text-key");
+var stylePaintKey = document.getElementById("style-paint-key");
+var styleVariableKey = document.getElementById("style-variable-key");
+var styleHeaderBgKey = document.getElementById("style-header-bg-key");
+var styleHeaderBgVarKey = document.getElementById("style-header-bg-var-key");
+var styleHeaderTextPaintKey = document.getElementById("style-header-text-paint-key");
+var styleHeaderTextVarKey = document.getElementById("style-header-text-var-key");
+var styleHeaderTextStyleKey = document.getElementById("style-header-text-style-key");
+
+var styleActionPrimaryVarKey = document.getElementById("style-action-primary-var-key");
+var styleActionDangerVarKey = document.getElementById("style-action-danger-var-key");
+
+var saveStyleBtn = document.getElementById("save-style-btn");
+var styleStatusEl = document.getElementById("style-status");
+
+function setStyleStatus(msg, type){
+  if(!styleStatusEl) return;
+  styleStatusEl.textContent=msg||"";
+  styleStatusEl.className = "status-msg " + (type === "error" ? "status-error" : "status-success");
+  styleStatusEl.classList.toggle("hidden", !msg);
+}
+
+function loadStyleConfig() {
+  fetch("/style-config")
+    .then(res => res.json())
+    .then(data => {
+      if(data) {
+        styleTextKey.value = data.textStyleKey || "";
+        stylePaintKey.value = data.paintStyleKey || "";
+        styleVariableKey.value = data.variableKey || "";
+        
+        styleHeaderBgKey.value = data.headerBgKey || "";
+        styleHeaderBgVarKey.value = data.headerBgVarKey || "";
+        styleHeaderTextPaintKey.value = data.headerTextPaintKey || "";
+        styleHeaderTextVarKey.value = data.headerTextVarKey || "";
+        styleHeaderTextStyleKey.value = data.headerTextStyleKey || "";
+        
+        styleActionPrimaryVarKey.value = data.actionPrimaryVarKey || "";
+        styleActionDangerVarKey.value = data.actionDangerVarKey || "";
+      }
+    })
+    .catch(e => setStyleStatus("Failed to load config: " + e.message, "error"));
+}
+
+function saveStyleConfig() {
+  var data = {
+    textStyleKey: styleTextKey.value.trim(),
+    paintStyleKey: stylePaintKey.value.trim(),
+    variableKey: styleVariableKey.value.trim(),
+    headerBgKey: styleHeaderBgKey.value.trim(),
+    headerBgVarKey: styleHeaderBgVarKey.value.trim(),
+    headerTextPaintKey: styleHeaderTextPaintKey.value.trim(),
+    headerTextVarKey: styleHeaderTextVarKey.value.trim(),
+    headerTextStyleKey: styleHeaderTextStyleKey.value.trim(),
+    actionPrimaryVarKey: styleActionPrimaryVarKey.value.trim(),
+    actionDangerVarKey: styleActionDangerVarKey.value.trim()
+  };
+  
+  setStyleStatus("Saving...");
+  fetch("/style-config", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(data)
+  })
+  .then(res => res.json())
+  .then(() => setStyleStatus("Configuration saved successfully!"))
+  .catch(e => setStyleStatus("Failed to save: " + e.message, "error"));
+}
+
+if(saveStyleBtn) saveStyleBtn.onclick = saveStyleConfig;
+
 // Tabs logic
 document.querySelectorAll(".tab").forEach(tab => {
   tab.onclick = function() {
@@ -550,9 +771,11 @@ document.querySelectorAll(".tab").forEach(tab => {
     const target = this.getAttribute("data-target");
     document.getElementById("stats-section").classList.add("hidden");
     document.getElementById("configs-section").classList.add("hidden");
+    document.getElementById("style-section").classList.add("hidden");
     document.getElementById(target).classList.remove("hidden");
     if(target === "stats-section") loadStats();
     if(target === "configs-section") loadComponents();
+    if(target === "style-section") loadStyleConfig();
   };
 });
 
@@ -873,7 +1096,7 @@ const server = http.createServer(async (req, res) => {
                 prisma.callLog.groupBy({ by: ['action'], _count: { _all: true } }),
                 prisma.callLog.groupBy({ where: { status: "FAIL", errorMsg: { not: null } }, by: ['errorMsg'], _count: { _all: true }, _max: { createdAt: true } }),
                 prisma.callLog.groupBy({ by: ['userId'] }),
-                prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }),
+                prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH", status: { not: "DEV_SKIP" }, createdAt: { gte: new Date("2026-01-29T00:00:00.000Z") } } }),
                 prisma.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }),
                 prisma.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } })
             ]);
@@ -1158,6 +1381,62 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/variables") {
         await initVariables();
         sendJson(req, res, 200, { items: Array.from(variables.values()) });
+        return;
+    }
+    if (req.method === "GET" && url.pathname === "/style-config") {
+        let config = {
+            textStyleKey: "", paintStyleKey: "", variableKey: "",
+            headerBgKey: "", headerBgVarKey: "", headerTextPaintKey: "", headerTextVarKey: "", headerTextStyleKey: "",
+            actionPrimaryVarKey: "", actionDangerVarKey: ""
+        };
+        if (process.env.DATABASE_URL) {
+            try {
+                const setting = await prisma.systemSetting.findUnique({ where: { key: "global_style_config" } });
+                if (setting && setting.value) {
+                    config = { ...config, ...JSON.parse(setting.value) };
+                }
+            }
+            catch (e) {
+                console.error("Failed to load style config:", e);
+            }
+        }
+        sendJson(req, res, 200, config);
+        return;
+    }
+    if (req.method === "POST" && url.pathname === "/style-config") {
+        let body;
+        try {
+            body = await readJson(req);
+        }
+        catch (e) {
+            sendJson(req, res, 400, { error: "invalid_body" });
+            return;
+        }
+        const config = {
+            textStyleKey: String(body.textStyleKey || "").trim(),
+            paintStyleKey: String(body.paintStyleKey || "").trim(),
+            variableKey: String(body.variableKey || "").trim(),
+            headerBgKey: String(body.headerBgKey || "").trim(),
+            headerBgVarKey: String(body.headerBgVarKey || "").trim(),
+            headerTextPaintKey: String(body.headerTextPaintKey || "").trim(),
+            headerTextVarKey: String(body.headerTextVarKey || "").trim(),
+            headerTextStyleKey: String(body.headerTextStyleKey || "").trim(),
+            actionPrimaryVarKey: String(body.actionPrimaryVarKey || "").trim(),
+            actionDangerVarKey: String(body.actionDangerVarKey || "").trim()
+        };
+        if (process.env.DATABASE_URL) {
+            try {
+                await prisma.systemSetting.upsert({
+                    where: { key: "global_style_config" },
+                    update: { value: JSON.stringify(config), updatedAt: new Date() },
+                    create: { key: "global_style_config", value: JSON.stringify(config), description: "Global style configuration for plugin generation" }
+                });
+            }
+            catch (e) {
+                console.error("Failed to save style config:", e);
+            }
+        }
+        sendJson(req, res, 200, config);
         return;
     }
     if (req.method === "POST" && url.pathname === "/components") {
