@@ -112,9 +112,10 @@ const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".tab
     const gatewayTokenInput = document.getElementById("gateway-token") as HTMLInputElement;
 
     // TODO: 修改为正式的线上网关地址
-    const DEFAULT_GATEWAY = process.env.NODE_ENV === "production" 
-      ? "https://smartable-nine.vercel.app" 
-      : "http://localhost:8787";
+    const DEFAULT_GATEWAY = "https://smartable-nine.vercel.app";
+      // process.env.NODE_ENV === "production" 
+      // ? "https://smartable-nine.vercel.app" 
+      // : "http://localhost:8787";
 
     console.log("Using gateway:", DEFAULT_GATEWAY);
 
@@ -397,10 +398,10 @@ window.addEventListener("load", () => {
   try {
     const DEFAULT_GATEWAY = "https://smartable-nine.vercel.app";
     const v = gatewayUrlInput?.value?.trim() || "";
-    if (v.startsWith("http://localhost")) {
-      // console.log("[SmartTable][Gateway] rewrite localhost ->", DEFAULT_GATEWAY);
-      if (gatewayUrlInput) gatewayUrlInput.value = DEFAULT_GATEWAY;
-    }
+    // if (v.startsWith("http://localhost")) {
+    //   // console.log("[SmartTable][Gateway] rewrite localhost ->", DEFAULT_GATEWAY);
+    //   if (gatewayUrlInput) gatewayUrlInput.value = DEFAULT_GATEWAY;
+    // }
   } catch {}
   fetchVariablesAndNotifyPlugin();
 });
