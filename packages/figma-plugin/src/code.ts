@@ -212,15 +212,19 @@ function normalizeStyleKey(key: string) {
   let s = (key || "").trim();
   const i = s.indexOf(",");
   if (i >= 0) s = s.slice(0, i);
+  try { console.log("[SmartTable][Style] normalizeStyleKey", key, "=>", s); } catch {}
   return s;
 }
 
 async function importTextStyleByKey(key: string): Promise<TextStyle | null> {
   try {
     const k = normalizeStyleKey(key);
+    try { console.log("[SmartTable][Style] importTextStyleByKey try", k); } catch {}
     const style = await figma.importStyleByKeyAsync(k);
+    try { console.log("[SmartTable][Style] importTextStyleByKey ok", k, "id:", (style as any)?.id); } catch {}
     return style as TextStyle;
   } catch {
+    try { console.log("[SmartTable][Style] importTextStyleByKey fail"); } catch {}
     return null;
   }
 }
@@ -228,25 +232,35 @@ async function importTextStyleByKey(key: string): Promise<TextStyle | null> {
 async function importPaintStyleByKey(key: string): Promise<PaintStyle | null> {
   try {
     const k = normalizeStyleKey(key);
+    try { console.log("[SmartTable][Style] importPaintStyleByKey try", k); } catch {}
     const style = await figma.importStyleByKeyAsync(k);
+    try { console.log("[SmartTable][Style] importPaintStyleByKey ok", k, "id:", (style as any)?.id); } catch {}
     return style as PaintStyle;
   } catch {
+    try { console.log("[SmartTable][Style] importPaintStyleByKey fail"); } catch {}
     return null;
   }
 }
 
 async function getOrCreatePaintStyleByName(name: string, hex: string): Promise<string> {
   const existing = figma.getLocalPaintStyles().find(s => s.name === name);
-  if (existing) return existing.id;
+  if (existing) {
+    try { console.log("[SmartTable][Style] reuse local PaintStyle", name, existing.id); } catch {}
+    return existing.id;
+  }
   const ps = figma.createPaintStyle();
   ps.name = name;
   ps.paints = [{ type: "SOLID", color: hexToRgb(hex) }];
+  try { console.log("[SmartTable][Style] create local PaintStyle", name, ps.id); } catch {}
   return ps.id;
 }
 
 async function getOrCreateTextStyleByName(name: string, fontSize: number, style: "Regular" | "Medium" | "Bold" = "Regular"): Promise<string> {
   const existing = figma.getLocalTextStyles().find(s => s.name === name);
-  if (existing) return existing.id;
+  if (existing) {
+    try { console.log("[SmartTable][Style] reuse local TextStyle", name, existing.id); } catch {}
+    return existing.id;
+  }
   const ts = figma.createTextStyle();
   ts.name = name;
   const family = TOKENS.typography.fontFamily;
@@ -268,6 +282,7 @@ async function getOrCreateTextStyleByName(name: string, fontSize: number, style:
   ts.fontSize = fontSize;
   ts.lineHeight = { value: TOKENS.typography.lineHeight, unit: "PIXELS" };
   ts.letterSpacing = { value: TOKENS.typography.letterSpacing, unit: "PERCENT" };
+  try { console.log("[SmartTable][Style] create local TextStyle", name, ts.id); } catch {}
   return ts.id;
 }
 
@@ -294,9 +309,15 @@ async function resolveStyleId(
 ): Promise<string | null> {
   const norm = normalizeStyleKey(key);
   const cacheKey = `${kind}:${norm}`;
-  if (policy.blocked.has(cacheKey) || blockedGlobal.has(cacheKey)) return null;
+  if (policy.blocked.has(cacheKey) || blockedGlobal.has(cacheKey)) {
+    try { console.log("[SmartTable][Style] blocked", cacheKey); } catch {}
+    return null;
+  }
   const cached = policy.cache.get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    try { console.log("[SmartTable][Style] cache hit", cacheKey, cached); } catch {}
+    return cached;
+  }
   const fail = policy.failCount.get(cacheKey) || 0;
   if (fail >= policy.failThreshold) {
     policy.blocked.add(cacheKey);
@@ -304,6 +325,7 @@ async function resolveStyleId(
     saveBlockedStyles();
     return null;
   }
+  try { console.log("[SmartTable][Style] import try", cacheKey); } catch {}
   const style =
     kind === "text"
       ? await importTextStyleByKey(norm)
@@ -311,6 +333,7 @@ async function resolveStyleId(
   if (style && style.id) {
     policy.cache.set(cacheKey, style.id);
     policy.failCount.set(cacheKey, 0);
+    try { console.log("[SmartTable][Style] import success", cacheKey, style.id); } catch {}
     return style.id;
   }
   const next = fail + 1;
@@ -320,6 +343,7 @@ async function resolveStyleId(
     blockedGlobal.add(cacheKey);
     saveBlockedStyles();
   }
+  try { console.log("[SmartTable][Style] import fail", cacheKey, "failCount:", next); } catch {}
   return null;
 }
 
@@ -2357,26 +2381,34 @@ async function renderTextCell(
   const stylePolicy: StylePolicy = (context as any)?.stylePolicy || createStylePolicy(3);
   try {
     const runtimeTextKey = (globalThis as any).__TEXT_STYLE_KEY__ || "S:ac8ef12de2cc499e51922d6b5239c26b3645a05a,131052:2";
+    try { console.log("[SmartTable][Style] renderTextCell TextStyle key", runtimeTextKey); } catch {}
     const tsId = await resolveStyleId(stylePolicy, runtimeTextKey, "text");
     if (tsId) {
       textNode.textStyleId = tsId;
       appliedTextStyle = true;
+      try { console.log("[SmartTable][Style] applied textStyleId", tsId); } catch {}
     } else {
-      const localTsId = await getOrCreateTextStyleByName("test", TOKENS.fontSizes["body-2"]);
+      const tsName = (globalThis as any).__TEXT_STYLE_NAME__ || "test";
+      const localTsId = await getOrCreateTextStyleByName(tsName, TOKENS.fontSizes["body-2"]);
       textNode.textStyleId = localTsId;
       appliedTextStyle = true;
+      try { console.log("[SmartTable][Style] fallback local textStyleId", tsName, localTsId); } catch {}
     }
   } catch {}
   try {
     const runtimePaintKey = (globalThis as any).__PAINT_STYLE_KEY__ || "S:68eb72ad68f196be54a5663c564b5f817d63a946,121374:27";
+    try { console.log("[SmartTable][Style] renderTextCell PaintStyle key", runtimePaintKey); } catch {}
     const psId = await resolveStyleId(stylePolicy, runtimePaintKey, "paint");
     if (psId) {
       textNode.fillStyleId = psId;
       appliedPaintStyle = true;
+      try { console.log("[SmartTable][Style] applied fillStyleId", psId); } catch {}
     } else {
-      const localPsId = await getOrCreatePaintStyleByName("test", TOKENS.colors["text-1"]);
+      const psName = (globalThis as any).__PAINT_STYLE_NAME__ || "test";
+      const localPsId = await getOrCreatePaintStyleByName(psName, TOKENS.colors["text-1"]);
       textNode.fillStyleId = localPsId;
       appliedPaintStyle = true;
+      try { console.log("[SmartTable][Style] fallback local fillStyleId", psName, localPsId); } catch {}
     }
   } catch {}
   if (!appliedTextStyle) {
@@ -5176,11 +5208,16 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       const items = (message as any).items as Array<{ id: string; type: "PaintStyle" | "TextStyle" | "Variable"; property: string; variableId: string; name: string; value: string }>;
       const txt = items.find(i => i.type === "TextStyle" && typeof i.variableId === "string" && i.variableId.startsWith("S:"));
       const paint = items.find(i => i.type === "PaintStyle" && typeof i.variableId === "string" && i.variableId.startsWith("S:"));
+      try { console.log("[SmartTable][Vars] received", items?.length || 0, "items"); } catch {}
       if (txt?.variableId) {
         (globalThis as any).__TEXT_STYLE_KEY__ = txt.variableId;
+        (globalThis as any).__TEXT_STYLE_NAME__ = txt.name || "TextStyle";
+        try { console.log("[SmartTable][Vars] set TEXT key", txt.variableId, "name", txt.name); } catch {}
       }
       if (paint?.variableId) {
         (globalThis as any).__PAINT_STYLE_KEY__ = paint.variableId;
+        (globalThis as any).__PAINT_STYLE_NAME__ = paint.name || "PaintStyle";
+        try { console.log("[SmartTable][Vars] set PAINT key", paint.variableId, "name", paint.name); } catch {}
       }
     } catch {}
     return;

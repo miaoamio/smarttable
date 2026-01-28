@@ -368,13 +368,20 @@ function getGatewayBaseUrl() {
 async function fetchVariablesAndNotifyPlugin() {
   try {
     const base = getGatewayBaseUrl();
+    console.log("[SmartTable][Vars] fetching", `${base}/variables`);
     const res = await fetch(`${base}/variables`, { headers: { ...getGatewayAuthHeaders() } });
-    if (!res.ok) return;
+    if (!res.ok) {
+      console.warn("[SmartTable][Vars] fetch failed", res.status);
+      return;
+    }
     const data = await res.json().catch(() => ({}));
     if (data && Array.isArray(data.items)) {
+      console.log("[SmartTable][Vars] fetched", data.items.length);
       post({ type: "set_variables", items: data.items } as any);
     }
-  } catch {}
+  } catch (e) {
+    console.warn("[SmartTable][Vars] fetch error", e);
+  }
 }
 
 window.addEventListener("load", () => {
@@ -382,6 +389,7 @@ window.addEventListener("load", () => {
     const DEFAULT_GATEWAY = "https://smartable-nine.vercel.app";
     const v = gatewayUrlInput?.value?.trim() || "";
     if (v.startsWith("http://localhost")) {
+      console.log("[SmartTable][Gateway] rewrite localhost ->", DEFAULT_GATEWAY);
       if (gatewayUrlInput) gatewayUrlInput.value = DEFAULT_GATEWAY;
     }
   } catch {}
@@ -1285,11 +1293,8 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
   const startTime = Date.now();
   const action = isEdit ? "MODIFY_TABLE" : "CREATE_TABLE";
   const requestId = ++currentRequestSeq;
-  // Always use local gateway for development
-  const DEFAULT_GATEWAY = process.env.NODE_ENV === "production" 
-    ? "https://smartable-nine.vercel.app" 
-    : "http://localhost:8787";
-  const gatewayUrl = gatewayUrlInput?.value?.trim() || DEFAULT_GATEWAY;
+  const gatewayUrl = getGatewayBaseUrl();
+  console.log("[SmartTable][Gateway] using", gatewayUrl);
   const gatewayToken = gatewayTokenInput?.value?.trim() ?? "";
 
   hideAlert();
@@ -1337,6 +1342,9 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
   const abortController = new AbortController();
   setLoading(btn, true, abortController, hasImages);
   setOutput("正在请求 AI 生成/编辑 Envelope...");
+  try {
+    await fetchVariablesAndNotifyPlugin();
+  } catch {}
 
   const selectedRowCount = parseInt(rowCountSelectManual?.value) || 5;
 
