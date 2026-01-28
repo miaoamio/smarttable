@@ -365,6 +365,29 @@ function getGatewayBaseUrl() {
   return (v && v.length > 0 ? v : DEFAULT_GATEWAY).replace(/\/$/, "");
 }
 
+async function fetchVariablesAndNotifyPlugin() {
+  try {
+    const base = getGatewayBaseUrl();
+    const res = await fetch(`${base}/variables`, { headers: { ...getGatewayAuthHeaders() } });
+    if (!res.ok) return;
+    const data = await res.json().catch(() => ({}));
+    if (data && Array.isArray(data.items)) {
+      post({ type: "set_variables", items: data.items } as any);
+    }
+  } catch {}
+}
+
+window.addEventListener("load", () => {
+  try {
+    const DEFAULT_GATEWAY = "https://smartable-nine.vercel.app";
+    const v = gatewayUrlInput?.value?.trim() || "";
+    if (v.startsWith("http://localhost")) {
+      if (gatewayUrlInput) gatewayUrlInput.value = DEFAULT_GATEWAY;
+    }
+  } catch {}
+  fetchVariablesAndNotifyPlugin();
+});
+
 function getGatewayAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
   const token = gatewayTokenInput?.value?.trim();

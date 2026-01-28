@@ -116,6 +116,7 @@ export type UiToPluginMessage =
   | { type: "create_table"; rows: number; cols: number; cellType: string }
   | { type: "ai_create_table"; spec: AiTableSpec }
   | { type: "ai_apply_envelope"; envelope: AiTableEnvelope }
+  | { type: "set_variables"; items: Array<{ id: string; type: "PaintStyle" | "TextStyle" | "Variable"; property: string; variableId: string; name: string; value: string }> }
   | { type: "update_component_key"; key: string }
   | { type: "set_col_width"; mode: "Fixed" | "Fill" | "Hug" }
   | { type: "set_header_props"; props: { filter: boolean; sort: boolean; search: boolean; info: boolean } }

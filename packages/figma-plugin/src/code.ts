@@ -2356,7 +2356,8 @@ async function renderTextCell(
   let appliedPaintStyle = false;
   const stylePolicy: StylePolicy = (context as any)?.stylePolicy || createStylePolicy(3);
   try {
-    const tsId = await resolveStyleId(stylePolicy, "S:ac8ef12de2cc499e51922d6b5239c26b3645a05a,131052:2", "text");
+    const runtimeTextKey = (globalThis as any).__TEXT_STYLE_KEY__ || "S:ac8ef12de2cc499e51922d6b5239c26b3645a05a,131052:2";
+    const tsId = await resolveStyleId(stylePolicy, runtimeTextKey, "text");
     if (tsId) {
       textNode.textStyleId = tsId;
       appliedTextStyle = true;
@@ -2367,7 +2368,8 @@ async function renderTextCell(
     }
   } catch {}
   try {
-    const psId = await resolveStyleId(stylePolicy, "S:68eb72ad68f196be54a5663c564b5f817d63a946,121374:27", "paint");
+    const runtimePaintKey = (globalThis as any).__PAINT_STYLE_KEY__ || "S:68eb72ad68f196be54a5663c564b5f817d63a946,121374:27";
+    const psId = await resolveStyleId(stylePolicy, runtimePaintKey, "paint");
     if (psId) {
       textNode.fillStyleId = psId;
       appliedPaintStyle = true;
@@ -5167,6 +5169,20 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
   if (message.type === "cancel_generation") {
     requestCancel();
     figma.ui.postMessage({ type: "processing_end" });
+    return;
+  }
+  if (message.type === "set_variables") {
+    try {
+      const items = (message as any).items as Array<{ id: string; type: "PaintStyle" | "TextStyle" | "Variable"; property: string; variableId: string; name: string; value: string }>;
+      const txt = items.find(i => i.type === "TextStyle" && typeof i.variableId === "string" && i.variableId.startsWith("S:"));
+      const paint = items.find(i => i.type === "PaintStyle" && typeof i.variableId === "string" && i.variableId.startsWith("S:"));
+      if (txt?.variableId) {
+        (globalThis as any).__TEXT_STYLE_KEY__ = txt.variableId;
+      }
+      if (paint?.variableId) {
+        (globalThis as any).__PAINT_STYLE_KEY__ = paint.variableId;
+      }
+    } catch {}
     return;
   }
   if (isProcessing) {
