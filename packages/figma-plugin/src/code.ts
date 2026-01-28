@@ -4815,6 +4815,14 @@ async function createTable(params: CreateTableOptions) {
            await setFirstText(cell, val);
         }
       }
+
+      // Yield every 10 rows inside the column loop to respond to cancellation faster
+      if (r > 0 && r % 10 === 0) {
+        await yieldToMain();
+        if (cancelRequested) {
+          throw new Error("用户取消了生成");
+        }
+      }
     }
     
     // Yield to main thread every few columns
