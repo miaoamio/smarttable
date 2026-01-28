@@ -2118,11 +2118,75 @@ async function renderActionCell(
     textNode.characters = part;
     textNode.fontSize = TOKENS.fontSizes["body-2"];
     
-    // Color logic: "删除" -> danger-6, else link-6
+    // Apply TextStyle (Standard Body)
+    let textStyleApplied = false;
+    const targetTextStyleKey = (globalThis as any).__TEXT_STYLE_KEY__ || "ac8ef12de2cc499e51922d6b5239c26b3645a05a";
+    try {
+      const textStyle = await figma.importStyleByKeyAsync(targetTextStyleKey);
+      if (textStyle && textStyle.type === "TEXT") {
+          await figma.loadFontAsync(textStyle.fontName);
+          await textNode.setTextStyleIdAsync(textStyle.id);
+          textStyleApplied = true;
+      }
+    } catch (e) {}
+    
+    if (!textStyleApplied) {
+      await loadTextNodeFonts(textNode);
+    }
+    
+    // Color logic
     const isDelete = part.includes("删除");
-    const colorHex = isDelete ? TOKENS.colors["danger-6"] : TOKENS.colors["link-6"];
-    const color = hexToRgb(colorHex);
-    textNode.fills = [{ type: "SOLID", color }];
+    let colorApplied = false;
+
+    if (isDelete) {
+      // Danger Color
+      const dangerKey = (globalThis as any).__ACTION_DANGER_VAR_KEY__ || "f60b03f9d134cb4ac3f68fb23b1fda9ba1304745";
+      if (dangerKey) {
+        try {
+          const variable = await figma.variables.importVariableByKeyAsync(dangerKey);
+          if (variable) {
+            const paint: SolidPaint = { type: "SOLID", color: { r: 0, g: 0, b: 0 } };
+            textNode.fills = [figma.variables.setBoundVariableForPaint(paint, 'color', variable)];
+            colorApplied = true;
+          }
+        } catch (e) {}
+      }
+      if (!colorApplied) {
+        // Fallback PaintStyle
+        try {
+          const style = await figma.importStyleByKeyAsync("917be8eadd8d3dddacdde2f6103b1aa04d2254d4");
+          if (style && style.type === "PAINT") {
+            await textNode.setFillStyleIdAsync(style.id);
+            colorApplied = true;
+          }
+        } catch (e) {}
+      }
+      if (!colorApplied) textNode.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["danger-6"]) }];
+    } else {
+      // Primary Color
+      const primaryKey = (globalThis as any).__ACTION_PRIMARY_VAR_KEY__ || "75f358d76d414f045a47f128470fcbbde49888dc";
+      if (primaryKey) {
+        try {
+          const variable = await figma.variables.importVariableByKeyAsync(primaryKey);
+          if (variable) {
+            const paint: SolidPaint = { type: "SOLID", color: { r: 0, g: 0, b: 0 } };
+            textNode.fills = [figma.variables.setBoundVariableForPaint(paint, 'color', variable)];
+            colorApplied = true;
+          }
+        } catch (e) {}
+      }
+      if (!colorApplied) {
+         // Fallback PaintStyle
+        try {
+          const style = await figma.importStyleByKeyAsync("492925ebab9058ced1e85da9e339d24ee43c37b9");
+          if (style && style.type === "PAINT") {
+            await textNode.setFillStyleIdAsync(style.id);
+            colorApplied = true;
+          }
+        } catch (e) {}
+      }
+      if (!colorApplied) textNode.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["link-6"]) }];
+    }
     
     cellFrame.appendChild(textNode);
   }
@@ -2762,12 +2826,14 @@ async function renderAvatarCell(
   context: { avatarComponent?: ComponentNode | ComponentSetNode; overrideDisplayValue?: string; isAI?: boolean }
 ) {
   const { avatarComponent, overrideDisplayValue, isAI } = context;
+  /*
   console.log("[renderAvatarCell] Starting render", { 
     text, 
     overrideDisplayValue, 
     isAI,
     cellValue: cellFrame.getPluginData("cellValue")
   });
+  */
 
   if (!avatarComponent) {
     console.warn("[renderAvatarCell] avatarComponent is missing!");
@@ -2781,13 +2847,13 @@ async function renderAvatarCell(
   let finalName = getDefaultAvatarName(text);
   if (overrideDisplayValue) {
     finalName = overrideDisplayValue;
-    console.log("[renderAvatarCell] Using overrideDisplayValue:", finalName);
+    // console.log("[renderAvatarCell] Using overrideDisplayValue:", finalName);
   } else if (text && text.trim() !== "") {
     finalName = text;
-    console.log("[renderAvatarCell] Using provided text:", finalName);
+    // console.log("[renderAvatarCell] Using provided text:", finalName);
   }
   
-  console.log("[renderAvatarCell] finalName determined:", finalName);
+  // console.log("[renderAvatarCell] finalName determined:", finalName);
   
   // Requirement 2: Switch to Avatar column uses default name in UI, 
   // but we don't modify cellValue. We keep whatever was there.
@@ -2832,9 +2898,56 @@ async function renderAvatarCell(
   await loadTextNodeFonts(nameText);
   if (cellFrame.removed) return;
   nameText.characters = finalName;
-  nameText.fontSize = TOKENS.fontSizes["body-2"];
-  nameText.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["text-1"]) }];
   
+  // Apply TextStyle (Standard Body)
+  let textStyleApplied = false;
+  const targetTextStyleKey = (globalThis as any).__TEXT_STYLE_KEY__ || "ac8ef12de2cc499e51922d6b5239c26b3645a05a";
+  try {
+    const textStyle = await figma.importStyleByKeyAsync(targetTextStyleKey);
+    if (textStyle && textStyle.type === "TEXT") {
+        await figma.loadFontAsync(textStyle.fontName);
+        await nameText.setTextStyleIdAsync(textStyle.id);
+        textStyleApplied = true;
+    }
+  } catch (e) {}
+
+  if (!textStyleApplied) {
+    nameText.fontSize = TOKENS.fontSizes["body-2"];
+  }
+
+  // Apply Color Variable (Standard Body)
+  let colorApplied = false;
+  const targetVariableKey = (globalThis as any).__VARIABLE_KEY__ || "178115a8c3bc7983da5bc10e637208895750dbfd";
+  
+  if (targetVariableKey) {
+    try {
+      const variable = await figma.variables.importVariableByKeyAsync(targetVariableKey);
+      if (variable) {
+        const paint: SolidPaint = { type: "SOLID", color: { r: 0, g: 0, b: 0 } };
+        nameText.fills = [figma.variables.setBoundVariableForPaint(paint, 'color', variable)];
+        colorApplied = true;
+      }
+    } catch (e) {}
+  }
+  
+  if (!colorApplied) {
+    // Fallback PaintStyle
+    const targetPaintStyleKey = (globalThis as any).__PAINT_STYLE_KEY__ || "68eb72ad68f196be54a5663c564b5f817d63a946";
+    if (targetPaintStyleKey) {
+       try {
+         const style = await figma.importStyleByKeyAsync(targetPaintStyleKey);
+         if (style && style.type === "PAINT") {
+           await nameText.setFillStyleIdAsync(style.id);
+           colorApplied = true;
+         }
+       } catch (e) {}
+    }
+  }
+  
+  if (!colorApplied) {
+     nameText.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["text-1"]) }];
+  }
+
   // Layout in cellFrame
   if (cellFrame.removed) return;
   cellFrame.itemSpacing = 4; // Head-to-text spacing
@@ -5388,6 +5501,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       const { 
         textStyleKey, paintStyleKey, variableKey, 
         headerBgKey, headerBgVarKey, headerTextPaintKey, headerTextVarKey, headerTextStyleKey,
+        actionPrimaryVarKey, actionDangerVarKey,
         silent 
       } = message as any;
       
@@ -5399,7 +5513,9 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
         headerBgVarKey,
         headerTextPaintKey,
         headerTextVarKey,
-        headerTextStyleKey
+        headerTextStyleKey,
+        actionPrimaryVarKey,
+        actionDangerVarKey
       };
 
       await figma.clientStorage.setAsync("custom_style_config", config);
@@ -5414,6 +5530,10 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       (globalThis as any).__HEADER_TEXT_PAINT_KEY__ = headerTextPaintKey;
       (globalThis as any).__HEADER_TEXT_VAR_KEY__ = headerTextVarKey;
       (globalThis as any).__HEADER_TEXT_STYLE_KEY__ = headerTextStyleKey;
+      
+      // Action styles
+      (globalThis as any).__ACTION_PRIMARY_VAR_KEY__ = actionPrimaryVarKey;
+      (globalThis as any).__ACTION_DANGER_VAR_KEY__ = actionDangerVarKey;
       
       if (!silent) {
         figma.notify("Style configuration saved!");

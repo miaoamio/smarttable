@@ -2200,10 +2200,12 @@ async function sendLog(action: string, metadata: any = {}) {
                 headerBgKey: config.headerBgKey,
                 headerBgVarKey: config.headerBgVarKey,
                 headerTextPaintKey: config.headerTextPaintKey,
-                headerTextVarKey: config.headerTextVarKey,
-                headerTextStyleKey: config.headerTextStyleKey,
-                silent: true
-              } as any);
+          headerTextVarKey: config.headerTextVarKey,
+          headerTextStyleKey: config.headerTextStyleKey,
+          actionPrimaryVarKey: config.actionPrimaryVarKey,
+          actionDangerVarKey: config.actionDangerVarKey,
+          silent: true
+        } as any);
             }
           })
           .catch(() => {}); // Silent fail

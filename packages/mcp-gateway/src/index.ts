@@ -368,6 +368,43 @@ async function initVariables() {
         name: "Header Text (TextStyle)", 
         value: "Medium", 
         updatedAt: now 
+      },
+      // Action Column Styles
+      { 
+        id: "action-primary-paint", 
+        type: "PaintStyle", 
+        property: "fills", 
+        variableId: "S:492925ebab9058ced1e85da9e339d24ee43c37b9,175526:0", 
+        name: "Action/Primary (PaintStyle)", 
+        value: "#1664FF", 
+        updatedAt: now 
+      },
+      { 
+        id: "action-primary-var", 
+        type: "Variable", 
+        property: "fills", 
+        variableId: "VariableID:75f358d76d414f045a47f128470fcbbde49888dc/174345:300", 
+        name: "Primary Color/常规 @primary-6", 
+        value: "#1664FF", 
+        updatedAt: now 
+      },
+      { 
+        id: "action-danger-paint", 
+        type: "PaintStyle", 
+        property: "fills", 
+        variableId: "S:917be8eadd8d3dddacdde2f6103b1aa04d2254d4,175596:51", 
+        name: "Action/Danger (PaintStyle)", 
+        value: "#D7312A", 
+        updatedAt: now 
+      },
+      { 
+        id: "action-danger-var", 
+        type: "Variable", 
+        property: "fills", 
+        variableId: "VariableID:f60b03f9d134cb4ac3f68fb23b1fda9ba1304745/174345:672", 
+        name: "Red/常规 @danger-6", 
+        value: "#D7312A", 
+        updatedAt: now 
       }
     ];
     defaults.forEach(v => variables.set(v.id, v));
@@ -534,6 +571,18 @@ tr:last-child td{border-bottom:none}
           <input id="style-header-text-style-key" style="width:100%;box-sizing:border-box" placeholder="e.g. S:06c98e2c68a38e391190684c4b73e26efcd5d930,131052:3">
         </div>
         
+        <div style="border-top:1px solid var(--border-color);margin:8px 0;"></div>
+        <div style="font-weight:600;font-size:14px">Action Column Style</div>
+
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Action Primary Variable Key</label>
+          <input id="style-action-primary-var-key" style="width:100%;box-sizing:border-box" placeholder="e.g. 75f358d76d414f045a47f128470fcbbde49888dc">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Action Danger Variable Key</label>
+          <input id="style-action-danger-var-key" style="width:100%;box-sizing:border-box" placeholder="e.g. f60b03f9d134cb4ac3f68fb23b1fda9ba1304745">
+        </div>
+        
         <div style="display:flex;justify-content:flex-end;margin-top:8px">
           <button id="save-style-btn" class="primary">Save Configuration</button>
         </div>
@@ -690,6 +739,9 @@ var styleHeaderTextPaintKey = document.getElementById("style-header-text-paint-k
 var styleHeaderTextVarKey = document.getElementById("style-header-text-var-key");
 var styleHeaderTextStyleKey = document.getElementById("style-header-text-style-key");
 
+var styleActionPrimaryVarKey = document.getElementById("style-action-primary-var-key");
+var styleActionDangerVarKey = document.getElementById("style-action-danger-var-key");
+
 var saveStyleBtn = document.getElementById("save-style-btn");
 var styleStatusEl = document.getElementById("style-status");
 
@@ -714,6 +766,9 @@ function loadStyleConfig() {
         styleHeaderTextPaintKey.value = data.headerTextPaintKey || "";
         styleHeaderTextVarKey.value = data.headerTextVarKey || "";
         styleHeaderTextStyleKey.value = data.headerTextStyleKey || "";
+        
+        styleActionPrimaryVarKey.value = data.actionPrimaryVarKey || "";
+        styleActionDangerVarKey.value = data.actionDangerVarKey || "";
       }
     })
     .catch(e => setStyleStatus("Failed to load config: " + e.message, "error"));
@@ -728,7 +783,9 @@ function saveStyleConfig() {
     headerBgVarKey: styleHeaderBgVarKey.value.trim(),
     headerTextPaintKey: styleHeaderTextPaintKey.value.trim(),
     headerTextVarKey: styleHeaderTextVarKey.value.trim(),
-    headerTextStyleKey: styleHeaderTextStyleKey.value.trim()
+    headerTextStyleKey: styleHeaderTextStyleKey.value.trim(),
+    actionPrimaryVarKey: styleActionPrimaryVarKey.value.trim(),
+    actionDangerVarKey: styleActionDangerVarKey.value.trim()
   };
   
   setStyleStatus("Saving...");
@@ -1416,7 +1473,8 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
   if (req.method === "GET" && url.pathname === "/style-config") {
     let config = { 
       textStyleKey: "", paintStyleKey: "", variableKey: "",
-      headerBgKey: "", headerBgVarKey: "", headerTextPaintKey: "", headerTextVarKey: "", headerTextStyleKey: ""
+      headerBgKey: "", headerBgVarKey: "", headerTextPaintKey: "", headerTextVarKey: "", headerTextStyleKey: "",
+      actionPrimaryVarKey: "", actionDangerVarKey: ""
     };
     if (process.env.DATABASE_URL) {
       try {
@@ -1449,7 +1507,9 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
       headerBgVarKey: String(body.headerBgVarKey || "").trim(),
       headerTextPaintKey: String(body.headerTextPaintKey || "").trim(),
       headerTextVarKey: String(body.headerTextVarKey || "").trim(),
-      headerTextStyleKey: String(body.headerTextStyleKey || "").trim()
+      headerTextStyleKey: String(body.headerTextStyleKey || "").trim(),
+      actionPrimaryVarKey: String(body.actionPrimaryVarKey || "").trim(),
+      actionDangerVarKey: String(body.actionDangerVarKey || "").trim()
     };
 
     if (process.env.DATABASE_URL) {
