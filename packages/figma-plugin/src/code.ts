@@ -4411,7 +4411,11 @@ async function createTable(params: CreateTableOptions) {
   tableFrame.counterAxisSizingMode = "AUTO";
   tableFrame.itemSpacing = colGap;
   tableFrame.fills = [];
-  tableFrame.clipsContent = false;
+  tableFrame.cornerRadius = 4;
+  tableFrame.strokes = [{ type: "SOLID", color: hexToRgb("#EAEDF1") }];
+  tableFrame.strokeWeight = 1;
+  tableFrame.strokeAlign = "INSIDE";
+  tableFrame.clipsContent = true;
   try { 
     tableFrame.setPluginData("smart_table", "true"); 
     tableFrame.setPluginData("rowActionType", rowActionType || "none");
