@@ -377,7 +377,7 @@ function getGatewayBaseUrl() {
 async function fetchVariablesAndNotifyPlugin() {
   try {
     const base = getGatewayBaseUrl();
-    console.log("[SmartTable][Vars] fetching", `${base}/variables`);
+    // console.log("[SmartTable][Vars] fetching", `${base}/variables`);
     const res = await fetch(`${base}/variables`, { headers: { ...getGatewayAuthHeaders() } });
     if (!res.ok) {
       console.warn("[SmartTable][Vars] fetch failed", res.status);
@@ -398,7 +398,7 @@ window.addEventListener("load", () => {
     const DEFAULT_GATEWAY = "https://smartable-nine.vercel.app";
     const v = gatewayUrlInput?.value?.trim() || "";
     if (v.startsWith("http://localhost")) {
-      console.log("[SmartTable][Gateway] rewrite localhost ->", DEFAULT_GATEWAY);
+      // console.log("[SmartTable][Gateway] rewrite localhost ->", DEFAULT_GATEWAY);
       if (gatewayUrlInput) gatewayUrlInput.value = DEFAULT_GATEWAY;
     }
   } catch {}
@@ -2182,25 +2182,36 @@ async function sendLog(action: string, metadata: any = {}) {
   loadCellTypeOptions();
   // Fetch global style config from Gateway (DB)
   const baseUrl = (document.getElementById("gateway-url") as HTMLInputElement)?.value || "http://localhost:8787";
-  fetch(`${baseUrl}/style-config`)
-    .then(res => res.json())
-    .then(config => {
-      if (config && (config.textStyleKey || config.paintStyleKey || config.variableKey)) {
-        console.log("Loaded remote style config:", config);
-        post({ 
-          type: "save_style_config",
-          textStyleKey: config.textStyleKey,
-          paintStyleKey: config.paintStyleKey,
-          variableKey: config.variableKey,
-          headerBgKey: config.headerBgKey,
-          headerBgVarKey: config.headerBgVarKey,
-          headerTextPaintKey: config.headerTextPaintKey,
-          headerTextStyleKey: config.headerTextStyleKey,
-          silent: true // Custom flag to avoid toast if code.ts supports it, otherwise just updates
-        } as any);
+  // Check if gateway is reachable first to avoid console noise
+  const checkGateway = async () => {
+    try {
+      const res = await fetch(`${baseUrl}/health`);
+      if (res.ok) {
+        fetch(`${baseUrl}/style-config`)
+          .then(res => res.json())
+          .then(config => {
+            if (config) {
+              post({ 
+                type: "save_style_config",
+                textStyleKey: config.textStyleKey,
+                paintStyleKey: config.paintStyleKey,
+                variableKey: config.variableKey,
+                headerBgKey: config.headerBgKey,
+                headerBgVarKey: config.headerBgVarKey,
+                headerTextPaintKey: config.headerTextPaintKey,
+                headerTextVarKey: config.headerTextVarKey,
+                headerTextStyleKey: config.headerTextStyleKey,
+                silent: true
+              } as any);
+            }
+          })
+          .catch(() => {}); // Silent fail
       }
-    })
-    .catch(e => console.warn("Failed to load remote style config:", e));
+    } catch (e) {
+      // Gateway not running, ignore
+    }
+  };
+  checkGateway();
 
   } catch (err: any) {
     const el = document.getElementById("alert");

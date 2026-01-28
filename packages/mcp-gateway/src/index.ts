@@ -352,6 +352,15 @@ async function initVariables() {
         updatedAt: now 
       },
       { 
+        id: "header-text-var", 
+        type: "Variable", 
+        property: "fills", 
+        variableId: "VariableID:a7442f0ba4f4f027d86e03f335df11c38232c0ce/174345:562", 
+        name: "Text/次强调正文标题 @color-text-2", 
+        value: "#4B5563", 
+        updatedAt: now 
+      },
+      { 
         id: "header-text-style", 
         type: "TextStyle", 
         property: "text", 
@@ -517,6 +526,10 @@ tr:last-child td{border-bottom:none}
           <input id="style-header-text-paint-key" style="width:100%;box-sizing:border-box" placeholder="e.g. S:b2a5c0e2feb8b01e201e02e8f3cf831f8d2a0c4e,121374:28">
         </div>
         <div>
+          <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Header Text Variable Key</label>
+          <input id="style-header-text-var-key" style="width:100%;box-sizing:border-box" placeholder="e.g. a7442f0ba4f4f027d86e03f335df11c38232c0ce">
+        </div>
+        <div>
           <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px">Header TextStyle Key</label>
           <input id="style-header-text-style-key" style="width:100%;box-sizing:border-box" placeholder="e.g. S:06c98e2c68a38e391190684c4b73e26efcd5d930,131052:3">
         </div>
@@ -674,6 +687,7 @@ var styleVariableKey = document.getElementById("style-variable-key");
 var styleHeaderBgKey = document.getElementById("style-header-bg-key");
 var styleHeaderBgVarKey = document.getElementById("style-header-bg-var-key");
 var styleHeaderTextPaintKey = document.getElementById("style-header-text-paint-key");
+var styleHeaderTextVarKey = document.getElementById("style-header-text-var-key");
 var styleHeaderTextStyleKey = document.getElementById("style-header-text-style-key");
 
 var saveStyleBtn = document.getElementById("save-style-btn");
@@ -698,6 +712,7 @@ function loadStyleConfig() {
         styleHeaderBgKey.value = data.headerBgKey || "";
         styleHeaderBgVarKey.value = data.headerBgVarKey || "";
         styleHeaderTextPaintKey.value = data.headerTextPaintKey || "";
+        styleHeaderTextVarKey.value = data.headerTextVarKey || "";
         styleHeaderTextStyleKey.value = data.headerTextStyleKey || "";
       }
     })
@@ -712,6 +727,7 @@ function saveStyleConfig() {
     headerBgKey: styleHeaderBgKey.value.trim(),
     headerBgVarKey: styleHeaderBgVarKey.value.trim(),
     headerTextPaintKey: styleHeaderTextPaintKey.value.trim(),
+    headerTextVarKey: styleHeaderTextVarKey.value.trim(),
     headerTextStyleKey: styleHeaderTextStyleKey.value.trim()
   };
   
@@ -1400,7 +1416,7 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
   if (req.method === "GET" && url.pathname === "/style-config") {
     let config = { 
       textStyleKey: "", paintStyleKey: "", variableKey: "",
-      headerBgKey: "", headerBgVarKey: "", headerTextPaintKey: "", headerTextStyleKey: ""
+      headerBgKey: "", headerBgVarKey: "", headerTextPaintKey: "", headerTextVarKey: "", headerTextStyleKey: ""
     };
     if (process.env.DATABASE_URL) {
       try {
@@ -1432,6 +1448,7 @@ const server = http.createServer(async (req: http.IncomingMessage, res: http.Ser
       headerBgKey: String(body.headerBgKey || "").trim(),
       headerBgVarKey: String(body.headerBgVarKey || "").trim(),
       headerTextPaintKey: String(body.headerTextPaintKey || "").trim(),
+      headerTextVarKey: String(body.headerTextVarKey || "").trim(),
       headerTextStyleKey: String(body.headerTextStyleKey || "").trim()
     };
 

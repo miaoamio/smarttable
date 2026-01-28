@@ -2351,6 +2351,7 @@ async function renderHeaderCell(
   // Apply Header Text Styles
   const headerTextPaintKey = (globalThis as any).__HEADER_TEXT_PAINT_KEY__;
   const headerTextStyleKey = (globalThis as any).__HEADER_TEXT_STYLE_KEY__;
+  const headerTextVarKey = (globalThis as any).__HEADER_TEXT_VAR_KEY__;
   let textStyleApplied = false;
   let textPaintApplied = false;
 
@@ -2366,8 +2367,27 @@ async function renderHeaderCell(
     } catch (e) { console.warn("Header text style fail", e); }
   }
 
-  // Text Paint (Color)
-  if (headerTextPaintKey) {
+  // Text Variable (Priority over PaintStyle)
+  if (headerTextVarKey) {
+    try {
+      let variable = null;
+      try {
+        variable = await figma.variables.importVariableByKeyAsync(headerTextVarKey);
+      } catch {}
+      
+      if (variable) {
+         const paint: SolidPaint = { type: "SOLID", color: { r: 0, g: 0, b: 0 } };
+         const newFills = [figma.variables.setBoundVariableForPaint(paint, 'color', variable)];
+         textNode.fills = newFills;
+         textPaintApplied = true;
+      }
+    } catch (e) {
+      console.warn("Header text variable fail", e);
+    }
+  }
+
+  // Text Paint (Color) - Only if Variable not applied
+  if (!textPaintApplied && headerTextPaintKey) {
     try {
       const style = await figma.importStyleByKeyAsync(headerTextPaintKey);
       if (style && style.type === "PAINT") {
@@ -2379,6 +2399,7 @@ async function renderHeaderCell(
 
   // Fallbacks
   if (!textStyleApplied) {
+    await figma.loadFontAsync({ family: "Inter", style: "Medium" });
     textNode.fontSize = TOKENS.fontSizes["body-2"];
     textNode.fontName = { family: "Inter", style: "Medium" };
   }
@@ -5353,7 +5374,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
     try {
       const { 
         textStyleKey, paintStyleKey, variableKey, 
-        headerBgKey, headerBgVarKey, headerTextPaintKey, headerTextStyleKey,
+        headerBgKey, headerBgVarKey, headerTextPaintKey, headerTextVarKey, headerTextStyleKey,
         silent 
       } = message as any;
       
@@ -5364,6 +5385,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
         headerBgKey,
         headerBgVarKey,
         headerTextPaintKey,
+        headerTextVarKey,
         headerTextStyleKey
       };
 
@@ -5377,6 +5399,7 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       (globalThis as any).__HEADER_BG_KEY__ = headerBgKey;
       (globalThis as any).__HEADER_BG_VAR_KEY__ = headerBgVarKey;
       (globalThis as any).__HEADER_TEXT_PAINT_KEY__ = headerTextPaintKey;
+      (globalThis as any).__HEADER_TEXT_VAR_KEY__ = headerTextVarKey;
       (globalThis as any).__HEADER_TEXT_STYLE_KEY__ = headerTextStyleKey;
       
       if (!silent) {
