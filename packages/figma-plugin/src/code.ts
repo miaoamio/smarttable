@@ -223,6 +223,42 @@ async function importPaintStyleByKey(key: string): Promise<PaintStyle | null> {
   }
 }
 
+async function getOrCreatePaintStyleByName(name: string, hex: string): Promise<string> {
+  const existing = figma.getLocalPaintStyles().find(s => s.name === name);
+  if (existing) return existing.id;
+  const ps = figma.createPaintStyle();
+  ps.name = name;
+  ps.paints = [{ type: "SOLID", color: hexToRgb(hex) }];
+  return ps.id;
+}
+
+async function getOrCreateTextStyleByName(name: string, fontSize: number, style: "Regular" | "Medium" | "Bold" = "Regular"): Promise<string> {
+  const existing = figma.getLocalTextStyles().find(s => s.name === name);
+  if (existing) return existing.id;
+  const ts = figma.createTextStyle();
+  ts.name = name;
+  const family = TOKENS.typography.fontFamily;
+  const primary: FontName = { family, style };
+  const alt: FontName = { family: "PingFangSC", style };
+  const fallback: FontName = { family: "Inter", style: style === "Medium" || style === "Bold" ? "Medium" : "Regular" };
+  try {
+    await figma.loadFontAsync(primary);
+    ts.fontName = primary;
+  } catch {
+    try {
+      await figma.loadFontAsync(alt);
+      ts.fontName = alt;
+    } catch {
+      await figma.loadFontAsync(fallback);
+      ts.fontName = fallback;
+    }
+  }
+  ts.fontSize = fontSize;
+  ts.lineHeight = { value: TOKENS.typography.lineHeight, unit: "PIXELS" };
+  ts.letterSpacing = { value: TOKENS.typography.letterSpacing, unit: "PERCENT" };
+  return ts.id;
+}
+
 type StylePolicy = {
   failThreshold: number;
   failCount: Map<string, number>;
@@ -2306,12 +2342,20 @@ async function renderTextCell(
     if (tsId) {
       textNode.textStyleId = tsId;
       appliedTextStyle = true;
+    } else {
+      const localTsId = await getOrCreateTextStyleByName("test", TOKENS.fontSizes["body-2"]);
+      textNode.textStyleId = localTsId;
+      appliedTextStyle = true;
     }
   } catch {}
   try {
     const psId = await resolveStyleId(stylePolicy, "S:68eb72ad68f196be54a5663c564b5f817d63a946,121374:27", "paint");
     if (psId) {
       textNode.fillStyleId = psId;
+      appliedPaintStyle = true;
+    } else {
+      const localPsId = await getOrCreatePaintStyleByName("test", TOKENS.colors["text-1"]);
+      textNode.fillStyleId = localPsId;
       appliedPaintStyle = true;
     }
   } catch {}
