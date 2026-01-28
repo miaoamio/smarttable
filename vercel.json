@@ -3,7 +3,10 @@
   "outputDirectory": "public",
   "functions": {
     "api/gateway.js": {
-      "includeFiles": "packages/mcp-server/dist/**",
+      "includeFiles": [
+        "packages/mcp-server/dist/**",
+        "packages/mcp-gateway/prisma/schema.prisma"
+      ],
       "memory": 1024,
       "maxDuration": 120
     }

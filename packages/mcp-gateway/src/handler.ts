@@ -1069,22 +1069,23 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
         console.log("Fetching stats from database...");
         
         // Use a more robust way to fetch stats, catching individual failures if needed
+        // Note: We throw on the first failure to trigger the catch block below and show the error
         const statsPromises = [
-          prisma.callLog.count().catch((err: any) => { console.error("Error counting totalCalls:", err); return 0; }),
-          prisma.callLog.count({ where: { status: "FAIL" } }).catch((err: any) => { console.error("Error counting failCount:", err); return 0; }),
-          prisma.callLog.aggregate({ _avg: { latency: true } }).catch((err: any) => { console.error("Error aggregating latency:", err); return { _avg: { latency: 0 } }; }),
-          prisma.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } }).catch((err: any) => { console.error("Error fetching recentCalls:", err); return []; }),
-          prisma.callLog.groupBy({ by: ["action"], _count: { _all: true } }).catch((err: any) => { console.error("Error grouping by action:", err); return []; }),
+          prisma.callLog.count(),
+          prisma.callLog.count({ where: { status: "FAIL" } }),
+          prisma.callLog.aggregate({ _avg: { latency: true } }),
+          prisma.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } }),
+          prisma.callLog.groupBy({ by: ["action"], _count: { _all: true } }),
           prisma.callLog.groupBy({ 
             where: { status: "FAIL", errorMsg: { not: null } }, 
             by: ["errorMsg"], 
             _count: { _all: true }, 
             _max: { createdAt: true } 
-          }).catch((err: any) => { console.error("Error grouping errors:", err); return []; }),
-          prisma.callLog.groupBy({ by: ["userId"] }).then((r: any[]) => r.length).catch((err: any) => { console.error("Error counting users:", err); return 0; }),
-          prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }).catch((err: any) => { console.error("Error counting launches:", err); return 0; }),
-          prisma.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }).catch((err: any) => { console.error("Error aggregating createStats:", err); return { _avg: { latency: 0 }, _count: { _all: 0 } }; }),
-          prisma.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }).catch((err: any) => { console.error("Error aggregating modifyStats:", err); return { _avg: { latency: 0 }, _count: { _all: 0 } }; })
+          }),
+          prisma.callLog.groupBy({ by: ["userId"] }).then((r: any[]) => r.length),
+          prisma.callLog.count({ where: { action: "PLUGIN_LAUNCH" } }),
+          prisma.callLog.aggregate({ where: { action: "CREATE_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } }),
+          prisma.callLog.aggregate({ where: { action: "MODIFY_TABLE", status: "OK" }, _avg: { latency: true }, _count: { _all: true } })
         ];
 
         const [
