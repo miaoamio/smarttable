@@ -133,9 +133,15 @@ const getPropsBtn = document.getElementById("get-props");
 const btnGetTokens = document.getElementById("btn-get-tokens");
 const btnGetTeamStyles = document.getElementById("btn-get-team-styles");
 const btnSaveStyleConfig = document.getElementById("btn-save-style-config");
+const btnSavePublicConfig = document.getElementById("btn-save-public-config");
+
 const inputConfigTextStyleKey = document.getElementById("config-text-style-key") as HTMLInputElement;
 const inputConfigPaintStyleKey = document.getElementById("config-paint-style-key") as HTMLInputElement;
 const inputConfigVariableKey = document.getElementById("config-variable-key") as HTMLInputElement;
+
+const inputPublicTextStyleKey = document.getElementById("public-text-style-key") as HTMLInputElement;
+const inputPublicPaintStyleKey = document.getElementById("public-paint-style-key") as HTMLInputElement;
+const inputPublicVariableKey = document.getElementById("public-variable-key") as HTMLInputElement;
 
 const btnOneClickCreate = document.getElementById("btn-one-click-create");
 const propsOutput = document.getElementById("props-output");
@@ -1928,11 +1934,25 @@ btnGetTeamStyles?.addEventListener("click", () => {
   post({ type: "get_team_library_styles" });
 });
 
-// Save Style Config
+// Save Style Config (Debug)
 btnSaveStyleConfig?.addEventListener("click", () => {
   const textStyleKey = inputConfigTextStyleKey.value.trim();
   const paintStyleKey = inputConfigPaintStyleKey.value.trim();
   const variableKey = inputConfigVariableKey.value.trim();
+  
+  post({ 
+    type: "save_style_config",
+    textStyleKey,
+    paintStyleKey,
+    variableKey
+  });
+});
+
+// Save Style Config (Public)
+btnSavePublicConfig?.addEventListener("click", () => {
+  const textStyleKey = inputPublicTextStyleKey.value.trim();
+  const paintStyleKey = inputPublicPaintStyleKey.value.trim();
+  const variableKey = inputPublicVariableKey.value.trim();
   
   post({ 
     type: "save_style_config",
@@ -2127,6 +2147,10 @@ window.onmessage = (event) => {
       if (inputConfigTextStyleKey) inputConfigTextStyleKey.value = msg.config.textStyleKey || "";
       if (inputConfigPaintStyleKey) inputConfigPaintStyleKey.value = msg.config.paintStyleKey || "";
       if (inputConfigVariableKey) inputConfigVariableKey.value = msg.config.variableKey || "";
+
+      if (inputPublicTextStyleKey) inputPublicTextStyleKey.value = msg.config.textStyleKey || "";
+      if (inputPublicPaintStyleKey) inputPublicPaintStyleKey.value = msg.config.paintStyleKey || "";
+      if (inputPublicVariableKey) inputPublicVariableKey.value = msg.config.variableKey || "";
     }
   } else if (msg.type === "error") {
     const text = `错误: ${msg.message}`;
