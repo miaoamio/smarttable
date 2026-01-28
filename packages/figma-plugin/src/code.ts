@@ -5237,7 +5237,13 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
   }
   if (message.type === "get_team_library_styles") {
     try {
-      const styles = await (figma as any).getAvailableTextStyles();
+      // Check if teamLibrary API is available
+      const teamLib = (figma as any).teamLibrary;
+      if (!teamLib || !teamLib.getAvailableLibraryTextStylesAsync) {
+        throw new Error("figma.teamLibrary.getAvailableLibraryTextStylesAsync is not supported in this version of Figma.");
+      }
+      
+      const styles = await teamLib.getAvailableLibraryTextStylesAsync();
       console.log("Team Library Styles:", styles);
       const simplifiedStyles = styles.map((s: any) => ({
         id: s.id,
@@ -5245,7 +5251,8 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
         key: s.key,
         description: s.description,
         remote: s.remote,
-        type: s.type
+        type: s.type,
+        libraryName: s.libraryName
       }));
       figma.ui.postMessage({ type: "team_library_styles", styles: simplifiedStyles });
       figma.notify(`Found ${styles.length} styles from team library`);
