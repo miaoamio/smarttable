@@ -212,6 +212,7 @@ function normalizeStyleKey(key: string) {
   let s = (key || "").trim();
   const i = s.indexOf(",");
   if (i >= 0) s = s.slice(0, i);
+  if (s.startsWith("S:")) s = s.slice(2);
   try { console.log("[SmartTable][Style] normalizeStyleKey", key, "=>", s); } catch {}
   return s;
 }
@@ -733,7 +734,7 @@ function isSmartTableFrame(table: FrameNode): boolean {
       }
     }
   } catch (e) {
-    console.warn("Error in isSmartTableFrame:", e);
+    // console.warn("Error in isSmartTableFrame:", e);
   }
   return false;
 }
@@ -2418,17 +2419,18 @@ async function renderHeaderCell(
   const headerTextVarKey = (globalThis as any).__HEADER_TEXT_VAR_KEY__ || "a7442f0ba4f4f027d86e03f335df11c38232c0ce";
   let textStyleApplied = false;
   let textPaintApplied = false;
+  const stylePolicy = createStylePolicy(3);
 
   // TextStyle
   if (headerTextStyleKey) {
-    try {
-      const style = await figma.importStyleByKeyAsync(headerTextStyleKey);
-      if (style && style.type === "TEXT") {
-        await figma.loadFontAsync(style.fontName);
-        await textNode.setTextStyleIdAsync(style.id);
+    const tsId = await resolveStyleId(stylePolicy, headerTextStyleKey, "text");
+    if (tsId) {
+      try {
+        await figma.loadFontAsync((await figma.getStyleByIdAsync(tsId) as TextStyle).fontName);
+        await textNode.setTextStyleIdAsync(tsId);
         textStyleApplied = true;
-      }
-    } catch (e) { console.warn("Header text style fail", e); }
+      } catch (e) { console.warn("Header text style fail", e); }
+    }
   }
 
   // Text Variable (Priority over PaintStyle)
@@ -2436,7 +2438,8 @@ async function renderHeaderCell(
     try {
       let variable = null;
       try {
-        variable = await figma.variables.importVariableByKeyAsync(headerTextVarKey);
+        let k = normalizeStyleKey(headerTextVarKey);
+        variable = await figma.variables.importVariableByKeyAsync(k);
       } catch {}
       
       if (variable) {
@@ -2452,13 +2455,13 @@ async function renderHeaderCell(
 
   // Text Paint (Color) - Only if Variable not applied
   if (!textPaintApplied && headerTextPaintKey) {
-    try {
-      const style = await figma.importStyleByKeyAsync(headerTextPaintKey);
-      if (style && style.type === "PAINT") {
-        await textNode.setFillStyleIdAsync(style.id);
+    const psId = await resolveStyleId(stylePolicy, headerTextPaintKey, "paint");
+    if (psId) {
+      try {
+        await textNode.setFillStyleIdAsync(psId);
         textPaintApplied = true;
-      }
-    } catch (e) { console.warn("Header text paint fail", e); }
+      } catch (e) { console.warn("Header text paint fail", e); }
+    }
   }
 
   // Fallbacks
@@ -2901,15 +2904,16 @@ async function renderAvatarCell(
   
   // Apply TextStyle (Standard Body)
   let textStyleApplied = false;
+  const stylePolicy = createStylePolicy(3);
   const targetTextStyleKey = (globalThis as any).__TEXT_STYLE_KEY__ || "ac8ef12de2cc499e51922d6b5239c26b3645a05a";
-  try {
-    const textStyle = await figma.importStyleByKeyAsync(targetTextStyleKey);
-    if (textStyle && textStyle.type === "TEXT") {
-        await figma.loadFontAsync(textStyle.fontName);
-        await nameText.setTextStyleIdAsync(textStyle.id);
-        textStyleApplied = true;
-    }
-  } catch (e) {}
+  
+  const tsId = await resolveStyleId(stylePolicy, targetTextStyleKey, "text");
+  if (tsId) {
+    try {
+      await nameText.setTextStyleIdAsync(tsId);
+      textStyleApplied = true;
+    } catch (e) {}
+  }
 
   if (!textStyleApplied) {
     nameText.fontSize = TOKENS.fontSizes["body-2"];
@@ -2921,7 +2925,9 @@ async function renderAvatarCell(
   
   if (targetVariableKey) {
     try {
-      const variable = await figma.variables.importVariableByKeyAsync(targetVariableKey);
+      // For variables, resolveStyleId doesn't support them yet, so we use manual import but normalized
+      let k = normalizeStyleKey(targetVariableKey);
+      const variable = await figma.variables.importVariableByKeyAsync(k);
       if (variable) {
         const paint: SolidPaint = { type: "SOLID", color: { r: 0, g: 0, b: 0 } };
         nameText.fills = [figma.variables.setBoundVariableForPaint(paint, 'color', variable)];
@@ -2934,13 +2940,13 @@ async function renderAvatarCell(
     // Fallback PaintStyle
     const targetPaintStyleKey = (globalThis as any).__PAINT_STYLE_KEY__ || "68eb72ad68f196be54a5663c564b5f817d63a946";
     if (targetPaintStyleKey) {
-       try {
-         const style = await figma.importStyleByKeyAsync(targetPaintStyleKey);
-         if (style && style.type === "PAINT") {
-           await nameText.setFillStyleIdAsync(style.id);
+       const psId = await resolveStyleId(stylePolicy, targetPaintStyleKey, "paint");
+       if (psId) {
+         try {
+           await nameText.setFillStyleIdAsync(psId);
            colorApplied = true;
-         }
-       } catch (e) {}
+         } catch (e) {}
+       }
     }
   }
   
