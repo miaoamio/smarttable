@@ -213,19 +213,19 @@ function normalizeStyleKey(key: string) {
   const i = s.indexOf(",");
   if (i >= 0) s = s.slice(0, i);
   if (s.startsWith("S:")) s = s.slice(2);
-  try { console.log("[SmartTable][Style] normalizeStyleKey", key, "=>", s); } catch {}
+  // try { console.log("[SmartTable][Style] normalizeStyleKey", key, "=>", s); } catch {}
   return s;
 }
 
 async function importTextStyleByKey(key: string): Promise<TextStyle | null> {
   try {
     const k = normalizeStyleKey(key);
-    try { console.log("[SmartTable][Style] importTextStyleByKey try", k); } catch {}
+    // try { console.log("[SmartTable][Style] importTextStyleByKey try", k); } catch {}
     const style = await figma.importStyleByKeyAsync(k);
-    try { console.log("[SmartTable][Style] importTextStyleByKey ok", k, "id:", (style as any)?.id); } catch {}
+    // try { console.log("[SmartTable][Style] importTextStyleByKey ok", k, "id:", (style as any)?.id); } catch {}
     return style as TextStyle;
   } catch {
-    try { console.log("[SmartTable][Style] importTextStyleByKey fail"); } catch {}
+    // try { console.log("[SmartTable][Style] importTextStyleByKey fail"); } catch {}
     return null;
   }
 }
@@ -233,12 +233,12 @@ async function importTextStyleByKey(key: string): Promise<TextStyle | null> {
 async function importPaintStyleByKey(key: string): Promise<PaintStyle | null> {
   try {
     const k = normalizeStyleKey(key);
-    try { console.log("[SmartTable][Style] importPaintStyleByKey try", k); } catch {}
+    // try { console.log("[SmartTable][Style] importPaintStyleByKey try", k); } catch {}
     const style = await figma.importStyleByKeyAsync(k);
-    try { console.log("[SmartTable][Style] importPaintStyleByKey ok", k, "id:", (style as any)?.id); } catch {}
+    // try { console.log("[SmartTable][Style] importPaintStyleByKey ok", k, "id:", (style as any)?.id); } catch {}
     return style as PaintStyle;
   } catch {
-    try { console.log("[SmartTable][Style] importPaintStyleByKey fail"); } catch {}
+    // try { console.log("[SmartTable][Style] importPaintStyleByKey fail"); } catch {}
     return null;
   }
 }
@@ -311,12 +311,12 @@ async function resolveStyleId(
   const norm = normalizeStyleKey(key);
   const cacheKey = `${kind}:${norm}`;
   if (policy.blocked.has(cacheKey) || blockedGlobal.has(cacheKey)) {
-    try { console.log("[SmartTable][Style] blocked", cacheKey); } catch {}
+    // try { console.log("[SmartTable][Style] blocked", cacheKey); } catch {}
     return null;
   }
   const cached = policy.cache.get(cacheKey);
   if (cached) {
-    try { console.log("[SmartTable][Style] cache hit", cacheKey, cached); } catch {}
+    // try { console.log("[SmartTable][Style] cache hit", cacheKey, cached); } catch {}
     return cached;
   }
   const fail = policy.failCount.get(cacheKey) || 0;
@@ -326,7 +326,7 @@ async function resolveStyleId(
     saveBlockedStyles();
     return null;
   }
-  try { console.log("[SmartTable][Style] import try", cacheKey); } catch {}
+  // try { console.log("[SmartTable][Style] import try", cacheKey); } catch {}
   const style =
     kind === "text"
       ? await importTextStyleByKey(norm)
@@ -334,7 +334,7 @@ async function resolveStyleId(
   if (style && style.id) {
     policy.cache.set(cacheKey, style.id);
     policy.failCount.set(cacheKey, 0);
-    try { console.log("[SmartTable][Style] import success", cacheKey, style.id); } catch {}
+    // try { console.log("[SmartTable][Style] import success", cacheKey, style.id); } catch {}
     return style.id;
   }
   const next = fail + 1;
@@ -344,7 +344,7 @@ async function resolveStyleId(
     blockedGlobal.add(cacheKey);
     saveBlockedStyles();
   }
-  try { console.log("[SmartTable][Style] import fail", cacheKey, "failCount:", next); } catch {}
+  // try { console.log("[SmartTable][Style] import fail", cacheKey, "failCount:", next); } catch {}
   return null;
 }
 
@@ -2121,15 +2121,16 @@ async function renderActionCell(
     
     // Apply TextStyle (Standard Body)
     let textStyleApplied = false;
+    const stylePolicy = createStylePolicy(3);
     const targetTextStyleKey = (globalThis as any).__TEXT_STYLE_KEY__ || "ac8ef12de2cc499e51922d6b5239c26b3645a05a";
-    try {
-      const textStyle = await figma.importStyleByKeyAsync(targetTextStyleKey);
-      if (textStyle && textStyle.type === "TEXT") {
-          await figma.loadFontAsync(textStyle.fontName);
-          await textNode.setTextStyleIdAsync(textStyle.id);
-          textStyleApplied = true;
-      }
-    } catch (e) {}
+    
+    const tsId = await resolveStyleId(stylePolicy, targetTextStyleKey, "text");
+    if (tsId) {
+      try {
+        await textNode.setTextStyleIdAsync(tsId);
+        textStyleApplied = true;
+      } catch (e) {}
+    }
     
     if (!textStyleApplied) {
       await loadTextNodeFonts(textNode);
@@ -2429,7 +2430,9 @@ async function renderHeaderCell(
         await figma.loadFontAsync((await figma.getStyleByIdAsync(tsId) as TextStyle).fontName);
         await textNode.setTextStyleIdAsync(tsId);
         textStyleApplied = true;
-      } catch (e) { console.warn("Header text style fail", e); }
+      } catch (e) { 
+        // console.warn("Header text style fail", e); 
+      }
     }
   }
 
@@ -2449,7 +2452,7 @@ async function renderHeaderCell(
          textPaintApplied = true;
       }
     } catch (e) {
-      console.warn("Header text variable fail", e);
+      // console.warn("Header text variable fail", e);
     }
   }
 
@@ -2460,7 +2463,9 @@ async function renderHeaderCell(
       try {
         await textNode.setFillStyleIdAsync(psId);
         textPaintApplied = true;
-      } catch (e) { console.warn("Header text paint fail", e); }
+      } catch (e) { 
+        // console.warn("Header text paint fail", e); 
+      }
     }
   }
 
