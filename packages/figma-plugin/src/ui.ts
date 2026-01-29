@@ -1296,6 +1296,34 @@ function coerceLegacyToEnvelope(obj: any): AiTableEnvelope {
     return { intent: "create", schema: { rows, cols, columns, data } };
   }
 
+  // Handle { headers: [...], rows: [...] } format (User reported issue)
+  if (obj && Array.isArray(obj.headers) && Array.isArray(obj.rows) && !Array.isArray(obj.data)) {
+     const headers = obj.headers;
+     const rowsRaw = obj.rows;
+     
+     const cols = headers.length;
+     const rows = rowsRaw.length;
+     
+     const columns = headers.map((h: any, i: number) => {
+        const title = typeof h === "string" ? h : (h.name || h.title || h.label || "");
+        const header = (h.header && isHeaderMode(h.header)) ? h.header : "none";
+        return {
+           id: `col_${i + 1}`,
+           title,
+           type: "Text" as ColumnType,
+           header: header as HeaderMode
+        };
+     });
+     
+     const data = rowsRaw.map((row: any) => {
+         return columns.map((col: any) => {
+             return coerceStringCell(row[col.title] || "");
+         });
+     });
+     
+     return { intent: "create", schema: { rows, cols, columns, data } };
+  }
+
   // Relaxed check: just columns and data (infer rows/cols)
   if (obj && Array.isArray(obj.columns) && Array.isArray(obj.data)) {
     const dataLen = obj.data.length;
