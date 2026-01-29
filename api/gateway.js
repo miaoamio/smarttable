@@ -134191,6 +134191,10 @@ tr:last-child td{border-bottom:none}
 .status-msg{margin-top:12px;font-size:13px;padding:8px 12px;border-radius:6px}
 .status-success{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
 .status-error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+.pagination{display:flex;justify-content:center;gap:8px;margin-top:16px;align-items:center}
+.page-btn{padding:4px 12px;font-size:12px;border:1px solid var(--border-color);background:var(--bg-color);border-radius:4px;cursor:pointer}
+.page-btn:disabled{opacity:.5;cursor:not-allowed}
+.page-info{font-size:12px;color:var(--text-secondary)}
 
 /* New Styles for Sub-tabs and Variables */
 .sub-tabs { display: flex; gap: 16px; margin-bottom: 24px; border-bottom: 1px solid var(--border-color); }
@@ -134263,13 +134267,13 @@ tr:last-child td{border-bottom:none}
     </div>
 
     <div class="layout">
-      <div class="card">
+      <div class="card" id="dist-card">
         <div style="font-weight:600;margin-bottom:20px;font-size:15px">\u529F\u80FD\u4F7F\u7528\u5206\u5E03</div>
         <div id="distribution-container">
             <div style="color:var(--text-secondary);font-size:13px;padding:20px;text-align:center">\u6682\u65E0\u6570\u636E</div>
         </div>
       </div>
-      <div class="card">
+      <div class="card" id="logs-card">
         <div style="font-weight:600;margin-bottom:20px;font-size:15px">\u8FD1\u671F\u6D3B\u52A8\u65E5\u5FD7</div>
         <div style="overflow-x:auto">
           <table>
@@ -134402,6 +134406,44 @@ var deleteBtn=document.getElementById("delete-btn");
 var statusEl=document.getElementById("status");
 var varStatusEl=document.getElementById("var-status");
 
+var tableState = {
+  errors: { data: [], page: 1, limit: 10 },
+  logs: { data: [], page: 1, limit: 10 },
+  dist: { data: [], page: 1, limit: 10 }
+};
+
+window.changePage = function(type, delta) {
+  var s = tableState[type];
+  var totalPages = Math.ceil(s.data.length / s.limit);
+  var newPage = s.page + delta;
+  if(newPage >= 1 && newPage <= totalPages) {
+    s.page = newPage;
+    if(type === 'errors') renderErrorsTable();
+    if(type === 'logs') renderLogsTable();
+    if(type === 'dist') renderDistList();
+  }
+};
+
+function renderPaginationControls(type, containerId) {
+  var s = tableState[type];
+  var container = document.getElementById(containerId);
+  if(!container) return;
+  var existing = container.querySelector(".pagination");
+  if(existing) existing.remove();
+  
+  var totalPages = Math.ceil(s.data.length / s.limit);
+  if(totalPages <= 1) return;
+  
+  var div = document.createElement("div");
+  div.className = "pagination";
+  div.innerHTML = \`
+    <button class="page-btn" onclick="changePage('\${type}', -1)" \${s.page===1?'disabled':''}>Prev</button>
+    <span class="page-info">\${s.page} / \${totalPages}</span>
+    <button class="page-btn" onclick="changePage('\${type}', 1)" \${s.page===totalPages?'disabled':''}>Next</button>
+  \`;
+  container.appendChild(div);
+}
+
 // Tabs logic
 document.querySelectorAll(".tab").forEach(tab => {
   tab.onclick = function() {
@@ -134473,9 +134515,17 @@ function loadStats() {
         setStatus("\u6570\u636E\u5E93\u8FDE\u63A5\u6B63\u5E38", "success");
       }
       
-      renderLogs(data.recentCalls || []);
-      renderDistribution(data.toolDistribution || {});
-      renderErrors(data.errorDistribution || []);
+      tableState.logs.data = data.recentCalls || [];
+      tableState.logs.page = 1;
+      renderLogsTable();
+      
+      tableState.dist.data = Object.entries(data.toolDistribution || {}).sort((a,b) => (b[1]) - (a[1]));
+      tableState.dist.page = 1;
+      renderDistList();
+      
+      tableState.errors.data = data.errorDistribution || [];
+      tableState.errors.page = 1;
+      renderErrorsTable();
       
       // Update summary counters
       document.getElementById("stat-users").textContent = data.userCount || 0;
@@ -134496,28 +134546,39 @@ function loadStats() {
     });
 }
 
-function renderErrors(errors) {
+function renderErrorsTable() {
   if(!errorsBody) return;
   errorsBody.innerHTML = "";
-  if(errors.length === 0) {
+  var s = tableState.errors;
+  var start = (s.page - 1) * s.limit;
+  var pageData = s.data.slice(start, start + s.limit);
+  
+  if(pageData.length === 0) {
     errorsBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-secondary);padding:20px">\u6682\u65E0\u9519\u8BEF\u8BB0\u5F55</td></tr>';
+    renderPaginationControls('errors', 'error-agg-card');
     return;
   }
-  errors.forEach(err => {
+  pageData.forEach(err => {
       var tr = document.createElement("tr");
       tr.innerHTML = "         <td style='font-family:Menlo,monospace;font-size:12px;color:var(--danger-color);word-break:break-all'>" + err.message + "</td>         <td style='font-weight:600;text-align:center'>" + err.count + "</td>         <td style='color:var(--text-secondary);font-size:12px'>" + new Date(err.lastSeen).toLocaleString() + "</td>       ";
       errorsBody.appendChild(tr);
     });
+  renderPaginationControls('errors', 'error-agg-card');
 }
 
-function renderLogs(logs) {
+function renderLogsTable() {
   if(!logsBody) return;
   logsBody.innerHTML = "";
-  if(logs.length === 0) {
+  var s = tableState.logs;
+  var start = (s.page - 1) * s.limit;
+  var pageData = s.data.slice(start, start + s.limit);
+  
+  if(pageData.length === 0) {
       logsBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-secondary);padding:20px">\u6682\u65E0\u6D3B\u52A8\u8BB0\u5F55</td></tr>';
+      renderPaginationControls('logs', 'logs-card');
       return;
   }
-  logs.forEach(log => {
+  pageData.forEach(log => {
     var tr = document.createElement("tr");
     tr.innerHTML = \`
       <td style="color:var(--text-secondary);font-size:12px">\${new Date(log.createdAt).toLocaleTimeString()}</td>
@@ -134527,22 +134588,27 @@ function renderLogs(logs) {
     \`;
     logsBody.appendChild(tr);
   });
+  renderPaginationControls('logs', 'logs-card');
 }
 
-function renderDistribution(dist) {
+function renderDistList() {
   const container = document.getElementById("distribution-container");
   if(!container) return;
   container.innerHTML = "";
-  const entries = Object.entries(dist).sort((a,b) => (b[1]) - (a[1]));
+  var s = tableState.dist;
+  var start = (s.page - 1) * s.limit;
+  var pageData = s.data.slice(start, start + s.limit);
   
-  if(entries.length === 0) {
+  if(pageData.length === 0) {
       container.innerHTML = '<div style="color:var(--text-secondary);font-size:13px;padding:20px;text-align:center">\u6682\u65E0\u6570\u636E</div>';
+      renderPaginationControls('dist', 'dist-card');
       return;
   }
 
-  const max = entries.length > 0 ? entries[0][1] : 1;
+  const allValues = s.data.map(e => e[1]);
+  const max = allValues.length > 0 ? Math.max(...allValues) : 1;
   
-  entries.forEach(([action, count]) => {
+  pageData.forEach(([action, count]) => {
     const barWidth = Math.max(5, (count / max) * 100);
     const div = document.createElement("div");
     div.style.marginBottom = "16px";
@@ -134557,6 +134623,7 @@ function renderDistribution(dist) {
     \`;
     container.appendChild(div);
   });
+  renderPaginationControls('dist', 'dist-card');
 }
 
 function renderList(items){
@@ -134826,7 +134893,7 @@ async function handle(req, res) {
           db_default.callLog.count(),
           db_default.callLog.count({ where: { status: "FAIL" } }),
           db_default.callLog.aggregate({ _avg: { latency: true } }),
-          db_default.callLog.findMany({ take: 20, orderBy: { createdAt: "desc" } }),
+          db_default.callLog.findMany({ take: 100, orderBy: { createdAt: "desc" } }),
           db_default.callLog.groupBy({ by: ["action"], _count: { _all: true } }),
           db_default.callLog.groupBy({
             where: { status: "FAIL", errorMsg: { not: null } },
