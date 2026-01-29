@@ -4984,6 +4984,16 @@ async function createTable(params: CreateTableOptions) {
     tableFrame.setPluginData("rowActionType", rowActionType || "none");
     tableFrame.setPluginData("rowCount", rows.toString());
     tableFrame.setPluginData("tableRowHeight", tableSwitchesState.rowHeight.toString());
+    
+    // Calculate and store initial table size name
+    const h = tableSwitchesState.rowHeight;
+    let sizeName = "default";
+    if (h < 36) sizeName = "mini";
+    else if (h < 44) sizeName = "default";
+    else if (h < 52) sizeName = "medium";
+    else sizeName = "large";
+    tableFrame.setPluginData("tableSize", sizeName);
+
     tableFrame.setPluginData("hasTabs", (envelopeSchema?.config?.tabs !== undefined || tableSwitchesState.tabs) ? "true" : "false");
     tableFrame.setPluginData("hasFilter", (envelopeSchema?.config?.filters !== undefined || tableSwitchesState.filter) ? "true" : "false");
     tableFrame.setPluginData("hasActions", (envelopeSchema?.config?.buttons !== undefined || tableSwitchesState.actions) ? "true" : "false");
@@ -5756,16 +5766,14 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
       const items = (message as any).items as Array<{ id: string; type: "PaintStyle" | "TextStyle" | "Variable"; property: string; variableId: string; name: string; value: string }>;
       const txt = items.find(i => i.type === "TextStyle" && typeof i.variableId === "string" && i.variableId.startsWith("S:"));
       const paint = items.find(i => i.type === "PaintStyle" && typeof i.variableId === "string" && i.variableId.startsWith("S:"));
-      try { console.log("[SmartTable][Vars] received", items?.length || 0, "items"); } catch {}
+      
       if (txt?.variableId) {
         (globalThis as any).__TEXT_STYLE_KEY__ = txt.variableId;
         (globalThis as any).__TEXT_STYLE_NAME__ = txt.name || "TextStyle";
-        try { console.log("[SmartTable][Vars] set TEXT key", txt.variableId, "name", txt.name); } catch {}
       }
       if (paint?.variableId) {
         (globalThis as any).__PAINT_STYLE_KEY__ = paint.variableId;
         (globalThis as any).__PAINT_STYLE_NAME__ = paint.name || "PaintStyle";
-        try { console.log("[SmartTable][Vars] set PAINT key", paint.variableId, "name", paint.name); } catch {}
       }
     } catch {}
     return;

@@ -391,7 +391,6 @@ async function fetchVariablesAndNotifyPlugin() {
     }
     const data = await res.json().catch(() => ({}));
     if (data && Array.isArray(data.items)) {
-      console.log("[SmartTable][Vars] fetched", data.items.length);
       post({ type: "set_variables", items: data.items } as any);
     }
   } catch (e) {
