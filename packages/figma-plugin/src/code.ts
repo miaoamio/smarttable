@@ -1485,7 +1485,8 @@ async function postSelection() {
         colWidthMode,
         cellType,
         cellAlign,
-        pluginData
+        pluginData,
+        tableId: activeTableFrame ? activeTableFrame.id : undefined // Added tableId for persistent targeting
       });
       return;
     }
@@ -1539,7 +1540,8 @@ async function postSelection() {
     tableSize: activeTableFrame ? await getTableSize(activeTableFrame) : undefined,
     rowAction: activeTableFrame ? await getRowAction(activeTableFrame) : undefined,
     tableSwitches: activeTableFrame ? await getTableSwitches(activeTableFrame) : undefined,
-    pluginData
+    pluginData,
+    tableId: activeTableFrame ? (activeTableFrame as FrameNode).id : undefined
   });
   } catch (e) {
     console.warn("postSelection error ignored:", e);
@@ -5837,6 +5839,16 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
         if (selection.length > 0) {
           table = findTableFrameFromNode(selection[0] as any);
         }
+        
+        // --- ADDED: Fallback to tableId passed from UI if no selection or selected not table ---
+        if (!table && message.tableId) {
+            const foundNode = await figma.getNodeByIdAsync(message.tableId);
+            if (foundNode && foundNode.type === "FRAME" && isSmartTableFrame(foundNode as FrameNode)) {
+                table = foundNode as FrameNode;
+            }
+        }
+        // --------------------------------------------------------------------------------------
+
         if (!table) {
           table = figma.root.findOne(
             (n) =>

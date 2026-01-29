@@ -115,7 +115,7 @@ export type AiTableEnvelope =
 export type UiToPluginMessage =
   | { type: "create_table"; rows: number; cols: number; cellType: string }
   | { type: "ai_create_table"; spec: AiTableSpec }
-  | { type: "ai_apply_envelope"; envelope: AiTableEnvelope }
+  | { type: "ai_apply_envelope"; envelope: AiTableEnvelope; tableId?: string }
   | { type: "set_variables"; items: Array<{ id: string; type: "PaintStyle" | "TextStyle" | "Variable"; property: string; variableId: string; name: string; value: string }> }
   | { type: "update_component_key"; key: string }
   | { type: "set_col_width"; mode: "Fixed" | "Fill" | "Hug" }
@@ -179,6 +179,7 @@ export type PluginToUiMessage =
       cellType?: string;
       cellAlign?: "left" | "center" | "right";
       pluginData?: Record<string, string>;
+      tableId?: string;
     }
   | { type: "component_props"; props: any }
   | { type: "table_created"; rows: number; cols: number }

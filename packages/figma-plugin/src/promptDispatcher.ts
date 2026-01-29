@@ -178,15 +178,10 @@ export function distributePrompt(
 
   // 3.3 当前表格状态 (Current State - for Edit intent)
   if (effectiveIsEdit && tableContext) {
-    let contextToProvide = tableContext;
-    // 优化：根据选中类型过滤 Context，减少 Token 干扰
-    if (selectionKind === "filter") {
-      contextToProvide = { headers: tableContext.headers, config: { filters: tableContext.config?.filters } };
-    } else if (selectionKind === "button_group") {
-      contextToProvide = { config: { buttons: tableContext.config?.buttons } };
-    } else if (selectionKind === "tabs") {
-      contextToProvide = { config: { tabs: tableContext.config?.tabs } };
-    }
+    // User request: Always provide FULL table context to the LLM.
+    // Do not filter based on selectionKind (like "filter" or "button_group").
+    // This ensures the LLM understands the entire table structure when making edits.
+    const contextToProvide = tableContext;
 
     contextSection += `\n\n## 当前表格 JSON 上下文 (Current JSON Context)\n\`\`\`json\n${JSON.stringify(contextToProvide, null, 2)}\n\`\`\``;
   }

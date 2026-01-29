@@ -147,6 +147,11 @@ const selectionLabelEditEl = document.getElementById("selection-status-edit") as
 const loadingDescEl = document.querySelector(".loading-desc") as HTMLDivElement | null;
 let alertTimer: number | null = null;
 let latestTableContext: TableContext | null = null;
+// --- ADDED: Persistent Table Tracking Variables ---
+let lastValidTableContext: any = null;
+let lastValidTableId: string | null = null;
+let lastValidSelectionKind: string | null = null;
+// --------------------------------------------------
 let latestSelectionKind: "table" | "column" | "cell" | "filter" | "button_group" | "tabs" | "pagination" | null = null;
 let latestSelectionLabel: string | null = null;
 let latestSelectionCell: { row: number; col: number } | null = null;
@@ -1432,9 +1437,9 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
       isEdit,
       attachments,
       latestSelectionLabel || "未选中",
-      latestTableContext,
+      latestTableContext || lastValidTableContext, // Use fallback if available
       selectedRowCount,
-      latestSelectionKind || undefined,
+      (latestSelectionKind || lastValidSelectionKind || undefined) as any,
       latestSelectionCell || undefined,
       latestSelectionColumn ?? undefined
     );
@@ -1585,7 +1590,12 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
           propsOutput.textContent = `${prev}\n\n=== AI RESPONSE (Edit) ===\n${debugMsg}`;
           propsOutput.style.display = "block";
       }
-      post({ type: "ai_apply_envelope", envelope: parsed });
+      
+      if (!hasSelection && lastValidTableId) {
+          post({ type: "ai_apply_envelope", envelope: parsed, tableId: lastValidTableId });
+      } else {
+          post({ type: "ai_apply_envelope", envelope: parsed });
+      }
       setLoading(btn, false);
     } else {
       throw new Error("Envelope intent 非法");
@@ -1606,7 +1616,11 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
 
 btnCreate?.addEventListener("click", () => {
   const prompt = promptCreateInput?.value?.trim() ?? "";
-  handleAiGeneration(prompt, false, btnCreate);
+  // Fix: If we have a selection, treat it as an Edit intent even if clicked from the Create panel.
+  // This handles cases where UI state might be out of sync or user intention is ambiguous.
+  // Also check persistent state: if we have a lastValidTableContext, user likely wants to edit that table.
+  const treatAsEdit = hasSelection || !!lastValidTableContext;
+  handleAiGeneration(prompt, treatAsEdit, btnCreate);
 });
 
 promptCreateInput?.addEventListener("input", () => {
@@ -2072,6 +2086,15 @@ window.onmessage = (event) => {
   if (msg.type === "selection") {
     latestTableContext = msg.tableContext ?? null;
     hasSelection = !!msg.selectionKind;
+
+    // --- ADDED: Update persistent tracking variables ---
+    if (msg.tableContext && msg.tableId) {
+       lastValidTableContext = msg.tableContext;
+       lastValidTableId = msg.tableId;
+       lastValidSelectionKind = msg.selectionKind as any;
+    }
+    // ---------------------------------------------------
+
     updateAiTabLabel(hasSelection);
     if (msg.componentKey && componentKeyInput) {
       componentKeyInput.value = msg.componentKey;
