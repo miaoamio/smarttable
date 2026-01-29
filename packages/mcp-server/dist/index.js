@@ -33,83 +33,9 @@ function resolveLlmConfig(overrides) {
     }
     return { baseUrl, apiKey, model };
 }
-async function arkChat(input) {
-    const { baseUrl, apiKey, model } = resolveLlmConfig({
-        baseUrl: input.baseUrl,
-        apiKey: input.apiKey,
-        model: input.model
-    });
-    const messages = [];
-    if (input.system) {
-        messages.push({
-            role: "system",
-            content: [{ type: "input_text", text: input.system }]
-        });
-    }
-    const userContent = [];
-    if (input.images && input.images.length > 0) {
-        for (const img of input.images) {
-            if (img.url) {
-                userContent.push({ type: "input_image", image_url: img.url });
-            }
-        }
-    }
-    userContent.push({ type: "input_text", text: input.prompt });
-    messages.push({
-        role: "user",
-        content: userContent
-    });
-    const body = {
-        model,
-        input: messages,
-        temperature: input.temperature,
-        max_tokens: input.maxTokens
-    };
-    let urlStr = baseUrl;
-    if (!urlStr.endsWith("/responses")) {
-        urlStr = urlStr.replace(/\/$/, "") + "/responses";
-    }
-    const res = await fetch(urlStr, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey.replace(/^Bearer\s+/i, "")}`
-        },
-        body: JSON.stringify(body)
-    });
-    const raw = await res.text();
-    if (!res.ok) {
-        throw new Error(`Ark API request failed(${res.status}): ${raw.slice(0, 800)}`);
-    }
-    let json;
-    try {
-        json = JSON.parse(raw);
-    }
-    catch {
-        throw new Error(`Ark API response not JSON: ${raw.slice(0, 800)}`);
-    }
-    const output = json?.output;
-    if (Array.isArray(output)) {
-        const msg = output.find((o) => o.type === "message" && o.role === "assistant");
-        if (msg && Array.isArray(msg.content)) {
-            const textItem = msg.content.find((c) => c.type === "output_text");
-            if (textItem && typeof textItem.text === "string") {
-                return textItem.text;
-            }
-        }
-    }
-    if (json?.choices?.[0]?.message?.content)
-        return json.choices[0].message.content;
-    throw new Error(`Ark API response format unknown: ${raw.slice(0, 800)}`);
-}
 async function llmChat(input) {
     if (typeof fetch !== "function") {
         throw new Error("当前 Node 环境不支持 fetch，请使用 Node 18+。");
-    }
-    const provider = getEnv("LLM_PROVIDER");
-    const checkUrl = input.baseUrl || getEnv("LLM_BASE_URL") || "";
-    if (provider === "ark" || checkUrl.includes("ark-cn-beijing")) {
-        return arkChat(input);
     }
     const { baseUrl, apiKey, model } = resolveLlmConfig({
         baseUrl: input.baseUrl,
@@ -412,13 +338,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                         url: typeof it.url === "string" ? it.url : undefined
                     };
                 }
-                if (typeof it.url === "string") {
-                    return {
-                        fileId: typeof it.fileId === "string" ? it.fileId : "",
-                        fileName: typeof it.fileName === "string" ? it.fileName : undefined,
-                        url: it.url
-                    };
-                }
                 if (typeof it.file_id === "string") {
                     return {
                         fileId: it.file_id,
@@ -439,8 +358,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 prompt: parsed.prompt,
                 system: parsed.system,
                 temperature: parsed.temperature,
-                maxTokens: parsed.maxTokens,
-                images
+                maxTokens: parsed.maxTokens
             });
         }
         catch (e) {
