@@ -1309,14 +1309,20 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
             form.append("purpose", "assistants");
         }
 
+        console.log(`[Gateway] Uploading file to ${uploadUrlStr}`);
+
+        // Do NOT set Content-Type header manually for FormData, fetch will do it with boundary
+        const headers: Record<string, string> = {
+          "Authorization": `Bearer ${apiKey.replace(/^Bearer\s+/i, "")}`
+        };
+
         const upstream = await fetch(uploadUrlStr, {
           method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey.replace(/^Bearer\s+/i, "")}`
-          },
+          headers,
           body: form
         });
-        const raw = await upstream.text();
+      const raw = await upstream.text();
+      console.log(`[Gateway] Upload response status: ${upstream.status}`);
 
         let json: any;
         try {
