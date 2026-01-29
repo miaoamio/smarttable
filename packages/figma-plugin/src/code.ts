@@ -1554,6 +1554,18 @@ function postStatus(message: string) {
   if (figma.ui) figma.ui.postMessage({ type: "status", message });
 }
 
+async function ensureFontLoaded(node: TextNode) {
+  if (node.fontName === figma.mixed) return;
+  try {
+    await figma.loadFontAsync(node.fontName);
+  } catch (e) {
+    console.warn(`Failed to load font ${node.fontName.family}, falling back to Inter`);
+    const fallback: FontName = { family: "Inter", style: "Regular" };
+    await figma.loadFontAsync(fallback);
+    node.fontName = fallback;
+  }
+}
+
 async function loadTextNodeFonts(node: TextNode, style: string = "Regular") {
   const family = TOKENS.typography.fontFamily;
   const primaryFont: FontName = { family, style };
@@ -2479,6 +2491,7 @@ async function renderHeaderCell(
     textNode.fills = [{ type: "SOLID", color: hexToRgb(TOKENS.colors["text-2"]) }];
   }
   
+  await ensureFontLoaded(textNode);
   textNode.textAlignHorizontal = align === "right" ? "RIGHT" : "LEFT";
   
   cellFrame.appendChild(textNode);
@@ -2647,6 +2660,8 @@ async function renderTextCell(
   
   // Restore alignment from plugin data if available, otherwise use oldAlign logic
   const savedAlign = cellFrame.getPluginData("textAlign") as "left" | "center" | "right";
+  
+  await ensureFontLoaded(textNode);
   
   if (savedAlign) {
     cellFrame.primaryAxisAlignItems = savedAlign === "right" ? "MAX" : (savedAlign === "center" ? "CENTER" : "MIN");
@@ -2897,9 +2912,14 @@ async function renderAvatarCell(
   // Set Avatar properties if needed (e.g., size)
   try {
     avatarInst.setProperties({
-      "Size 尺寸": "24", // Assuming 24 based on typical avatar cell design
+      "Size 尺寸": "Default 20",
+      "Type 类型": "English 英文",
+      "Color 颜色": "Red 红色",
+      "Border 描边": "False"
     });
-  } catch (e) {}
+  } catch (e) {
+    console.warn("Failed to set avatar properties:", e);
+  }
   
   // Create Name Text
   const nameText = figma.createText();
@@ -3057,6 +3077,32 @@ async function renderTagCell(
                 if ("layoutSizingHorizontal" in t) {
                     (t as any).layoutSizingHorizontal = "FILL";
                 }
+
+                // Apply PaintStyle
+                const paintStyleKey = "S:c00369a19e90f8172ec68eb1817641c7782c27e7,121374:28";
+                try {
+                  const k = normalizeStyleKey(paintStyleKey);
+                  const stylePolicy = createStylePolicy(3);
+                  const psId = await resolveStyleId(stylePolicy, k, "paint");
+                  if (psId) {
+                     await t.setFillStyleIdAsync(psId);
+                  }
+                } catch (e) {
+                  console.warn("Failed to apply paint style to tag text", e);
+                }
+
+                // Apply TextStyle
+                const textStyleKey = "S:2c76c484dd0f71f6c3865151193dcb5845774b45,131052:1";
+                try {
+                  const k = normalizeStyleKey(textStyleKey);
+                  const stylePolicy = createStylePolicy(3);
+                  const tsId = await resolveStyleId(stylePolicy, k, "text");
+                  if (tsId) {
+                     await t.setTextStyleIdAsync(tsId);
+                  }
+                } catch (e) {
+                  console.warn("Failed to apply text style to tag text", e);
+                }
             }
             cellFrame.appendChild(tagInst);
             
@@ -3085,6 +3131,32 @@ async function renderTagCell(
             if (cellFrame.removed) return;
             const remaining = parts.length - MAX_TAGS;
             t.characters = `+${remaining}`;
+
+            // Apply PaintStyle
+            const paintStyleKey = "S:c00369a19e90f8172ec68eb1817641c7782c27e7,121374:28";
+            try {
+              const k = normalizeStyleKey(paintStyleKey);
+              const stylePolicy = createStylePolicy(3);
+              const psId = await resolveStyleId(stylePolicy, k, "paint");
+              if (psId) {
+                 await t.setFillStyleIdAsync(psId);
+              }
+            } catch (e) {
+              console.warn("Failed to apply paint style to counter text", e);
+            }
+
+            // Apply TextStyle
+            const textStyleKey = "S:2c76c484dd0f71f6c3865151193dcb5845774b45,131052:1";
+            try {
+              const k = normalizeStyleKey(textStyleKey);
+              const stylePolicy = createStylePolicy(3);
+              const tsId = await resolveStyleId(stylePolicy, k, "text");
+              if (tsId) {
+                 await t.setTextStyleIdAsync(tsId);
+              }
+            } catch (e) {
+              console.warn("Failed to apply text style to counter text", e);
+            }
         }
         cellFrame.appendChild(counterInst);
     }
@@ -3469,6 +3541,7 @@ async function applyColumnAlignToColumn(table: FrameNode, colIndex: number, alig
         cellFrame.setPluginData("textAlign", align === "right" ? "right" : "left");
         const textNode = cellFrame.findOne(n => n.type === "TEXT") as TextNode;
         if (textNode) {
+          await ensureFontLoaded(textNode);
           textNode.textAlignHorizontal = align === "right" ? "RIGHT" : "LEFT";
         }
       } else {
@@ -3477,6 +3550,7 @@ async function applyColumnAlignToColumn(table: FrameNode, colIndex: number, alig
         cellFrame.setPluginData("textAlign", align);
         const textNode = cellFrame.findOne(n => n.type === "TEXT") as TextNode;
         if (textNode) {
+          await ensureFontLoaded(textNode);
           textNode.textAlignHorizontal = align === "right" ? "RIGHT" : (align === "center" ? "CENTER" : "LEFT");
         }
       }
@@ -4101,6 +4175,20 @@ async function applyOperationToTable(table: FrameNode, op: TableOperation) {
        const { component: counterComponent } = await resolveCellFactory(TAG_COUNTER_COMPONENT_KEY);
        if (tagComponent && cell.type === "FRAME") {
           await renderTagCell(cell as FrameNode, op.value, { tagComponent, counterComponent: counterComponent || tagComponent });
+          return;
+       }
+    } else if (cellType === "ActionText") {
+       const { component: moreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
+       if (cell.type === "FRAME") {
+          await renderActionCell(cell as FrameNode, op.value, { moreIconComponent });
+          return;
+       }
+    } else if (cellType === "ActionIcon") {
+       const { component: editIconComponent } = await resolveCellFactory(EDIT_ICON_COMPONENT_KEY);
+       const { component: deleteIconComponent } = await resolveCellFactory(DELETE_ICON_COMPONENT_KEY);
+       const { component: actionMoreIconComponent } = await resolveCellFactory(ACTION_MORE_ICON_COMPONENT_KEY);
+       if (cell.type === "FRAME") {
+          await renderActionIconCell(cell as FrameNode, op.value, { editIconComponent, deleteIconComponent, actionMoreIconComponent });
           return;
        }
     }
@@ -5999,21 +6087,30 @@ figma.ui.onmessage = async (message: UiToPluginMessage) => {
             if (message.align === "left") {
               frame.primaryAxisAlignItems = "MIN";
               const textNode = frame.findOne(c => c.type === "TEXT") as TextNode;
-              if (textNode) textNode.textAlignHorizontal = "LEFT";
+              if (textNode) {
+                await ensureFontLoaded(textNode);
+                textNode.textAlignHorizontal = "LEFT";
+              }
               frame.setPluginData("textAlign", "left");
               updateCount++;
               return true;
             } else if (message.align === "right") {
               frame.primaryAxisAlignItems = "MAX";
               const textNode = frame.findOne(c => c.type === "TEXT") as TextNode;
-              if (textNode) textNode.textAlignHorizontal = "RIGHT";
+              if (textNode) {
+                await ensureFontLoaded(textNode);
+                textNode.textAlignHorizontal = "RIGHT";
+              }
               frame.setPluginData("textAlign", "right");
               updateCount++;
               return true;
             } else if (message.align === "center" && !isHeader) {
               frame.primaryAxisAlignItems = "CENTER";
               const textNode = frame.findOne(c => c.type === "TEXT") as TextNode;
-              if (textNode) textNode.textAlignHorizontal = "CENTER";
+              if (textNode) {
+                await ensureFontLoaded(textNode);
+                textNode.textAlignHorizontal = "CENTER";
+              }
               frame.setPluginData("textAlign", "center");
               updateCount++;
               return true;
