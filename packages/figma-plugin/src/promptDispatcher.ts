@@ -27,6 +27,11 @@ export const SYSTEM_PROMPT = `# Role
    - \`rowAction\` (如 "Checkbox", "Radio") 仅在用户明确要求或参考图中清晰存在多选/单选框时才生成。
    - 若用户上传的 Excel/CSV 数据中不包含选择列，且未要求添加，**禁止**生成 \`rowAction\`。
    - 如果生成的 \`rowAction\` 列无法填充有效内容，应直接忽略该列，不要生成空的操作列。
+6. **数据结构严格约束** (CRITICAL):
+   - \`data\` 字段必须是 **二维数组** (\`string[][]\`)，严禁使用对象数组。
+   - **错误示例**: \`[{"name": "Alice", "age": 18}, ...]\` (禁止使用 key-value)
+   - **正确示例**: \`[["Alice", "18"], ["Bob", "20"]]\` (必须是纯值数组)
+   - 值的顺序必须与 \`columns\` 数组定义的顺序严格一致。
 
 # Protocol Definition (JSON Schema)
 
@@ -46,6 +51,35 @@ export const SYSTEM_PROMPT = `# Role
     },
     "columns": [{ "title": string, "type": string, "header": "none" | "filter" | "sort" | "search" | "info", "width": "FILL" | "FIXED", "align": "left" | "center" | "right" }],
     "data": [["cell1", "cell2", ...]]
+  }
+}
+\`\`\`
+
+### Full Example (Create)
+\`\`\`json
+{
+  "intent": "create",
+  "schema": {
+    "rows": 2,
+    "cols": 6,
+    "rowAction": "Checkbox",
+    "config": {
+      "tabs": [{ "label": "全部策略" }],
+      "filters": [{ "label": "搜索", "type": "search" }],
+      "buttons": [{ "label": "新建策略", "type": "primary" }]
+    },
+    "columns": [
+      { "title": "策略ID", "type": "Text", "width": "FIXED", "align": "left" },
+      { "title": "策略名称", "type": "Text", "width": "FILL", "align": "left" },
+      { "title": "生效范围", "type": "Text", "width": "FILL", "align": "left" },
+      { "title": "负责人", "type": "Avatar", "width": "FIXED", "align": "left" },
+      { "title": "变更类型", "type": "Tag", "width": "FIXED", "align": "left" },
+      { "title": "操作", "type": "ActionText", "width": "FIXED", "align": "right" }
+    ],
+    "data": [
+      ["68f789bc9", "商业化PSM变更", "影像|商业化|服务树...", "宋明杰", "创建", "查看 编辑"],
+      ["72a123bc4", "电商退货策略", "电商|退货|物流...", "王小明", "迁移", "查看 编辑"]
+    ]
   }
 }
 \`\`\`
