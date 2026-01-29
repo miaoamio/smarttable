@@ -620,11 +620,32 @@ async function uploadImageToCoze(file: File, target: UploadTarget) {
   renderAttachmentPreview(target);
 
   try {
+    const dataUrl = await fileToDataUrl(file);
+
+    // [Modified] Ark/OpenAI Base64 Mode: 
+    // Skip the intermediate upload to /files/upload.
+    // Instead, pass the base64 data URL directly to the LLM.
+    // This avoids 500 errors from the upload endpoint and works better with Ark/Volcengine.
+    
+    // Simulate a successful "upload" by generating a dummy ID and using the dataUrl
+    const fileId = `base64-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    
+    // Success: Update state to remove loading
+    const latest = getAttachments(target);
+    const updated = latest.map((item) => {
+      if (item.previewUrl === tempUrl) {
+        // Important: Store dataUrl in 'url' property
+        return Object.assign({}, item, { fileId: fileId, loading: false, url: dataUrl });
+      }
+      return item;
+    });
+    setAttachments(target, updated);
+    renderAttachmentPreview(target);
+
+    /* Original Upload Logic (Disabled for Ark migration)
     const baseUrl = getGatewayBaseUrl();
     const headers = getGatewayAuthHeaders();
     headers["content-type"] = "application/json";
-
-    const dataUrl = await fileToDataUrl(file);
 
     const res = await fetchWithTimeout(`${baseUrl}/files/upload`, {
       method: "POST",
@@ -664,6 +685,7 @@ async function uploadImageToCoze(file: File, target: UploadTarget) {
     });
     setAttachments(target, updated);
     renderAttachmentPreview(target);
+    */
   } catch (e: any) {
     // Failure: Remove the temp image
     const latest = getAttachments(target);

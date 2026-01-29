@@ -47,7 +47,22 @@ async function llmChat(input) {
     const messages = [];
     if (input.system)
         messages.push({ role: "system", content: input.system });
-    messages.push({ role: "user", content: input.prompt });
+    if (input.images && input.images.length > 0) {
+        // Multimodal message construction
+        const contentParts = [{ type: "text", text: input.prompt }];
+        for (const img of input.images) {
+            if (img.url) {
+                contentParts.push({
+                    type: "image_url",
+                    image_url: { url: img.url }
+                });
+            }
+        }
+        messages.push({ role: "user", content: contentParts });
+    }
+    else {
+        messages.push({ role: "user", content: input.prompt });
+    }
     const res = await fetch(url.toString(), {
         method: "POST",
         headers: {
@@ -357,6 +372,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 model: parsed.model,
                 prompt: parsed.prompt,
                 system: parsed.system,
+                images: images,
                 temperature: parsed.temperature,
                 maxTokens: parsed.maxTokens
             });

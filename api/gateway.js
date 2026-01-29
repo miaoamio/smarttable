@@ -134977,12 +134977,19 @@ async function handle(req, res) {
       }
       const apiKey = rawKey.trim();
       const base = getEnv("LLM_BASE_URL");
-      let apiBase = "https://api.coze.cn";
+      const provider = getEnv("LLM_PROVIDER") || "coze";
+      let uploadUrlStr = "https://api.coze.cn/v1/files/upload";
       if (base) {
-        try {
-          const u = new URL(base);
-          apiBase = u.origin;
-        } catch {
+        if (provider === "coze" || base.includes("coze.cn")) {
+          try {
+            const u = new URL(base);
+            uploadUrlStr = new URL("/v1/files/upload", u.origin).toString();
+          } catch {
+          }
+        } else {
+          let baseUrl = base;
+          if (!baseUrl.endsWith("/")) baseUrl += "/";
+          uploadUrlStr = new URL("files", baseUrl).toString();
         }
       }
       try {
@@ -134990,15 +134997,21 @@ async function handle(req, res) {
         const blob = new Blob([uint8], { type });
         const form = new FormData();
         form.append("file", blob, name);
-        const uploadUrl = new URL("/v1/files/upload", apiBase);
-        const upstream = await fetch(uploadUrl.toString(), {
+        if (provider !== "coze") {
+          form.append("purpose", "assistants");
+        }
+        console.log(`[Gateway] Uploading file to ${uploadUrlStr}`);
+        const headers = {
+          "Authorization": `Bearer ${apiKey.replace(/^Bearer\s+/i, "")}`
+        };
+        const upstream = await fetch(uploadUrlStr, {
           method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey.replace(/^Bearer\s+/i, "")}`
-          },
+          headers,
           body: form
         });
         const raw = await upstream.text();
+        console.log(`[Gateway] Upload response status: ${upstream.status}`);
+        console.log(`[Gateway] Upload response body: ${raw}`);
         let json;
         try {
           json = JSON.parse(raw);
@@ -135006,7 +135019,14 @@ async function handle(req, res) {
           throw new Error(`Upstream returned non-JSON: ${raw.slice(0, 100)}`);
         }
         if (!upstream.ok || typeof json?.code === "number" && json.code !== 0) {
-          const msg = typeof json?.msg === "string" ? json.msg : upstream.statusText;
+          let msg = upstream.statusText;
+          if (json?.error?.message) {
+            msg = json.error.message;
+          } else if (typeof json?.msg === "string") {
+            msg = json.msg;
+          } else if (typeof json?.message === "string") {
+            msg = json.message;
+          }
           throw new Error(msg);
         }
         await logCall({
