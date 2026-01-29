@@ -1322,7 +1322,8 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
           body: form
         });
       const raw = await upstream.text();
-      console.log(`[Gateway] Upload response status: ${upstream.status}`);
+        console.log(`[Gateway] Upload response status: ${upstream.status}`);
+        console.log(`[Gateway] Upload response body: ${raw}`);
 
         let json: any;
         try {
@@ -1332,7 +1333,14 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
         }
 
         if (!upstream.ok || (typeof json?.code === "number" && json.code !== 0)) {
-          const msg = typeof json?.msg === "string" ? json.msg : upstream.statusText;
+          let msg = upstream.statusText;
+          if (json?.error?.message) {
+             msg = json.error.message;
+          } else if (typeof json?.msg === "string") {
+             msg = json.msg;
+          } else if (typeof json?.message === "string") {
+             msg = json.message;
+          }
           throw new Error(msg);
         }
 

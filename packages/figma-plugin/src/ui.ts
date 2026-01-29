@@ -1270,6 +1270,50 @@ function coerceLegacyToEnvelope(obj: any): AiTableEnvelope {
     return { intent: "create", schema: { rows, cols, columns, data } };
   }
 
+  // Relaxed check: just columns and data (infer rows/cols)
+  if (obj && Array.isArray(obj.columns) && Array.isArray(obj.data)) {
+    const dataLen = obj.data.length;
+    const colLen = obj.columns.length;
+    const rows = normalizeRows(obj.rows ?? (dataLen > 0 ? dataLen : 10), 10);
+    const cols = normalizeRows(obj.cols ?? (colLen > 0 ? colLen : 3), 3);
+    
+    // Reuse the logic for 'rowCount + columns + data' but adapt it here
+    // We treat obj.columns as the source of truth for headers
+    const columnsRaw: any[] = obj.columns;
+    const columns = columnsRaw.map((c, i) => ({
+      id: typeof c?.id === "string" ? c.id : `col_${i + 1}`,
+      title: typeof c?.header === "string" ? c.header : (typeof c?.title === "string" ? c.title : (typeof c?.field === "string" ? c.field : "")),
+      type: isColumnType(c?.type) ? (c.type as ColumnType) : "Text",
+      header: isHeaderMode(c?.headerMode) ? (c.headerMode as HeaderMode) : "none",
+      width: (c?.width === "FILL" || c?.width === "FIXED") ? c.width : undefined,
+      align: (c?.align === "left" || c?.align === "center" || c?.align === "right") ? c.align : undefined
+    }));
+
+    // For data mapping, if data items are objects, we try to match by field/title
+    // If arrays, we map by index
+    const mappedData = obj.data.map((row: any) => {
+      if (Array.isArray(row)) {
+        return columns.map((_, i) => coerceStringCell(row[i]));
+      } else if (row && typeof row === "object") {
+        // Try to find matching value for each column
+        return columns.map(col => {
+            // Try title, field, or id as key
+            let val = row[col.title] ?? row[col.id];
+            // If column has a 'field' property in raw definition, try that too
+            const rawCol = columnsRaw.find(rc => rc.title === col.title || rc.header === col.title || rc.field === col.title); // heuristic
+            if (val === undefined && rawCol && rawCol.field) {
+                val = row[rawCol.field];
+            }
+            return coerceStringCell(val);
+        });
+      }
+      return [];
+    });
+
+    const data = normalizeData(rows, cols, mappedData, columns.map(c => ({ title: c.title, type: c.type })));
+    return { intent: "create", schema: { rows, cols, columns, data } };
+  }
+
   throw new Error("无法识别 AI 返回结构");
 }
 
