@@ -1,5 +1,5 @@
 import type { PluginToUiMessage, UiToPluginMessage, AiTableEnvelope, HeaderMode, ColumnType, AiTableSpec, TableContext } from "./shared/messages";
-import { distributePrompt, type UploadedFileState } from "./promptDispatcher";
+import { distributePrompt, SYSTEM_PROMPT, type UploadedFileState } from "./promptDispatcher";
 // import * as XLSX from "xlsx";
 declare var XLSX: any;
 
@@ -1394,7 +1394,7 @@ async function handleAiGeneration(prompt: string, isEdit: boolean, btn: HTMLButt
         signal: abortController.signal,
         body: JSON.stringify({
           args: {
-            system: undefined,
+            system: SYSTEM_PROMPT,
             prompt: userPrompt,
             images:
               imageAttachments.length > 0
