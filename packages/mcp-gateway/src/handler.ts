@@ -1275,12 +1275,27 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
       const apiKey = rawKey.trim();
 
       const base = getEnv("LLM_BASE_URL");
-      let apiBase = "https://api.coze.cn";
+      const provider = getEnv("LLM_PROVIDER") || "coze";
+      
+      let uploadUrlStr = "https://api.coze.cn/v1/files/upload";
+
       if (base) {
-        try {
-          const u = new URL(base);
-          apiBase = u.origin;
-        } catch {
+        // If explicitly Coze or URL looks like Coze, use Coze's specific upload endpoint logic
+        if (provider === "coze" || base.includes("coze.cn")) {
+            try {
+              const u = new URL(base);
+              // Coze usually expects /v1/files/upload relative to origin
+              uploadUrlStr = new URL("/v1/files/upload", u.origin).toString();
+            } catch {}
+        } else {
+            // Assume Standard OpenAI / Ark style
+            // Append /files to the base URL
+            // Ensure base ends with / or add it before appending files (or use URL constructor properly)
+            let baseUrl = base;
+            if (!baseUrl.endsWith("/")) baseUrl += "/";
+            // For OpenAI compatible endpoints like Ark: .../api/v3/files
+            // If base is .../api/v3, we want .../api/v3/files
+            uploadUrlStr = new URL("files", baseUrl).toString();
         }
       }
 
@@ -1289,9 +1304,12 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
         const blob = new Blob([uint8], { type });
         const form = new FormData();
         form.append("file", blob, name);
+        // Ark/OpenAI sometimes require 'purpose'
+        if (provider !== "coze") {
+            form.append("purpose", "assistants");
+        }
 
-        const uploadUrl = new URL("/v1/files/upload", apiBase);
-        const upstream = await fetch(uploadUrl.toString(), {
+        const upstream = await fetch(uploadUrlStr, {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${apiKey.replace(/^Bearer\s+/i, "")}`

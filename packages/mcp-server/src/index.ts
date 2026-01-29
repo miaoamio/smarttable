@@ -47,6 +47,7 @@ async function llmChat(input: {
   model?: string;
   system?: string;
   prompt: string;
+  images?: { fileId: string; fileName?: string; url?: string }[];
   temperature?: number;
   maxTokens?: number;
 }) {
@@ -62,9 +63,24 @@ async function llmChat(input: {
 
   const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const url = new URL("chat/completions", normalizedBaseUrl);
-  const messages: Array<{ role: "system" | "user"; content: string }> = [];
+  const messages: Array<{ role: "system" | "user"; content: string | any[] }> = [];
   if (input.system) messages.push({ role: "system", content: input.system });
-  messages.push({ role: "user", content: input.prompt });
+  
+  if (input.images && input.images.length > 0) {
+      // Multimodal message construction
+      const contentParts: any[] = [{ type: "text", text: input.prompt }];
+      for (const img of input.images) {
+          if (img.url) {
+              contentParts.push({
+                  type: "image_url",
+                  image_url: { url: img.url }
+              });
+          }
+      }
+      messages.push({ role: "user", content: contentParts });
+  } else {
+      messages.push({ role: "user", content: input.prompt });
+  }
 
   const res = await fetch(url.toString(), {
     method: "POST",
@@ -406,6 +422,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         model: parsed.model,
         prompt: parsed.prompt,
         system: parsed.system,
+        images: images,
         temperature: parsed.temperature,
         maxTokens: parsed.maxTokens
       });

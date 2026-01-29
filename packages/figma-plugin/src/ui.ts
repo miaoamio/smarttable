@@ -649,7 +649,7 @@ async function uploadImageToCoze(file: File, target: UploadTarget) {
       throw new Error(`上传失败(${res.status}): ${msg}`);
     }
 
-    const fileId = json?.data?.id || json?.data?.file_id;
+    const fileId = json?.data?.id || json?.data?.file_id || json?.id;
     if (!fileId || typeof fileId !== "string") {
       throw new Error("上传成功但缺少 file_id");
     }
