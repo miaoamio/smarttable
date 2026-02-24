@@ -1593,13 +1593,14 @@ async function loadTextNodeFonts(node: TextNode, style: string = "Regular") {
   }
 
   // Always apply standard typography after loading font
-  applyStandardTypography(node);
+  await applyStandardTypography(node);
 }
 
 /**
  * Applies standard typography (line height, letter spacing) to a text node
  */
-function applyStandardTypography(node: TextNode) {
+async function applyStandardTypography(node: TextNode) {
+  await ensureFontLoaded(node);
   node.lineHeight = { value: TOKENS.typography.lineHeight, unit: "PIXELS" };
   node.letterSpacing = { value: TOKENS.typography.letterSpacing, unit: "PERCENT" };
 }
